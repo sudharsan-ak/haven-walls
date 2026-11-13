@@ -1,20 +1,88 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { searchOnlineWallpapers, type WallpaperCandidate } from "../lib/native";
+import {
+  browseTMDBBackdrops,
+  browseWallpaperSource,
+  type CatalogImage,
+  type CatalogSourceId,
+} from "../lib/native";
+import { catalogSources, getCatalogSource } from "../lib/catalog";
 import "./OnlineGallery.css";
 
 type Status = "idle" | "loading" | "success" | "error";
-const topics = ["Nature landscape", "Mountain sunset", "Architecture cityscape", "Nebula galaxy"];
 
-export default function OnlineGallery() {
-  const [query, setQuery] = useState("Nature landscape");
+type Props = {
+  source: CatalogSourceId;
+  onSourceChange: (value: CatalogSourceId) => void;
+  tmdbToken: string;
+  onTmdbTokenChange: (value: string) => void;
+};
+
+function CatalogThumbnail({ image }: { image: CatalogImage }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="online-tile-photo">
+      {failed ? (
+        <div className="online-photo-fallback" role="img" aria-label="Preview unavailable">
+          <span>▧</span>
+          <small>Preview unavailable</small>
+        </div>
+      ) : (
+        <img
+          src={image.previewUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      )}
+      <span className="online-resolution">
+        {image.kind === "tv-show"
+          ? "TV series"
+          : image.width >= 3840 && image.height >= 2160
+            ? "4K+"
+            : image.width >= 1920 && image.height >= 1080
+              ? "1080p+"
+              : "Artwork"}
+      </span>
+    </div>
+  );
+}
+
+export default function OnlineGallery({
+  source,
+  onSourceChange,
+  tmdbToken,
+  onTmdbTokenChange,
+}: Props) {
+  const config = getCatalogSource(source);
+  const [query, setQuery] = useState(config.defaultQuery);
   const [submitted, setSubmitted] = useState("");
   const [status, setStatus] = useState<Status>("idle");
-  const [results, setResults] = useState<WallpaperCandidate[]>([]);
-  const [scanned, setScanned] = useState(0);
+  const [results, setResults] = useState<CatalogImage[]>([]);
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<WallpaperCandidate | null>(null);
+  const [selected, setSelected] = useState<CatalogImage | null>(null);
+  const [selectedShow, setSelectedShow] = useState<CatalogImage | null>(null);
+  const [shows, setShows] = useState<CatalogImage[]>([]);
+  const [showSearchNote, setShowSearchNote] = useState("");
   const [copied, setCopied] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const requestId = useRef(0);
+
+  useEffect(() => {
+    requestId.current += 1;
+    setQuery(getCatalogSource(source).defaultQuery);
+    setSubmitted("");
+    setStatus("idle");
+    setResults([]);
+    setNote("");
+    setError("");
+    setSelected(null);
+    setSelectedShow(null);
+    setShows([]);
+    setShowSearchNote("");
+    setCopied(false);
+  }, [source]);
 
   useEffect(() => {
     if (!selected) return;
@@ -25,36 +93,88 @@ export default function OnlineGallery() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selected]);
 
-  async function search(value: string) {
-    const term = value.trim();
-    if (term.length < 2 || term.length > 70) {
-      setError("Enter between 2 and 70 characters.");
+  async function lookup(term: string) {
+    const clean = term.trim();
+    if (source !== "bing" && source !== "earth" && clean.length < 2) {
+      setError("Enter at least two characters to search.");
       setStatus("error");
       return;
     }
-    const currentId = ++requestId.current;
-    setSubmitted(term);
-    setStatus("loading");
+    if (source === "tmdb" && !tmdbToken.trim()) {
+      setError("Enter your TMDB API Read Access Token before searching TV shows.");
+      setStatus("error");
+      return;
+    }
+    const request = ++requestId.current;
+    setSubmitted(clean);
     setResults([]);
-    setScanned(0);
+    setNote("");
     setError("");
+    setSelectedShow(null);
+    setShows([]);
+    setStatus("loading");
 
     try {
-      const data = await searchOnlineWallpapers(term);
-      if (currentId !== requestId.current) return;
+      const data = await browseWallpaperSource(
+        source,
+        clean,
+        source === "tmdb" ? tmdbToken.trim() : undefined,
+      );
+      if (request !== requestId.current) return;
       setResults(data.items);
-      setScanned(data.scanned);
+      setNote(data.note);
+      if (source === "tmdb") {
+        setShows(data.items);
+        setShowSearchNote(data.note);
+      }
       setStatus("success");
     } catch (cause) {
-      if (currentId !== requestId.current) return;
+      if (request !== requestId.current) return;
       setStatus("error");
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
 
+  async function openShow(show: CatalogImage) {
+    if (source !== "tmdb" || !tmdbToken.trim()) return;
+    const id = Number(show.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      setError("This show has an invalid provider ID.");
+      setStatus("error");
+      return;
+    }
+    const request = ++requestId.current;
+    setSelectedShow(show);
+    setStatus("loading");
+    setResults([]);
+    setError("");
+    setNote("");
+
+    try {
+      const data = await browseTMDBBackdrops(id, tmdbToken.trim());
+      if (request !== requestId.current) return;
+      setResults(data.items);
+      setNote(data.note);
+      setStatus("success");
+    } catch (cause) {
+      if (request !== requestId.current) return;
+      setStatus("error");
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  function backToShows() {
+    requestId.current += 1;
+    setSelectedShow(null);
+    setResults(shows);
+    setNote(showSearchNote);
+    setError("");
+    setStatus("success");
+  }
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void search(query);
+    void lookup(query);
   }
 
   async function copySource() {
@@ -69,116 +189,237 @@ export default function OnlineGallery() {
 
   return (
     <div className="gallery-page">
-      <div className="eyebrow">Online discovery · Wikimedia Commons</div>
+      <div className="eyebrow">Online wallpaper discovery</div>
       <h1>Explore wallpapers</h1>
       <p className="subheading">
-        Find high-resolution images from Wikimedia Commons.
-        Previews only for now. No wallpaper downloads or desktop changes.
+        Browse real provider images. Images are previews only, not downloaded or applied.
       </p>
 
-      <section className="online-search-panel" aria-label="Search online wallpapers">
+      <div className="online-source-picker" aria-label="Wallpaper sources">
+        {catalogSources.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={"online-source-option " + (source === item.id ? "active" : "")}
+            aria-pressed={source === item.id}
+            onClick={() => onSourceChange(item.id)}
+          >
+            {item.name}
+          </button>
+        ))}
+      </div>
+
+      <section className="online-search-panel" aria-label="Browse online images">
+        <div className="online-provider-heading">
+          <h2>{config.name}</h2>
+          <p>{config.description}</p>
+        </div>
+
         <form onSubmit={onSubmit}>
-          <label htmlFor="online-search">Search for a subject or location</label>
-          <div className="online-input-row">
-            <input id="online-search" type="search" maxLength={70} value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Try mountain landscape" />
+          {source !== "bing" && (
+            <>
+              <label htmlFor="online-search">
+                {source === "earth" ? "Filter by country or region (optional)"
+                  : source === "sports" ? "Team name" : "TV show title"}
+              </label>
+              <div className="online-input-row">
+                <input
+                  id="online-search"
+                  type="search"
+                  maxLength={100}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={source === "earth" ? "e.g. Switzerland" : "Enter a name"}
+                />
+              </div>
+            </>
+          )}
+
+          {config.requiresToken && (
+            <div className="online-token-field">
+              <label htmlFor="tmdb-token">TMDB API Read Access Token</label>
+              <div className="online-input-row">
+                <input
+                  id="tmdb-token"
+                  type={revealed ? "text" : "password"}
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={tmdbToken}
+                  onChange={(event) => onTmdbTokenChange(event.target.value)}
+                  placeholder="Paste your own TMDB read token"
+                />
+                <button
+                  type="button"
+                  className="online-secondary"
+                  onClick={() => setRevealed(!revealed)}
+                  aria-label={revealed ? "Hide API token" : "Show API token"}
+                >
+                  {revealed ? "Hide" : "Show"}
+                </button>
+              </div>
+              <small>
+                Create a token in your TMDB account settings. Haven Walls only holds it in
+                memory while the app is open. It is not saved to disk.
+              </small>
+            </div>
+          )}
+
+          <div className="online-search-actions">
             <button className="online-primary" type="submit" disabled={status === "loading"}>
-              {status === "loading" ? "Searching…" : "Search wallpapers"}
+              {status === "loading" ? "Loading…" : config.action}
             </button>
+            <span>{config.hint}</span>
           </div>
         </form>
-        <div className="online-suggestions">
-          <span>Try</span>
-          {topics.map((topic) => (
-            <button key={topic} type="button" className="online-chip"
-              onClick={() => { setQuery(topic); void search(topic); }}
-              disabled={status === "loading"}>{topic}</button>
-          ))}
-        </div>
+
+        {config.suggestions.length > 0 && (
+          <div className="online-suggestions" aria-label="Suggested searches">
+            <span>Try</span>
+            {config.suggestions.map((topic) => (
+              <button
+                key={topic}
+                type="button"
+                className="online-chip"
+                disabled={status === "loading"}
+                onClick={() => {
+                  setQuery(topic);
+                  void lookup(topic);
+                }}
+              >
+                {topic}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="online-results-heading">
         <div>
-          <h2>{status === "idle" ? "Start with a search" : "Results for “" + submitted + "”"}</h2>
-          <p>
-            {status === "success"
-              ? results.length + " previews from " + scanned + " scanned files · 1080p+ landscape"
-              : "Search manually. Results are screened for landscape resolution and file type."}
-          </p>
+          {selectedShow && (
+            <button type="button" className="online-back" onClick={backToShows}>
+              ‹ Back to TV show results
+            </button>
+          )}
+          <h2>
+            {selectedShow
+              ? "Backdrops: " + selectedShow.title
+              : status === "idle"
+                ? source === "bing" ? "Recent daily photos" : "Ready to browse"
+                : "Results" + (submitted && source !== "bing" ? " for “" + submitted + "”" : "")}
+          </h2>
+          <p>{status === "success" ? results.length + " items returned" : "Select a source and load its images."}</p>
         </div>
-        <span className="online-source-tag">Wikimedia Commons</span>
+        <span className="online-source-tag">{config.name}</span>
       </div>
 
       {status === "idle" && (
         <div className="online-empty">
           <div className="online-empty-icon" aria-hidden="true">▧</div>
-          <h3>Your next wallpaper is out there.</h3>
-          <p>Choose a topic or type your own search to browse online images.</p>
+          <h3>{source === "bing" ? "See the latest Bing photos." : "Explore " + config.name + "."}</h3>
+          <p>{config.hint}</p>
         </div>
       )}
       {status === "loading" && (
         <div className="online-empty" role="status">
           <span className="online-loading" aria-hidden="true" />
-          <h3>Searching Wikimedia Commons</h3>
-          <p>Checking image dimensions and reported licensing data…</p>
+          <h3>{selectedShow ? "Loading TV backdrops…" : "Loading " + config.name + "…"}</h3>
+          <p>Fetching preview information from the selected source.</p>
         </div>
       )}
       {status === "error" && (
         <div className="online-empty online-error" role="alert">
-          <h3>Couldn't finish searching</h3>
+          <h3>Couldn't load this source</h3>
           <p>{error}</p>
-          <button type="button" className="online-secondary"
-            onClick={() => void search(query)}>Try again</button>
+          {selectedShow ? (
+            <button type="button" className="online-secondary" onClick={backToShows}>
+              Back to shows
+            </button>
+          ) : (
+            <button type="button" className="online-secondary" onClick={() => void lookup(query)}>
+              Retry
+            </button>
+          )}
         </div>
       )}
       {status === "success" && results.length === 0 && (
         <div className="online-empty">
-          <h3>No suitable images found</h3>
-          <p>Try a broader term such as 'Swiss Alps landscape'. Only supported high-resolution landscape images are shown; licensing must be checked before downloading.</p>
+          <h3>No images matched</h3>
+          <p>
+            {selectedShow
+              ? "No suitable landscape backdrops found for this show. Try another."
+              : source === "earth"
+                ? "Try a different region or clear the location for a mixed selection."
+                : "Try another team or TV show, or switch to a different source."}
+          </p>
         </div>
       )}
       {status === "success" && results.length > 0 && (
-        <section className="online-grid" aria-label="Wallpaper results">
+        <section className="online-grid" aria-label="Online image results">
           {results.map((image) => (
-            <button className="online-tile" type="button" key={image.id}
-              onClick={() => { setSelected(image); setCopied(false); }}
-              aria-label={"Preview " + image.title}>
-              <div className="online-tile-photo">
-                <img src={image.thumbnailUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
-                <span className="online-resolution">
-                  {image.width >= 3840 && image.height >= 2160 ? "4K+" : "1080p+"}
-                </span>
-              </div>
+            <button
+              className={"online-tile " + (image.kind === "tv-show" ? "poster-tile" : "")}
+              type="button"
+              key={image.id}
+              onClick={() => {
+                if (image.kind === "tv-show") {
+                  void openShow(image);
+                } else {
+                  setSelected(image);
+                  setCopied(false);
+                }
+              }}
+              aria-label={(image.kind === "tv-show" ? "Browse backdrops for " : "Preview ") + image.title}
+            >
+              <CatalogThumbnail key={image.previewUrl} image={image} />
               <div className="online-tile-meta">
                 <strong title={image.title}>{image.title}</strong>
-                <span>{image.width} × {image.height} · {image.license}</span>
+                <span>
+                  {image.kind === "tv-show" ? "Select to view backdrops"
+                    : image.width > 0 && image.height > 0
+                      ? image.width + " × " + image.height
+                      : "Dimensions not supplied"}
+                  {" · " + image.source}
+                </span>
               </div>
             </button>
           ))}
         </section>
       )}
 
+      {status === "success" && note && <p className="online-catalog-note">{note}</p>}
       <p className="online-notice">
-        Some previews may show 'License needs verification'. All rights must be checked on Wikimedia Commons before any download or wallpaper use.
-        Check each image's original file page for creator credit, attribution rules, and limitations.
+        Photos, team artwork and TV backdrops belong to their respective rights holders.
+        Previewing an image does not grant permission to download, redistribute, or apply it.
+        Review the source's terms and licensing before use.
       </p>
 
       {selected && (
-        <div className="online-overlay" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setSelected(null);
-        }}>
-          <section className="online-detail" role="dialog" aria-modal="true" aria-label={"Preview " + selected.title}>
+        <div
+          className="online-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelected(null);
+          }}
+        >
+          <section
+            className="online-detail"
+            role="dialog"
+            aria-modal="true"
+            aria-label={"Preview " + selected.title}
+          >
             <div className="online-detail-image">
-              <img src={selected.thumbnailUrl} alt={selected.title} />
-              <button className="online-close" type="button" onClick={() => setSelected(null)}
-                aria-label="Close preview">×</button>
+              <img src={selected.previewUrl} alt={selected.title} />
+              <button
+                className="online-close"
+                type="button"
+                onClick={() => setSelected(null)}
+                aria-label="Close preview"
+              >×</button>
             </div>
             <div className="online-detail-footer">
               <div>
                 <h2>{selected.title}</h2>
-                <p>{selected.source} · {selected.width} × {selected.height} · Reported license: {selected.license}</p>
-                <p>Use the original file page to check the creator and required attribution.</p>
+                <p>{selected.source} · {selected.credit}</p>
+                <p>{selected.rights}</p>
               </div>
               <button className="online-secondary" type="button" onClick={() => void copySource()}>
                 {copied ? "Source link copied" : "Copy source link"}
