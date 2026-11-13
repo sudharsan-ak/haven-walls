@@ -86,4 +86,34 @@ export async function browseGoogleImages(
   });
 }
 
+export interface GoogleInlineBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
+/** Opens or navigates the isolated Google Images child WebView2. */
+export async function openGoogleImagesInline(
+  query: string,
+  bounds: GoogleInlineBounds,
+): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Google Images browser requires the Windows desktop application.");
+  }
+  await invoke<void>("open_google_images_inline", { query, bounds });
+}
+
+/** Moves, resizes, or hides the Google Images child WebView2. */
+export async function layoutGoogleImagesInline(
+  bounds: GoogleInlineBounds | null,
+): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("layout_google_images_inline", { bounds });
+}
+
+/** Closes the Google Images child WebView2 when leaving its workspace. */
+export async function closeGoogleImagesInline(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("close_google_images_inline");
+}
