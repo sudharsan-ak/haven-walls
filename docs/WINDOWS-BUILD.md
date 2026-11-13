@@ -214,3 +214,15 @@ Google's older Custom Search JSON API is closed to new developers. Haven Walls t
 - This PR does not add any new Rust dependencies beyond the already introduced HTTP and JSON libraries.
 
 **GitHub Actions remains manual-only**. Assistant code pushes never run build workflows automatically. The user owns all builds, tests and merging.
+
+
+## Browser Search: zoom and review controls
+
+- The **− / percentage / +** buttons in the embedded browser header adjust **only Google's WebView2 page zoom** from 70% to 150%, in 10% increments. Click the percentage to reset to 100%. The rest of Haven Walls is unaffected.
+- **View** adjusts the embedded browsing area's height: Compact (420px), Normal (490px) or Tall (680px). The right content pane should continue scrolling independently from the application title bar and sidebar.
+- Clicking a picture in Google's page only opens Google's own larger preview. To select one for Haven Walls, right-click the larger image, choose **Copy image address**, then click **Add copied image** just below the embedded page.
+- The image then appears in **Review selection**. Click its row to inspect that particular picture; **Inspect first image** opens the first selected picture. **Clear selection (N)** clears the temporary review list but does not delete downloaded files or change Google's results.
+- If the clipboard is blocked, expand the **Alternative: Paste an image address or choose a downloaded file** section and paste the direct HTTPS image URL, or choose a local JPG/PNG/WebP file.
+- Try changing zoom while the real Google browser is open, after changing the Google query, and after switching Browser Search ↔ API Search. Verify zoom isn't applied to the native Haven Walls UI. Native zoom uses Tauri's Webview.set_zoom.
+
+As agreed, the assistant only commits source code. Only the user builds and tests on Windows.

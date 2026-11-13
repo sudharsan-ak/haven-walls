@@ -3,6 +3,7 @@ import {
   closeGoogleImagesInline,
   layoutGoogleImagesInline,
   openGoogleImagesInline,
+  setGoogleImagesInlineZoom,
   type GoogleInlineBounds,
 } from "../lib/native";
 
@@ -10,6 +11,8 @@ interface Props {
   query: string;
   searchRevision: number;
   obscured: boolean;
+  zoom: number;
+  viewportHeight: number;
   onError: (message: string) => void;
 }
 
@@ -17,12 +20,13 @@ interface Props {
  * Cross-origin content never becomes DOM data available to this React component.
  */
 export default function InlineGoogleBrowser({
-  query, searchRevision, obscured, onError,
+  query, searchRevision, obscured, zoom, viewportHeight, onError,
 }: Props) {
   const slotRef = useRef<HTMLDivElement>(null);
   const hasView = useRef(false);
   const disposing = useRef(false);
   const obscuredRef = useRef(obscured);
+  const zoomRef = useRef(zoom);
   const frame = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -89,6 +93,15 @@ export default function InlineGoogleBrowser({
   }, [obscured]);
 
   useEffect(() => {
+    zoomRef.current = zoom;
+    if (hasView.current) {
+      void setGoogleImagesInlineZoom(zoom).catch(() =>
+        onError("The Google Images zoom could not be changed.")
+      );
+    }
+  }, [zoom]);
+
+  useEffect(() => {
     if (searchRevision === 0) return;
     let canceled = false;
     let pendingFrame = 0;
@@ -111,6 +124,7 @@ export default function InlineGoogleBrowser({
           }
           hasView.current = true;
           setLoaded(true);
+          await setGoogleImagesInlineZoom(zoomRef.current);
           scheduleLayout();
         } catch (error) {
           onError(error instanceof Error ? error.message : String(error));
@@ -126,7 +140,7 @@ export default function InlineGoogleBrowser({
   }, [searchRevision]);
 
   return (
-    <div className="gws-browser-viewport">
+    <div className="gws-browser-viewport" style={{ height: viewportHeight }}>
       <div className="gws-browser-placeholder" aria-hidden="true">
         <span className="gws-browser-placeholder-icon">◎</span>
         <strong>{loaded ? "Google Images" : "Your embedded Google Images browser"}</strong>

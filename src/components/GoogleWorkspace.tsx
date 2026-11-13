@@ -72,7 +72,7 @@ function ReviewQueue({
         <strong>Review selection</strong>
         <span>{items.length} selected</span>
       </div>
-      <p>Selected images stay here while you explore both Google Images subtabs.</p>
+      <p>Each image you add stays here across both subtabs. Click any item to inspect its original size.</p>
       <div className="gws-review-list">
         {items.length === 0 ? (
           <div className="gws-review-empty">
@@ -101,18 +101,19 @@ function ReviewQueue({
       <div className="gws-review-actions">
         <button className="online-primary" type="button" disabled={items.length === 0}
           onClick={() => onInspect(items[0])}>
-          Inspect selection
+          Inspect first image
         </button>
         <button className="online-secondary" type="button" disabled={items.length === 0}
           onClick={onClear}>
-          Clear selection
+          Clear selection ({items.length})
         </button>
         <button className="online-secondary" type="button" disabled>
           Add to library · PR #3
         </button>
       </div>
       <p className="gws-review-footnote">
-        No permanent downloads, cache updates, or rotation changes in PR #2.
+        Clear selection removes the review list only. It does not delete downloaded files,
+        reset Google search, or change your wallpaper.
       </p>
     </aside>
   );
@@ -161,6 +162,8 @@ export default function GoogleWorkspace({
   const [browserQuery, setBrowserQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [apiQuery, setApiQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [browserRevision, setBrowserRevision] = useState(0);
+  const [browserZoom, setBrowserZoom] = useState(100);
+  const [browserHeight, setBrowserHeight] = useState(490);
   const [browserError, setBrowserError] = useState("");
   const [browserNote, setBrowserNote] = useState("");
   const [importUrl, setImportUrl] = useState("");
@@ -400,12 +403,35 @@ export default function GoogleWorkspace({
                 <div className="gws-browser-toolbar">
                   <span className="gws-browser-dots" aria-hidden="true">● ● ●</span>
                   <span className="gws-address">google.com / search / Images</span>
-                  <span className="gws-browser-badge">Embedded WebView2</span>
+                  <div className="gws-browser-controls" aria-label="Embedded browser display settings">
+                    <div className="gws-zoom-controls" role="group" aria-label="Google page zoom">
+                      <button type="button" title="Zoom out Google Images" aria-label="Zoom out Google Images"
+                        disabled={browserZoom <= 70}
+                        onClick={() => setBrowserZoom((value) => Math.max(70, value - 10))}>−</button>
+                      <button type="button" className="gws-zoom-value" title="Reset Google page zoom to 100%"
+                        aria-label={`Google page zoom ${browserZoom}%. Reset to 100%`}
+                        onClick={() => setBrowserZoom(100)}>{browserZoom}%</button>
+                      <button type="button" title="Zoom in Google Images" aria-label="Zoom in Google Images"
+                        disabled={browserZoom >= 150}
+                        onClick={() => setBrowserZoom((value) => Math.min(150, value + 10))}>+</button>
+                    </div>
+                    <label className="gws-viewport-control">
+                      <span>View</span>
+                      <select aria-label="Embedded browser viewing area height"
+                        value={browserHeight}
+                        onChange={(event) => setBrowserHeight(Number(event.target.value))}>
+                        <option value={420}>Compact</option>
+                        <option value={490}>Normal</option>
+                        <option value={680}>Tall</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <InlineGoogleBrowser query={browserQuery} searchRevision={browserRevision}
-                  obscured={preview !== null} onError={setBrowserError} />
+                  obscured={preview !== null} zoom={browserZoom / 100}
+                  viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
-                  <span>On an image in Google, right-click → Copy image address.</span>
+                  <span>Google clicks open Google's preview. To select: right-click the larger image → Copy image address.</span>
                   <button type="button" className="online-secondary"
                     onClick={() => void importClipboard()}>
                     Add copied image

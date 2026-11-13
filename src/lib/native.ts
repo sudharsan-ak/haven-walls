@@ -117,3 +117,10 @@ export async function closeGoogleImagesInline(): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("close_google_images_inline");
 }
+
+
+/** Zoom Google's native child webview only. 1 = 100%. */
+export async function setGoogleImagesInlineZoom(zoom: number): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("set_google_images_inline_zoom", { zoom });
+}

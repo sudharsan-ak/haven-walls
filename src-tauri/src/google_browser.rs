@@ -123,6 +123,19 @@ pub fn layout_google_images_inline(
     view.show().map_err(|_| "Could not show the embedded browser".to_string())
 }
 
+/// Zoom affects only Google's isolated embedded webview, not Haven Walls.
+#[tauri::command]
+pub fn set_google_images_inline_zoom(app: AppHandle, zoom: f64) -> Result<(), String> {
+    if !zoom.is_finite() || !(0.5..=2.0).contains(&zoom) {
+        return Err("Embedded browser zoom must be between 50% and 200%.".into());
+    }
+    let Some(view) = app.get_webview(WEBVIEW_LABEL) else {
+        return Ok(()); // The chosen zoom will be applied when the browser is opened.
+    };
+    view.set_zoom(zoom)
+        .map_err(|_| "Could not change Google Images browser zoom.".to_string())
+}
+
 #[tauri::command]
 pub fn close_google_images_inline(app: AppHandle) -> Result<(), String> {
     if let Some(view) = app.get_webview(WEBVIEW_LABEL) {
