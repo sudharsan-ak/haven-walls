@@ -112,8 +112,10 @@ For PR #2, verify the custom title bar and Dashboard still work, and the **right
 2. **Google Earth View:** browse with an empty location; try filtering to `Switzerland` or `India`. The data originates from the Earth View archive.
 3. **TheSportsDB:** search `Golden State Warriors`, then `Mumbai Indians`. Team badges or fan art may be smaller than a wallpaper.
 4. **TMDB:** enter your own **TMDB API Read Access Token**, search `Landman`, select the intended show, then view landscape backdrops. The token is only kept in app memory; it is not persisted.
-5. **Sources:** all four adapters should appear as selectable entries. Unsplash should be labeled **Not enabled** pending provider permission.
-6. Open an image detail preview, copy its source URL, close it with Escape, and verify no Windows wallpaper is downloaded or applied.
+5. **Google Images (SerpApi):** obtain your own API key from https://serpapi.com/manage-api-key (a free tier is available). Open the **Google Images** tab, paste the key, and search `Golden State Warriors 4K desktop wallpaper` or `Landman TV series 4K wallpaper`. The key stays in app memory until the app closes. Try minimum-resolution filters at 1080p, 1440p and 4K. Verify the results are landscape, their reported original dimensions meet the selected minimum, exact duplicate original URLs have been screened out, and the source URL can be copied. There is no guarantee the source-hosted image itself is sharp or licensed for wallpaper use.
+6. **Cross-source exploration:** from TheSportsDB or TMDB results, use **Search Google Images** to open the web-image source with the same team/show name prefilled. Google search is user-triggered, never run on each keystroke.
+7. **Sources:** Bing Daily, Google Earth View, TheSportsDB, TMDB and Google Images should appear as selectable entries. Unsplash should be labeled **Not enabled** pending provider permission.
+8. Open an image detail preview, copy its source URL, close it with Escape, and verify no Windows wallpaper is downloaded or applied.
 
 Check for empty/error states if a provider returns no images or is unavailable. None of these integrations grants usage rights to third-party artwork.
 
@@ -165,3 +167,17 @@ git push origin feature/online-wallpaper-discovery
 ```
 
 Don't merge the PR until the four source flows and your local Windows build have been reviewed.
+
+## Google Images access and limitations
+
+Google's older Custom Search JSON API is closed to new developers. Haven Walls therefore uses the documented **SerpApi Google Images API** as an optional web-image discovery adapter, not Google's old API and not direct HTML scraping of Google Search.
+
+- Sign up at https://serpapi.com and find your personal API key at https://serpapi.com/manage-api-key.
+- Enter that key only into Haven Walls **Gallery → Google Images**. No secrets belong in the repository, GitHub issues, or build logs.
+- Each explicit search uses your own SerpApi allowance. The free plan currently advertises **250 successful searches per month**; check their current pricing/terms before subscribing.
+- Filtering is done in Rust on the metadata returned by the API: minimum original width/height, landscape ratio, unsafe/product flags, exact-URL duplicates, and 4K/aspect ranking.
+- This does **not** scrape source sites, decode image pixels, identify near-duplicate images, prove an image's sharpness, or grant any reuse rights. The previews display provider thumbnails and link back to source pages.
+- If you have no SerpApi key, Bing Daily, Google Earth View, TheSportsDB and TMDB remain usable independently.
+- This PR does not add any new Rust dependencies beyond the already introduced HTTP and JSON libraries.
+
+**GitHub Actions remains manual-only**. Assistant code pushes never run build workflows automatically. The user owns all builds, tests and merging.
