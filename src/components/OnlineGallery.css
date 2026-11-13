@@ -76,3 +76,47 @@
   .online-results-heading { flex-wrap: wrap; }
   .online-detail-footer { flex-direction: column; align-items: stretch; }
 }
+
+/* Google Images advanced image screening and TV/sports web discovery */
+.online-filter-row {
+  margin-top: 16px;
+  display: grid;
+  gap: 7px;
+  max-width: 350px;
+}
+.online-filter-row label {
+  margin: 0;
+}
+.online-filter-row select {
+  height: 42px;
+  border: 1px solid #cad8e5;
+  border-radius: 9px;
+  padding: 0 10px;
+  color: #293c4e;
+  background: #fafdff;
+  font-family: inherit;
+  font-size: 12px;
+}
+.online-web-discovery {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: space-between;
+  background: #fafdff;
+  border: 1px solid #dce5ee;
+  border-radius: 12px;
+  margin-top: 18px;
+  padding: 16px 18px;
+}
+.online-web-discovery strong { display: block; font-size: 12px; }
+.online-web-discovery p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+  color: #8093a5;
+  font-size: 11px;
+}
+.online-web-discovery > button { flex: none; }
+.online-filter-row select:focus-visible { outline: 2px solid #2d84c9; outline-offset: 2px; }
+@media (max-width: 900px) {
+  .online-web-discovery { flex-direction: column; align-items: stretch; }
+}

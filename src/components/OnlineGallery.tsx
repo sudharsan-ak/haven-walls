@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   browseTMDBBackdrops,
   browseWallpaperSource,
+  browseGoogleImages,
   type CatalogImage,
   type CatalogSourceId,
 } from "../lib/native";
@@ -15,6 +16,10 @@ type Props = {
   onSourceChange: (value: CatalogSourceId) => void;
   tmdbToken: string;
   onTmdbTokenChange: (value: string) => void;
+  serpapiKey: string;
+  onSerpapiKeyChange: (value: string) => void;
+  googleSearchSeed: string;
+  onSearchWeb: (query: string) => void;
 };
 
 function CatalogThumbnail({ image }: { image: CatalogImage }) {
@@ -53,6 +58,10 @@ export default function OnlineGallery({
   onSourceChange,
   tmdbToken,
   onTmdbTokenChange,
+  serpapiKey,
+  onSerpapiKeyChange,
+  googleSearchSeed,
+  onSearchWeb,
 }: Props) {
   const config = getCatalogSource(source);
   const [query, setQuery] = useState(config.defaultQuery);
@@ -67,11 +76,14 @@ export default function OnlineGallery({
   const [showSearchNote, setShowSearchNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [minimumSize, setMinimumSize] = useState<"1080p" | "1440p" | "4K">("1080p");
   const requestId = useRef(0);
 
   useEffect(() => {
     requestId.current += 1;
-    setQuery(getCatalogSource(source).defaultQuery);
+    setQuery(source === "google" && googleSearchSeed
+      ? googleSearchSeed
+      : getCatalogSource(source).defaultQuery);
     setSubmitted("");
     setStatus("idle");
     setResults([]);
@@ -82,7 +94,7 @@ export default function OnlineGallery({
     setShows([]);
     setShowSearchNote("");
     setCopied(false);
-  }, [source]);
+  }, [source, googleSearchSeed]);
 
   useEffect(() => {
     if (!selected) return;
@@ -105,6 +117,11 @@ export default function OnlineGallery({
       setStatus("error");
       return;
     }
+    if (source === "google" && !serpapiKey.trim()) {
+      setError("Enter your personal SerpApi key to retrieve Google Images results inside the app.");
+      setStatus("error");
+      return;
+    }
     const request = ++requestId.current;
     setSubmitted(clean);
     setResults([]);
@@ -115,11 +132,15 @@ export default function OnlineGallery({
     setStatus("loading");
 
     try {
-      const data = await browseWallpaperSource(
-        source,
-        clean,
-        source === "tmdb" ? tmdbToken.trim() : undefined,
-      );
+      const resolution = minimumSize === "4K" ? [3840, 2160]
+        : minimumSize === "1440p" ? [2560, 1440] : [1920, 1080];
+      const data = source === "google"
+        ? await browseGoogleImages(clean, serpapiKey.trim(), resolution[0], resolution[1])
+        : await browseWallpaperSource(
+            source,
+            clean,
+            source === "tmdb" ? tmdbToken.trim() : undefined,
+          );
       if (request !== requestId.current) return;
       setResults(data.items);
       setNote(data.note);
@@ -220,7 +241,9 @@ export default function OnlineGallery({
             <>
               <label htmlFor="online-search">
                 {source === "earth" ? "Filter by country or region (optional)"
-                  : source === "sports" ? "Team name" : "TV show title"}
+                  : source === "sports" ? "Team name"
+                    : source === "google" ? "Search Google Images for wallpapers"
+                      : "TV show title"}
               </label>
               <div className="online-input-row">
                 <input
@@ -229,13 +252,53 @@ export default function OnlineGallery({
                   maxLength={100}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder={source === "earth" ? "e.g. Switzerland" : "Enter a name"}
+                  placeholder={source === "earth" ? "e.g. Switzerland"
+                    : source === "google" ? "e.g. Golden State Warriors 4K wallpaper"
+                      : "Enter a name"}
                 />
               </div>
             </>
           )}
 
-          {config.requiresToken && (
+          {source === "google" && (
+            <div className="online-token-field">
+              <label htmlFor="serpapi-key">SerpApi key for Google Images</label>
+              <div className="online-input-row">
+                <input
+                  id="serpapi-key"
+                  type={revealed ? "text" : "password"}
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={serpapiKey}
+                  onChange={(event) => onSerpapiKeyChange(event.target.value)}
+                  placeholder="Paste your SerpApi API key"
+                />
+                <button type="button" className="online-secondary"
+                  onClick={() => setRevealed(!revealed)}>
+                  {revealed ? "Hide" : "Show"}
+                </button>
+              </div>
+              <small>
+                SerpApi offers a limited free plan. The key stays in app memory and is sent
+                directly to SerpApi when you search. It is not saved in Haven Walls.
+                This is not an official Google API.
+              </small>
+              <div className="online-filter-row">
+                <label htmlFor="google-min-resolution">Minimum reported image resolution</label>
+                <select
+                  id="google-min-resolution"
+                  value={minimumSize}
+                  onChange={(event) => setMinimumSize(event.target.value as "1080p" | "1440p" | "4K")}
+                >
+                  <option value="1080p">1920 × 1080 (1080p+)</option>
+                  <option value="1440p">2560 × 1440 (1440p+)</option>
+                  <option value="4K">3840 × 2160 (4K+)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {config.requiresToken && source === "tmdb" && (
             <div className="online-token-field">
               <label htmlFor="tmdb-token">TMDB API Read Access Token</label>
               <div className="online-input-row">
@@ -386,6 +449,27 @@ export default function OnlineGallery({
         </section>
       )}
 
+      {(source === "sports" || source === "tmdb") &&
+        status !== "idle" && status !== "loading" &&
+        (selectedShow || submitted) && (
+          <div className="online-web-discovery">
+            <div>
+              <strong>Need more wallpaper choices?</strong>
+              <p>Search beyond official show artwork or team badges using Google Images.
+                Images will be screened for desktop resolution and orientation.</p>
+            </div>
+            <button
+              className="online-secondary"
+              type="button"
+              onClick={() => onSearchWeb(
+                (selectedShow?.title || submitted) +
+                (source === "tmdb" ? " TV show 4K desktop wallpaper" : " team 4K desktop wallpaper")
+              )}
+            >
+              Search Google Images
+            </button>
+          </div>
+        )}
       {status === "success" && note && <p className="online-catalog-note">{note}</p>}
       <p className="online-notice">
         Photos, team artwork and TV backdrops belong to their respective rights holders.
