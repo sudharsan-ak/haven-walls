@@ -104,7 +104,7 @@ export default function OnlineGallery() {
           <p>
             {status === "success"
               ? results.length + " previews from " + scanned + " scanned files · 1080p+ landscape"
-              : "Search manually. Results must pass basic format and license metadata filters."}
+              : "Search manually. Results are screened for landscape resolution and file type."}
           </p>
         </div>
         <span className="online-source-tag">Wikimedia Commons</span>
@@ -135,7 +135,7 @@ export default function OnlineGallery() {
       {status === "success" && results.length === 0 && (
         <div className="online-empty">
           <h3>No suitable images found</h3>
-          <p>Try a shorter search. We only show supported image types with reported free-license metadata, at 1080p or above.</p>
+          <p>Try a broader term such as 'Swiss Alps landscape'. Only supported high-resolution landscape images are shown; licensing must be checked before downloading.</p>
         </div>
       )}
       {status === "success" && results.length > 0 && (
@@ -160,7 +160,7 @@ export default function OnlineGallery() {
       )}
 
       <p className="online-notice">
-        License names come from Wikimedia Commons and are not a legal guarantee.
+        Some previews may show 'License needs verification'. All rights must be checked on Wikimedia Commons before any download or wallpaper use.
         Check each image's original file page for creator credit, attribution rules, and limitations.
       </p>
 

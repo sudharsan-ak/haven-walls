@@ -106,7 +106,7 @@ The direct EXE is for testing on the **build PC**. This does **not** establish t
 Start-Process -FilePath $appExe
 ```
 
-For PR #2, check the custom title bar and Dashboard, then open **Gallery** and search Nature landscape, Mountain sunset, and a custom topic. Confirm that real Wikimedia Commons thumbnails, dimensions and reported license names appear. Open a preview, copy the source link, dismiss with Escape, and check the Sources page. This build must not change the Windows wallpaper.
+For PR #2, check the custom title bar and Dashboard, then open **Gallery** and search Switzerland, Nature landscape, Mountain sunset, and a custom topic. The results area should scroll independently while the custom header and sidebar stay fixed. Confirm that real Wikimedia Commons thumbnails, dimensions and reported license names appear. Open a preview, copy the source link, dismiss with Escape, and check the Sources page. This build must not change the Windows wallpaper.
 
 For a fast development preview (without generating a release EXE):
 
