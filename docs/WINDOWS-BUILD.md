@@ -234,3 +234,20 @@ As agreed, the assistant only commits source code. Only the user builds and test
 - It accepts **multiple JPG, PNG, and WebP files** in one selection, up to 32 MB per image and a 30-image temporary Review selection limit. Invalid and excess files are skipped with a visible message.
 - Selected files remain temporary, in-memory previews. Each image appears separately in Review selection and can be inspected or removed. No files are saved to the wallpaper library.
 - Test the file chooser's keyboard focus, choose several files together, inspect individual queued images, and verify Clear selection works. Only the user runs the Windows build/tests.
+
+
+## Browser Search: native right-click image selection on Windows
+
+The embedded Google Images child WebView2 adds one command to its own native image right-click menu. The ordinary Google/WebView2 menu options are retained.
+
+1. In Gallery → Google Images → Browser Search, search for a wallpaper.
+2. Right-click a picture in Google's results or large image preview. If the browser exposes a direct HTTPS image URL, the context menu should include "Add to Haven Walls review".
+3. Click that command. The native browser sends the image URL and current page URL to the local Haven Walls main UI. The image appears in Review selection immediately, without manually copying or pasting a link.
+4. Right-click and add multiple different pictures. Duplicates are ignored and there is a maximum of 30 temporary review images.
+5. Click an item in Review selection to inspect its actual displayed dimensions or remove it. Clear selection only empties this temporary review list. It does not delete downloaded files or change your Windows wallpaper.
+6. On images that only use blob or data URLs, or for elements that are not reported as image targets by WebView2, the new menu command may not appear. Use Copy image link → Add copied image or the direct URL/file fallback in those cases.
+7. Switch Browser Search ↔ API Search and back, then right-click an image again. Verify that the native command still works in the new child webview and that no duplicate menu items appear.
+
+This is a Windows-specific host-level integration using WebView2's ContextMenuRequested and CustomItemSelected APIs. The external Google page never receives native app permissions, no DOM scraping or script injection occurs, and no selected image is saved to the wallpaper library or rotation.
+
+Only the user pulls, builds, tests and merges PR #2.

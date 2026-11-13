@@ -1,6 +1,8 @@
 mod sources;
 mod google_images;
 mod google_browser;
+#[cfg(windows)]
+mod google_context_menu;
 
 use serde::Serialize;
 

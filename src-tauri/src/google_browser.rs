@@ -88,7 +88,7 @@ pub async fn open_google_images_inline(
     let builder = WebviewBuilder::new(WEBVIEW_LABEL, WebviewUrl::External(url))
         .on_navigation(allow_google_navigation)
         .on_new_window(|_, _| NewWindowResponse::Deny);
-    parent
+    let child = parent
         .add_child(
             builder,
             LogicalPosition::new(bounds.x, bounds.y),
@@ -98,6 +98,32 @@ pub async fn open_google_images_inline(
             "Could not embed Google Images in WebView2. Google may restrict embedded browsing."
                 .to_string()
         })?;
+
+    #[cfg(windows)]
+    {
+        use tauri::Emitter;
+        // No permissions are given to Google's webview. WebView2 itself adds
+        // one command to its native image context menu and emits a typed
+        // selection event to the local main UI only when the user clicks it.
+        let context_app = app.clone();
+        child
+            .with_webview(move |platform| {
+                let result = unsafe {
+                    platform
+                        .controller()
+                        .CoreWebView2()
+                        .and_then(|core| crate::google_context_menu::register(&core, context_app.clone()))
+                };
+                if let Err(error) = result {
+                    let _ = context_app.emit_to(
+                        "main",
+                        crate::google_context_menu::CONTEXT_MENU_ERROR_EVENT,
+                        format!("Native image context menu unavailable: {error}"),
+                    );
+                }
+            })
+            .map_err(|_| "Could not attach the Google Images context menu.".to_string())?;
+    }
 
     Ok(())
 }

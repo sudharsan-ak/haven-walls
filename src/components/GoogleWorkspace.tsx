@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   browseGoogleImages,
   type CatalogImage,
@@ -19,6 +20,12 @@ interface Props {
 type SearchMode = "browser" | "api";
 type SearchStatus = "idle" | "loading" | "success" | "error";
 type Resolution = "1080p" | "1440p" | "4K";
+
+interface GoogleImagePicked {
+  imageUrl: string;
+  pageUrl: string;
+}
+
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_QUERY = getCatalogSource("google").defaultQuery;
 
@@ -78,8 +85,8 @@ function ReviewQueue({
           <div className="gws-review-empty">
             <strong>No images selected yet</strong>
             <span>
-              In Browser Search, copy an image address and import it.
-              In API Search, click the + on a result.
+              In Browser Search, right-click a photo and choose
+              "Add to Haven Walls review". In API Search, click the + on a result.
             </span>
           </div>
         ) : items.map((item) => (
@@ -191,6 +198,64 @@ export default function GoogleWorkspace({
     requestNumber.current += 1;
     blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
     blobUrls.current.clear();
+  }, []);
+
+  // Windows WebView2 reports the selected image URL when the user chooses
+  // our native context-menu command. No script is injected into Google.
+  useEffect(() => {
+    let mounted = true;
+    const unsubscribers: Array<() => void> = [];
+
+    void listen<GoogleImagePicked>("google-image-picked", (event) => {
+      const directUrl = directHttpsImageAddress(event.payload.imageUrl);
+      if (!directUrl) {
+        setSelectionError("That image has no usable direct HTTPS address. Try another or copy its image link.");
+        return;
+      }
+
+      const rawPath = new URL(directUrl).pathname.split("/").pop() || "Google image";
+      let filename = "Google image";
+      try {
+        filename = decodeURIComponent(rawPath).slice(0, 140) || filename;
+      } catch {
+        filename = rawPath.slice(0, 140) || filename;
+      }
+
+      const candidate = makeManualImage(directUrl, filename, false);
+      const sourcePage = directHttpsImageAddress(event.payload.pageUrl);
+      if (sourcePage) candidate.pageUrl = sourcePage;
+
+      setQueue((items) => {
+        if (items.length >= 30 ||
+          items.some((existing) => imageKey(existing) === imageKey(candidate))) {
+          return items;
+        }
+        return [...items, candidate];
+      });
+      setSelectionError("");
+      setBrowserNote("Image selected from the Google right-click menu. Review it on the right. Duplicates are ignored.");
+    })
+      .then((unlisten) => {
+        if (mounted) unsubscribers.push(unlisten);
+        else unlisten();
+      })
+      .catch(() => {
+        if (mounted) setBrowserError("Could not connect image selection. Use Copy image link instead.");
+      });
+
+    void listen<string>("google-image-menu-error", (event) => {
+      setBrowserError(event.payload + " The copy-link method remains available.");
+    })
+      .then((unlisten) => {
+        if (mounted) unsubscribers.push(unlisten);
+        else unlisten();
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+      unsubscribers.forEach((unlisten) => unlisten());
+    };
   }, []);
 
   function addToQueue(image: CatalogImage) {
@@ -458,7 +523,7 @@ export default function GoogleWorkspace({
                   obscured={preview !== null} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
-                  <span>Google clicks open Google's preview. To select: right-click the larger image → Copy image address.</span>
+                  <span>Right-click an image in Google → Add to Haven Walls review.</span>
                   <button type="button" className="online-secondary"
                     onClick={() => void importClipboard()}>
                     Add copied image
@@ -496,9 +561,11 @@ export default function GoogleWorkspace({
               </details>
               {selectionError && <p className="gws-error" role="alert">{selectionError}</p>}
               <div className="gws-browser-notice">
-                The browser shows Google's real website. Haven Walls cannot directly read or
-                select elements from Google's page. Copy an image address and use
-                <strong> Add copied image</strong> to add it to the review tray.
+                The browser shows Google's real website. Right-click a photo and choose
+                <strong> Add to Haven Walls review</strong> to place it in your review list
+                without copying an address. No Google page scraping is involved.
+                If the custom item is missing, choose <strong>Copy image link</strong>
+                and then click <strong>Add copied image</strong> above.
                 If Google blocks embedded viewing, use
                 <button type="button" className="gws-inline-link"
                   onClick={() => void copyGoogleSearchLink()}>Copy Google search link</button>.
