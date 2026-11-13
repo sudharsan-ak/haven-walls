@@ -9,6 +9,7 @@ import {
 import { catalogSources, getCatalogSource } from "../lib/catalog";
 import FullResolutionPreview from "./FullResolutionPreview";
 import GoogleWorkspace from "./GoogleWorkspace";
+import SportsLeagueSources from "./SportsLeagueSources";
 import "./OnlineGallery.css";
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -336,6 +337,10 @@ function SourceGallery({
           </div>
         )}
       </section>
+
+      {source === "sports" && (
+        <SportsLeagueSources teamName={query} onSearchWeb={onSearchWeb} />
+      )}
 
       <div className="online-results-heading">
         <div>

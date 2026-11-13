@@ -114,12 +114,21 @@ pub async fn open_google_images_inline(
                         .CoreWebView2()
                         .and_then(|core| crate::google_context_menu::register(&core, context_app.clone()))
                 };
-                if let Err(error) = result {
-                    let _ = context_app.emit_to(
-                        "main",
-                        crate::google_context_menu::CONTEXT_MENU_ERROR_EVENT,
-                        format!("Native image context menu unavailable: {error}"),
-                    );
+                match result {
+                    Ok(()) => {
+                        let _ = context_app.emit_to(
+                            "main",
+                            crate::google_context_menu::CONTEXT_MENU_STATUS_EVENT,
+                            "Native right-click image action attached. Right-click a Google photo to try it.",
+                        );
+                    }
+                    Err(error) => {
+                        let _ = context_app.emit_to(
+                            "main",
+                            crate::google_context_menu::CONTEXT_MENU_ERROR_EVENT,
+                            format!("Native image context menu unavailable: {error}"),
+                        );
+                    }
                 }
             })
             .map_err(|_| "Could not attach the Google Images context menu.".to_string())?;

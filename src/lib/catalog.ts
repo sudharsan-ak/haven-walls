@@ -48,8 +48,8 @@ export const catalogSources: SourceDefinition[] = [
   {
     id: "sports",
     name: "TheSportsDB",
-    description: "Search teams and their associated images from sports such as NBA and IPL.",
-    hint: "Search a team name. Team badges and artwork may not be wallpaper-sized.",
+    description: "Find team artwork and manage NBA, IPL, WNBA or custom league image websites.",
+    hint: "Search a team, then add league websites and find wallpapers using Google Images site-filtered searches.",
     action: "Find teams",
     defaultQuery: "Golden State Warriors",
     suggestions: ["Golden State Warriors", "Los Angeles Lakers", "Mumbai Indians", "Chennai Super Kings"],

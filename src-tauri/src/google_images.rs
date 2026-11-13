@@ -137,8 +137,8 @@ pub async fn browse_google_images(
     min_height: u32,
 ) -> Result<CatalogResponse, String> {
     let query = query.trim();
-    if !(2..=100).contains(&query.chars().count()) {
-        return Err("Enter a search query between 2 and 100 characters.".into());
+    if !(2..=320).contains(&query.chars().count()) {
+        return Err("Enter a search query between 2 and 320 characters.".into());
     }
     let key = serpapi_key.trim();
     if key.is_empty() {

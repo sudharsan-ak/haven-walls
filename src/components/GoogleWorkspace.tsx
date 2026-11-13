@@ -6,6 +6,7 @@ import {
   type CatalogSourceId,
 } from "../lib/native";
 import { catalogSources, getCatalogSource } from "../lib/catalog";
+import { chooseOriginalFromLink, unwrapKnownImageLink, validRemoteUrl } from "../lib/imageResolution";
 import FullResolutionPreview from "./FullResolutionPreview";
 import InlineGoogleBrowser from "./InlineGoogleBrowser";
 import "./GoogleWorkspace.css";
@@ -24,6 +25,7 @@ type Resolution = "1080p" | "1440p" | "4K";
 interface GoogleImagePicked {
   imageUrl: string;
   pageUrl: string;
+  linkUrl?: string;
 }
 
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -34,28 +36,25 @@ function imageKey(item: CatalogImage): string {
 }
 
 function directHttpsImageAddress(value: string): string | null {
-  try {
-    const uri = new URL(value.trim());
-    if (uri.protocol !== "https:" || !uri.hostname || uri.username || uri.password ||
-        uri.hostname === "localhost" || uri.hostname.endsWith(".localhost") ||
-        uri.hostname.endsWith(".local") || uri.hostname.endsWith(".internal")) {
-      return null;
-    }
-    return uri.toString();
-  } catch {
-    return null;
-  }
+  return validRemoteUrl(value);
 }
 
-function makeManualImage(url: string, title: string, fromFile: boolean): CatalogImage {
+function makeManualImage(
+  url: string, title: string, fromFile: boolean,
+  previewUrl = url, sourcePage = "",
+): CatalogImage {
+  const hostname = (() => {
+    try { return new URL(url).hostname; }
+    catch { return "Unknown origin"; }
+  })();
   return {
     id: "user-" + title,
     source: fromFile ? "Local file preview" : "Google browser selection",
     title,
     originalUrl: url,
-    previewUrl: url,
-    pageUrl: "",
-    credit: fromFile ? "File on your computer" : "Source page not supplied",
+    previewUrl,
+    pageUrl: sourcePage,
+    credit: fromFile ? "File on your computer" : "Image hosted by " + hostname + " · Creator unverified",
     rights: fromFile
       ? "Preview only. This image has not been added to the Haven Walls library."
       : "Google Images is a discovery tool. Image rights and attribution must be checked at the original source.",
@@ -172,6 +171,7 @@ export default function GoogleWorkspace({
   const [browserZoom, setBrowserZoom] = useState(100);
   const [browserHeight, setBrowserHeight] = useState(490);
   const [browserError, setBrowserError] = useState("");
+  const [nativeMenuStatus, setNativeMenuStatus] = useState("Native image menu: not connected yet");
   const [browserNote, setBrowserNote] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [selectionError, setSelectionError] = useState("");
@@ -207,12 +207,13 @@ export default function GoogleWorkspace({
     const unsubscribers: Array<() => void> = [];
 
     void listen<GoogleImagePicked>("google-image-picked", (event) => {
-      const directUrl = directHttpsImageAddress(event.payload.imageUrl);
-      if (!directUrl) {
-        setSelectionError("That image has no usable direct HTTPS address. Try another or copy its image link.");
+      const suppliedUrl = directHttpsImageAddress(event.payload.imageUrl);
+      if (!suppliedUrl) {
+        setSelectionError("Google did not provide a usable HTTPS image link. Try Copy image link or open the original source.");
         return;
       }
-
+      const resolved = chooseOriginalFromLink(suppliedUrl, event.payload.linkUrl);
+      const directUrl = resolved.original;
       const rawPath = new URL(directUrl).pathname.split("/").pop() || "Google image";
       let filename = "Google image";
       try {
@@ -221,9 +222,11 @@ export default function GoogleWorkspace({
         filename = rawPath.slice(0, 140) || filename;
       }
 
-      const candidate = makeManualImage(directUrl, filename, false);
-      const sourcePage = directHttpsImageAddress(event.payload.pageUrl);
-      if (sourcePage) candidate.pageUrl = sourcePage;
+      const page = resolved.sourcePage || directHttpsImageAddress(event.payload.pageUrl) || "";
+      const candidate = makeManualImage(directUrl, filename, false, resolved.preview, page);
+      if (resolved.original !== resolved.preview) {
+        candidate.candidateUrls = [resolved.preview];
+      }
 
       setQueue((items) => {
         if (items.length >= 30 ||
@@ -233,7 +236,7 @@ export default function GoogleWorkspace({
         return [...items, candidate];
       });
       setSelectionError("");
-      setBrowserNote("Image selected from the Google right-click menu. Review it on the right. Duplicates are ignored.");
+      setBrowserNote("Image added to Review selection. Inspect it for the actual resolution. Duplicates are ignored.");
     })
       .then((unlisten) => {
         if (mounted) unsubscribers.push(unlisten);
@@ -243,8 +246,18 @@ export default function GoogleWorkspace({
         if (mounted) setBrowserError("Could not connect image selection. Use Copy image link instead.");
       });
 
+    void listen<string>("google-image-menu-status", (event) => {
+      setNativeMenuStatus(event.payload);
+    })
+      .then((unlisten) => {
+        if (mounted) unsubscribers.push(unlisten);
+        else unlisten();
+      })
+      .catch(() => {});
+
     void listen<string>("google-image-menu-error", (event) => {
-      setBrowserError(event.payload + " The copy-link method remains available.");
+      setBrowserError(event.payload + " The Copy image link method remains available.");
+      setNativeMenuStatus("Native image menu: see error above");
     })
       .then((unlisten) => {
         if (mounted) unsubscribers.push(unlisten);
@@ -290,19 +303,20 @@ export default function GoogleWorkspace({
   }
 
   function importImageAddress(value: string) {
-    const url = directHttpsImageAddress(value);
-    if (!url) {
-      setSelectionError("Copy a direct HTTPS image address, not a Google search or source page URL.");
+    const raw = directHttpsImageAddress(value);
+    if (!raw) {
+      setSelectionError("Paste a direct HTTPS image address or a Google imgres link with the original image URL.");
       return;
     }
-    const label = (() => {
-      try { return decodeURIComponent(new URL(url).pathname.split("/").pop() || "Web image"); }
-      catch { return "Web image"; }
-    })();
-    const image = makeManualImage(url, label.slice(0, 140), false);
+    const url = unwrapKnownImageLink(raw) || raw;
+    let title: string;
+    const segment = new URL(url).pathname.split("/").pop() || "Web image";
+    try { title = decodeURIComponent(segment); }
+    catch { title = segment; }
+    const image = makeManualImage(url, title.slice(0, 140), false);
     addToQueue(image);
     setSelectionError("");
-    setBrowserNote("Image address added to Review selection. Inspect it to check the actual loaded pixels.");
+    setBrowserNote("Image link added. Inspect it to check the best available version and actual resolution.");
     setImportUrl("");
   }
 
@@ -523,7 +537,7 @@ export default function GoogleWorkspace({
                   obscured={preview !== null} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
-                  <span>Right-click an image in Google → Add to Haven Walls review.</span>
+                  <span>Right-click a Google image. Use Add to Haven Walls review, or Copy image link as fallback.</span>
                   <button type="button" className="online-secondary"
                     onClick={() => void importClipboard()}>
                     Add copied image
@@ -561,11 +575,11 @@ export default function GoogleWorkspace({
               </details>
               {selectionError && <p className="gws-error" role="alert">{selectionError}</p>}
               <div className="gws-browser-notice">
-                The browser shows Google's real website. Right-click a photo and choose
-                <strong> Add to Haven Walls review</strong> to place it in your review list
-                without copying an address. No Google page scraping is involved.
-                If the custom item is missing, choose <strong>Copy image link</strong>
-                and then click <strong>Add copied image</strong> above.
+                <strong>Context menu status:</strong> {nativeMenuStatus} Select
+                <strong> Add to Haven Walls review</strong> at the top of an image's right-click menu.
+                If Google supplies only a cached preview or the custom command is unavailable,
+                choose <strong>Copy image link</strong> and click <strong>Add copied image</strong>.
+                Haven Walls does not scrape Google's website.
                 If Google blocks embedded viewing, use
                 <button type="button" className="gws-inline-link"
                   onClick={() => void copyGoogleSearchLink()}>Copy Google search link</button>.

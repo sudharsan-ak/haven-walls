@@ -3,6 +3,7 @@ import { readHostInfo, type HostInfo, type CatalogSourceId } from "./lib/native"
 import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
+import WallpaperDisplayPrefs from "./components/WallpaperDisplayPrefs";
 import "./App.css";
 
 type HostState =
@@ -122,6 +123,7 @@ export default function App() {
                   </div>
                 </article>
               </div>
+              <WallpaperDisplayPrefs />
               <p className="provider-footnote">
                 These are previews, not rights-cleared wallpaper downloads. External provider
                 terms, attributions and artwork permissions must be checked before applying images.
