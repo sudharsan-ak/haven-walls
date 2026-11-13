@@ -20,8 +20,8 @@ use webview2_com::{
     take_pwstr,
 };
 use windows::{
-    core::{Interface, PWSTR, w},
-    Win32::{Foundation::BOOL, System::Com::IStream},
+    Win32::System::Com::IStream,
+    core::{BOOL, Interface, PWSTR, w},
 };
 
 pub const IMAGE_PICKED_EVENT: &str = "google-image-picked";
