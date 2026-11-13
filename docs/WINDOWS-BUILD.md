@@ -226,3 +226,11 @@ Google's older Custom Search JSON API is closed to new developers. Haven Walls t
 - Try changing zoom while the real Google browser is open, after changing the Google query, and after switching Browser Search ↔ API Search. Verify zoom isn't applied to the native Haven Walls UI. Native zoom uses Tauri's Webview.set_zoom.
 
 As agreed, the assistant only commits source code. Only the user builds and tests on Windows.
+
+
+## Local image picker update
+
+- The local image picker now displays **Choose images** styled to match Haven Walls buttons rather than Windows' default file-input appearance.
+- It accepts **multiple JPG, PNG, and WebP files** in one selection, up to 32 MB per image and a 30-image temporary Review selection limit. Invalid and excess files are skipped with a visible message.
+- Selected files remain temporary, in-memory previews. Each image appears separately in Review selection and can be inspected or removed. No files are saved to the wallpaper library.
+- Test the file chooser's keyboard focus, choose several files together, inspect individual queued images, and verify Clear selection works. Only the user runs the Windows build/tests.

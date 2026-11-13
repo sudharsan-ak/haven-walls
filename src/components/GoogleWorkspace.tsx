@@ -168,6 +168,7 @@ export default function GoogleWorkspace({
   const [browserNote, setBrowserNote] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [selectionError, setSelectionError] = useState("");
+  const [lastFileSelection, setLastFileSelection] = useState("No images chosen");
   const [queue, setQueue] = useState<CatalogImage[]>([]);
   const [preview, setPreview] = useState<CatalogImage | null>(null);
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
@@ -250,20 +251,46 @@ export default function GoogleWorkspace({
   }
 
   function importLocalFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)
-      || file.size === 0 || file.size > MAX_FILE_BYTES) {
-      setSelectionError("Choose a JPG, PNG or WebP image under 32 MB.");
-      return;
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (files.length === 0) return;
+
+    const availableSlots = Math.max(0, 30 - queue.length);
+    const accepted: CatalogImage[] = [];
+    let rejected = 0;
+
+    for (const file of files) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)
+        || file.size === 0 || file.size > MAX_FILE_BYTES
+        || accepted.length >= availableSlots) {
+        rejected += 1;
+        continue;
+      }
+      const url = URL.createObjectURL(file);
+      blobUrls.current.add(url);
+      accepted.push(makeManualImage(url, file.name, true));
     }
-    const url = URL.createObjectURL(file);
-    blobUrls.current.add(url);
-    const image = makeManualImage(url, file.name, true);
-    addToQueue(image);
-    setSelectionError("");
-    setBrowserNote("Local file added to Review selection. No library file was created.");
+
+    if (accepted.length > 0) {
+      setQueue((current) => [...current, ...accepted].slice(0, 30));
+      setBrowserNote(
+        accepted.length + (accepted.length === 1
+          ? " local image added to Review selection."
+          : " local images added to Review selection.") +
+        " No wallpaper library files were created."
+      );
+    }
+    setLastFileSelection(
+      accepted.length > 0
+        ? accepted.length + (accepted.length === 1 ? " image added" : " images added")
+        : "No images added"
+    );
+    setSelectionError(
+      rejected > 0
+        ? rejected + (rejected === 1 ? " file was skipped." : " files were skipped.") +
+          " Only JPG, PNG or WebP images up to 32 MB are accepted, with a 30-image review limit."
+        : ""
+    );
   }
 
   function browseGoogle(event: FormEvent<HTMLFormElement>) {
@@ -452,10 +479,18 @@ export default function GoogleWorkspace({
                     </div>
                   </form>
                   <div>
-                    <label htmlFor="gws-local-image">Image downloaded to this computer</label>
-                    <input id="gws-local-image" type="file" accept="image/jpeg,image/png,image/webp"
-                      onChange={importLocalFile} />
-                    <small>JPG, PNG, WebP · Max 32 MB · Preview only</small>
+                    <p className="gws-file-heading">Images downloaded to this computer</p>
+                    <div className="gws-file-picker">
+                      <input id="gws-local-image" className="gws-file-input" type="file"
+                        accept="image/jpeg,image/png,image/webp" multiple
+                        aria-label="Choose one or more local images"
+                        onChange={importLocalFile} />
+                      <label htmlFor="gws-local-image" className="online-secondary gws-file-button">
+                        Choose images
+                      </label>
+                      <span className="gws-file-status" role="status">{lastFileSelection}</span>
+                    </div>
+                    <small>Choose multiple JPG, PNG or WebP files · 32 MB each · Preview only</small>
                   </div>
                 </div>
               </details>
