@@ -32,7 +32,7 @@ Set the branch name from the PR, then run the entire block:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$branch = "feature/tauri-app-foundation"  # Change for each PR
+$branch = "feature/online-wallpaper-discovery"  # Change for each PR
 
 if (git status --porcelain) {
     throw "Working tree is not clean. Review local changes before switching."
@@ -106,7 +106,7 @@ The direct EXE is for testing on the **build PC**. This does **not** establish t
 Start-Process -FilePath $appExe
 ```
 
-For PR #1, verify the Haven Walls window opens with **one custom white Haven Walls titlebar** (no orange Windows bar), the basic dashboard renders, and the status says **Haven Walls v0.1.0 · windows**. Drag the titlebar to move the window, test minimize / maximize / restore / close, and resize by dragging the window edges. Upcoming gallery/rotation controls are only placeholders.
+For PR #2, check the custom title bar and Dashboard, then open **Gallery** and search Nature landscape, Mountain sunset, and a custom topic. Confirm that real Wikimedia Commons thumbnails, dimensions and reported license names appear. Open a preview, copy the source link, dismiss with Escape, and check the Sources page. This build must not change the Windows wallpaper.
 
 For a fast development preview (without generating a release EXE):
 
@@ -143,3 +143,16 @@ git log -1 --oneline
 **Workflow:** GitHub PR → pull branch locally → build EXE → run and test → fix on same PR if needed → merge after approval → synchronize `main`.
 
 **Reference:** https://v2.tauri.app/start/prerequisites/ and https://v2.tauri.app/distribute/windows-installer/
+
+## PR #2 note: update Rust dependency lockfile
+
+This PR adds Rust HTTP dependencies for the first online source. The initial Windows build may update `src-tauri/Cargo.lock`. **Commit that updated lockfile only** to the same PR branch, then push it so GitHub CI uses the same Rust versions as your local test.
+
+```powershell
+git add -- src-tauri/Cargo.lock
+git diff --cached --stat
+git commit -m "build: lock Wikimedia search dependencies"
+git push origin feature/online-wallpaper-discovery
+```
+
+Don't merge the PR until the Windows CI check and your local test both succeed.
