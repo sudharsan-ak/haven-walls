@@ -1,8 +1,7 @@
 name: Windows Build
 
 on:
-  pull_request:
-    branches: [main]
+  # Run manually only. Pushing code to a PR must never start a build.
   workflow_dispatch:
 
 permissions:
