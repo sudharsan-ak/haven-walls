@@ -87,12 +87,3 @@ export async function browseGoogleImages(
 }
 
 
-/** Opens Google's own image search in an isolated native WebView2 window.
- * This doesn't scrape results or grant the external page native API access.
- */
-export async function openGoogleImagesBrowser(query: string): Promise<void> {
-  if (!isTauri()) {
-    throw new Error("Google Images browser requires the Windows desktop application.");
-  }
-  await invoke<void>("open_google_images_browser", { query });
-}

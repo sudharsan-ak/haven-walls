@@ -29,7 +29,9 @@ pub fn run() {
             sources::browse_wallpaper_source,
             sources::browse_tmdb_backdrops,
             google_images::browse_google_images,
-            google_browser::open_google_images_browser
+            google_browser::open_google_images_inline,
+            google_browser::layout_google_images_inline,
+            google_browser::close_google_images_inline
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");

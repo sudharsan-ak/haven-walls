@@ -8,7 +8,7 @@ import {
 } from "../lib/native";
 import { catalogSources, getCatalogSource } from "../lib/catalog";
 import FullResolutionPreview from "./FullResolutionPreview";
-import ManualImageImport from "./ManualImageImport";
+import GoogleWorkspace from "./GoogleWorkspace";
 import "./OnlineGallery.css";
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -55,7 +55,7 @@ function CatalogThumbnail({ image }: { image: CatalogImage }) {
   );
 }
 
-export default function OnlineGallery({
+function SourceGallery({
   source,
   onSourceChange,
   tmdbToken,
@@ -337,10 +337,6 @@ export default function OnlineGallery({
         )}
       </section>
 
-      {source === "google" && (
-        <ManualImageImport query={query} onPreview={setSelected} />
-      )}
-
       <div className="online-results-heading">
         <div>
           {selectedShow && (
@@ -470,4 +466,21 @@ export default function OnlineGallery({
       )}
     </div>
   );
+}
+
+
+// Google Images alone has nested Browser and API tabs.
+// All other source pages continue to use the existing Gallery view.
+export default function OnlineGallery(props: Props) {
+  if (props.source === "google") {
+    return (
+      <GoogleWorkspace
+        onSourceChange={props.onSourceChange}
+        serpapiKey={props.serpapiKey}
+        onSerpapiKeyChange={props.onSerpapiKeyChange}
+        googleSearchSeed={props.googleSearchSeed}
+      />
+    );
+  }
+  return <SourceGallery {...props} />;
 }

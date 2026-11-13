@@ -179,6 +179,28 @@ This commit adds **two ways to use Google Images**, retaining the existing SerpA
 
 **Test on Windows yourself:** verify the separate Google webview opens, copy an image address, paste it for preview, and select a downloaded local file. Test image grid → original image preview at 4K and a blocked source → thumbnail fallback. Close the modal with Escape or × and check that the main custom title bar remains unchanged. Only the user performs builds/tests.
 
+## Google Images nested workspace (latest PR #2 commit)
+
+The existing top-level Gallery sources remain unchanged. Inside **Google Images**, two nested tabs match the approved interactive HTML prototype:
+
+- **Browser Search** (default): Enter a query and click **Search Google Images**. Google's actual site opens as a **child WebView2 inside Haven Walls' existing main window**, not as a separately titled Windows window. The child should follow the right content panel while it scrolls or resizes, and disappear when changing tabs or opening a preview.
+- **Select an image**: Right-click an image on the real Google page → **Copy image address**, then click **Add copied image** in Haven Walls. It joins the temporary Review selection list. If clipboard access is denied, expand the fallback section to paste a direct HTTPS image URL or choose a downloaded JPG/PNG/WebP file (32 MB maximum). Direct cross-origin DOM/checkbox access is not attempted.
+- **API Search**: SerpApi remains available, with minimum reported resolution controls and the personal API key under collapsible **API settings**. Each API result has + to select and **Inspect original** to preview.
+- **Review selection**: Shared across Google Images' two subtabs. Inspect, remove or clear chosen candidates. No automatic permanent downloads, cache storage, approval, or rotation in PR #2.
+- **Compatibility:** Child webviews are an **unstable Tauri 2 feature**, and this PR enables `tauri/unstable`. Google could block some embedded browsing functions. **Copy Google search link** opens the option to search in an ordinary browser.
+- **Isolation:** Main Tauri capabilities now target the local `main` webview label, rather than granting a whole-window capability to the remote Google child. External web content cannot invoke Haven Walls commands; navigation is restricted to Google HTTPS origins.
+
+### Local acceptance checks for this commit
+
+1. Build on Windows as normal and visit **Gallery → Google Images → Browser Search**. Confirm Google results appear **in the page**, with the normal Haven Walls header/sidebar visible.
+2. Scroll the right content panel, resize the app, switch Browser → API → Browser, and inspect an image modal. Check that the Google child does not overlap the sidebar, header or modal.
+3. Copy image address from a Google image → **Add copied image**. Inspect loaded dimensions, remove it, and try the paste URL and local file alternatives.
+4. Switch to API Search, expand API settings, and search with SerpApi. Click + on an image. Switch back to Browser Search and confirm the same review selection persists.
+5. Verify Bing Daily, Earth View, TheSportsDB, and TMDB remain unaffected.
+6. No library additions or Windows wallpaper changes should occur.
+
+Builds, tests, and merges are carried out only by the user.
+
 ## Google Images access and limitations
 
 Google's older Custom Search JSON API is closed to new developers. Haven Walls therefore uses the documented **SerpApi Google Images API** as an optional web-image discovery adapter, not Google's old API and not direct HTML scraping of Google Search.

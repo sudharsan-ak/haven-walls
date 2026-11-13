@@ -1,10 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Minimal permissions for the Haven Walls main window",
-  "windows": [
-    "main"
-  ],
+  "description": "Native permissions restricted to the local Haven Walls webview; embedded Google content has no IPC access",
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -12,5 +9,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-start-resize-dragging"
+  ],
+  "webviews": [
+    "main"
   ]
 }

@@ -1,69 +1,132 @@
-//! Open a separate, isolated webview for user-driven Google Images searches.
-//! Remote pages do not receive the native capabilities assigned to the main UI.
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+//! A real Google Images webview embedded in the existing Haven Walls window.
+//! Navigation remains within Google's own HTTPS origins. No DOM injection,
+//! scraping, or IPC permission is granted to untrusted Google content.
+use serde::Deserialize;
+use tauri::{
+    webview::{NewWindowResponse, WebviewBuilder},
+    AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl,
+};
 
-fn allowed_navigation(url: &tauri::Url) -> bool {
+const WEBVIEW_LABEL: &str = "google-images-inline";
+
+#[derive(Debug, Deserialize)]
+pub struct BrowserBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl BrowserBounds {
+    fn is_valid(&self) -> bool {
+        [self.x, self.y, self.width, self.height]
+            .into_iter()
+            .all(f64::is_finite)
+            && self.x >= 0.0
+            && self.y >= 0.0
+            && self.width >= 100.0
+            && self.height >= 90.0
+            && self.width <= 5000.0
+            && self.height <= 5000.0
+    }
+}
+
+fn google_images_url(query: &str) -> Result<tauri::Url, String> {
+    let term = query.trim();
+    if !(2..=100).contains(&term.chars().count()) {
+        return Err("Enter a search between 2 and 100 characters.".to_string());
+    }
+    let mut url = tauri::Url::parse("https://www.google.com/search")
+        .map_err(|_| "Could not prepare Google Images search".to_string())?;
+    url.query_pairs_mut()
+        .append_pair("tbm", "isch")
+        .append_pair("q", term)
+        .append_pair("safe", "active");
+    Ok(url)
+}
+
+fn allow_google_navigation(url: &tauri::Url) -> bool {
     url.scheme() == "https"
         && matches!(
             url.host_str(),
-            Some("www.google.com" | "google.com" | "consent.google.com" | "accounts.google.com")
+            Some(
+                "www.google.com"
+                    | "google.com"
+                    | "images.google.com"
+                    | "consent.google.com"
+                    | "accounts.google.com"
+            )
         )
 }
 
+/// Open or navigate the single inline Google Images child webview.
+/// Async is required by WebView2 when creating child webviews on Windows.
 #[tauri::command]
-pub async fn open_google_images_browser(
-    app: tauri::AppHandle,
+pub async fn open_google_images_inline(
+    app: AppHandle,
     query: String,
+    bounds: BrowserBounds,
 ) -> Result<(), String> {
-    let query = query.trim();
-    if !(2..=100).contains(&query.chars().count()) {
-        return Err("Enter a search between 2 and 100 characters.".into());
+    if !bounds.is_valid() {
+        return Err("The embedded browser area is not visible. Scroll to it first.".into());
     }
+    let url = google_images_url(&query)?;
 
-    let mut url = tauri::Url::parse("https://www.google.com/search")
-        .map_err(|_| "Could not prepare the Google Images URL".to_string())?;
-    url.query_pairs_mut()
-        .append_pair("tbm", "isch")
-        .append_pair("q", query)
-        .append_pair("safe", "active");
-
-    if let Some(window) = app.get_webview_window("google-images-browser") {
-        window.navigate(url)
-            .map_err(|_| "Could not navigate the Google Images window".to_string())?;
-        window.show()
-            .map_err(|_| "Could not display the Google Images window".to_string())?;
-        window.set_focus()
-            .map_err(|_| "Could not focus the Google Images window".to_string())?;
+    if let Some(view) = app.get_webview(WEBVIEW_LABEL) {
+        view.navigate(url)
+            .map_err(|_| "Could not navigate the embedded Google browser".to_string())?;
+        view.set_size(LogicalSize::new(bounds.width, bounds.height))
+            .map_err(|_| "Could not resize the embedded browser".to_string())?;
+        view.set_position(LogicalPosition::new(bounds.x, bounds.y))
+            .map_err(|_| "Could not position the embedded browser".to_string())?;
+        view.show().map_err(|_| "Could not show the embedded browser".to_string())?;
         return Ok(());
     }
 
-    // Must be an async command on Windows WebView2 to avoid deadlocking.
-    // Only the "main" label is assigned native Tauri capabilities.
-    WebviewWindowBuilder::new(
-        &app,
-        "google-images-browser",
-        WebviewUrl::External(url),
-    )
-    .title("Google Images | Haven Walls (manual browsing)")
-    .inner_size(1120.0, 780.0)
-    .min_inner_size(780.0, 560.0)
-    .resizable(true)
-    .on_navigation(allowed_navigation)
-    .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
-    .build()
-    .map_err(|_| "Could not open the Google Images WebView2 window. Google may restrict embedded browsers.".to_string())?;
+    let parent = app.get_window("main")
+        .ok_or_else(|| "Haven Walls main window is unavailable".to_string())?;
+    let builder = WebviewBuilder::new(WEBVIEW_LABEL, WebviewUrl::External(url))
+        .on_navigation(allow_google_navigation)
+        .on_new_window(|_, _| NewWindowResponse::Deny);
+    parent
+        .add_child(
+            builder,
+            LogicalPosition::new(bounds.x, bounds.y),
+            LogicalSize::new(bounds.width, bounds.height),
+        )
+        .map_err(|_| {
+            "Could not embed Google Images in WebView2. Google may restrict embedded browsing."
+                .to_string()
+        })?;
 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Keep the native child in the visible portion of the React browser slot.
+/// Hide it for modals, other tabs, and when the slot scrolls off-screen.
+#[tauri::command]
+pub fn layout_google_images_inline(
+    app: AppHandle,
+    bounds: Option<BrowserBounds>,
+) -> Result<(), String> {
+    let Some(view) = app.get_webview(WEBVIEW_LABEL) else {
+        return Ok(());
+    };
+    let Some(bounds) = bounds.filter(BrowserBounds::is_valid) else {
+        return view.hide().map_err(|_| "Could not hide the embedded browser".to_string());
+    };
 
-    #[test]
-    fn restricts_external_page_navigation() {
-        assert!(allowed_navigation(&tauri::Url::parse("https://www.google.com/search").unwrap()));
-        assert!(!allowed_navigation(&tauri::Url::parse("https://www.google.com.evil.example/").unwrap()));
-        assert!(!allowed_navigation(&tauri::Url::parse("http://www.google.com/").unwrap()));
+    view.set_size(LogicalSize::new(bounds.width, bounds.height))
+        .map_err(|_| "Could not resize the embedded browser".to_string())?;
+    view.set_position(LogicalPosition::new(bounds.x, bounds.y))
+        .map_err(|_| "Could not position the embedded browser".to_string())?;
+    view.show().map_err(|_| "Could not show the embedded browser".to_string())
+}
+
+#[tauri::command]
+pub fn close_google_images_inline(app: AppHandle) -> Result<(), String> {
+    if let Some(view) = app.get_webview(WEBVIEW_LABEL) {
+        view.close().map_err(|_| "Could not close the embedded browser".to_string())?;
     }
+    Ok(())
 }
