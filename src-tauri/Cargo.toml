@@ -1,0 +1,23 @@
+[package]
+name = "haven-walls"
+version = "0.1.0"
+description = "Haven Walls: local-first Windows wallpaper manager"
+edition = "2024"
+
+[lib]
+name = "haven_walls_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

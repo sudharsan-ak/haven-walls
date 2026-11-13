@@ -1,0 +1,24 @@
+# Frontend
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+*.local
+.env
+.env.*
+!.env.example
+
+#PLAN & docs
+PLAN
+
+# Rust / Tauri build outputs
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db

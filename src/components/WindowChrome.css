@@ -1,0 +1,106 @@
+.topbar {
+  height: 48px;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #dce5ee;
+  background: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  z-index: 5;
+}
+.titlebar-drag-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-left: 22px;
+  cursor: default;
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 17px;
+  background: linear-gradient(140deg, #5ca9f1, #1767b6);
+}
+.app-version {
+  font-size: 12px;
+  color: #8394a5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.window-actions {
+  display: flex;
+  height: 100%;
+  align-items: stretch;
+  flex: none;
+  margin-left: 22px;
+}
+.window-control {
+  appearance: none;
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #42576c;
+  cursor: default;
+}
+.window-control svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.window-control:hover:not(:disabled) { background: #e7edf4; }
+.window-control:active:not(:disabled) { background: #d3e1ee; }
+.window-control.close-control:hover:not(:disabled) { background: #d6383b; color: #fff; }
+.window-control.close-control:active:not(:disabled) { background: #ba2429; color: #fff; }
+.window-control:focus-visible { outline: 2px solid #397dd6; outline-offset: -3px; }
+.window-control:disabled { opacity: .5; cursor: not-allowed; }
+.window-error {
+  position: relative;
+  z-index: 10;
+  padding: 6px 22px;
+  background: #fff1ee;
+  color: #ad2828;
+  font-size: 11px;
+}
+.window-resize-regions { pointer-events: none; }
+.resize-handle {
+  position: fixed;
+  z-index: 30;
+  pointer-events: auto;
+}
+.resize-handle-north { top: 0; left: 9px; right: 9px; height: 5px; cursor: n-resize; }
+.resize-handle-south { bottom: 0; left: 9px; right: 9px; height: 5px; cursor: s-resize; }
+.resize-handle-east { right: 0; top: 9px; bottom: 9px; width: 5px; cursor: e-resize; }
+.resize-handle-west { left: 0; top: 9px; bottom: 9px; width: 5px; cursor: w-resize; }
+.resize-handle-north-east { right: 0; top: 0; width: 10px; height: 10px; cursor: ne-resize; }
+.resize-handle-north-west { left: 0; top: 0; width: 10px; height: 10px; cursor: nw-resize; }
+.resize-handle-south-east { right: 0; bottom: 0; width: 10px; height: 10px; cursor: se-resize; }
+.resize-handle-south-west { left: 0; bottom: 0; width: 10px; height: 10px; cursor: sw-resize; }
+@media(max-width: 950px) {
+  .app-version { display: none; }
+}
