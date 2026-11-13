@@ -1,7 +1,7 @@
 //! Browsing-only integrations. Each external image retains its provider and rights notice.
 //! A photo being shown here does not authorize caching or applying it as wallpaper.
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ const EARTH_CATALOG: &str =
 const SPORTS_API: &str = "https://www.thesportsdb.com/api/v1/json/123/searchteams.php";
 const TMDB_API: &str = "https://api.themoviedb.org/3";
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogImage {
     pub id: String,
