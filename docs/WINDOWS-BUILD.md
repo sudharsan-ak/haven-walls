@@ -106,7 +106,16 @@ The direct EXE is for testing on the **build PC**. This does **not** establish t
 Start-Process -FilePath $appExe
 ```
 
-For PR #2, check the custom title bar and Dashboard, then open **Gallery** and search Switzerland, Nature landscape, Mountain sunset, and a custom topic. The results area should scroll independently while the custom header and sidebar stay fixed. Confirm that real Wikimedia Commons thumbnails, dimensions and reported license names appear. Open a preview, copy the source link, dismiss with Escape, and check the Sources page. This build must not change the Windows wallpaper.
+For PR #2, verify the custom title bar and Dashboard still work, and the **right content panel scrolls independently** from the sidebar/header. Then open **Gallery** and try all four sources:
+
+1. **Bing Daily:** select it and click **Load recent photos**. Bing's feed is a daily photo catalog, not keyword search.
+2. **Google Earth View:** browse with an empty location; try filtering to `Switzerland` or `India`. The data originates from the Earth View archive.
+3. **TheSportsDB:** search `Golden State Warriors`, then `Mumbai Indians`. Team badges or fan art may be smaller than a wallpaper.
+4. **TMDB:** enter your own **TMDB API Read Access Token**, search `Landman`, select the intended show, then view landscape backdrops. The token is only kept in app memory; it is not persisted.
+5. **Sources:** all four adapters should appear as selectable entries. Unsplash should be labeled **Not enabled** pending provider permission.
+6. Open an image detail preview, copy its source URL, close it with Escape, and verify no Windows wallpaper is downloaded or applied.
+
+Check for empty/error states if a provider returns no images or is unavailable. None of these integrations grants usage rights to third-party artwork.
 
 For a fast development preview (without generating a release EXE):
 
@@ -144,15 +153,15 @@ git log -1 --oneline
 
 **Reference:** https://v2.tauri.app/start/prerequisites/ and https://v2.tauri.app/distribute/windows-installer/
 
-## PR #2 note: update Rust dependency lockfile
+## PR #2: Rust dependency lockfile
 
-This PR adds Rust HTTP dependencies for the first online source. The initial Windows build may update `src-tauri/Cargo.lock`. **Commit that updated lockfile only** to the same PR branch, then push it so GitHub CI uses the same Rust versions as your local test.
+This PR adds Rust HTTP dependencies for the online providers. If your local build updates `src-tauri/Cargo.lock`, **commit that lockfile only** on the same PR branch. GitHub Actions is configured for manual use only; commits and PR updates do **not** trigger builds automatically.
 
 ```powershell
 git add -- src-tauri/Cargo.lock
 git diff --cached --stat
-git commit -m "build: lock Wikimedia search dependencies"
+git commit -m "build: lock online source dependencies"
 git push origin feature/online-wallpaper-discovery
 ```
 
-Don't merge the PR until the Windows CI check and your local test both succeed.
+Don't merge the PR until the four source flows and your local Windows build have been reviewed.

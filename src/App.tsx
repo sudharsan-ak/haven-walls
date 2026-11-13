@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { readHostInfo, type HostInfo } from "./lib/native";
+import { readHostInfo, type HostInfo, type CatalogSourceId } from "./lib/native";
+import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
 import "./App.css";
@@ -11,7 +12,7 @@ type HostState =
   | { kind: "error"; message: string };
 
 const upcoming = [
-  { title: "Online gallery", detail: "Search and preview real Wikimedia Commons images", icon: "▧" },
+  { title: "Online gallery", detail: "Explore photography, TV backdrops and team artwork", icon: "▧" },
   { title: "Set wallpaper", detail: "Apply selected images through Windows", icon: "▣" },
   { title: "Rotation", detail: "Schedules and category preferences", icon: "↻" },
 ];
@@ -19,6 +20,13 @@ const upcoming = [
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
   const [page, setPage] = useState<"dashboard" | "gallery" | "sources">("dashboard");
+  const [gallerySource, setGallerySource] = useState<CatalogSourceId>("bing");
+  const [tmdbToken, setTmdbToken] = useState("");
+
+  function openGallery(source: CatalogSourceId) {
+    setGallerySource(source);
+    setPage("gallery");
+  }
 
   useEffect(() => {
     let active = true;
@@ -64,21 +72,49 @@ export default function App() {
         </aside>
 
         <main className="content">
-          {page === "gallery" ? <OnlineGallery /> : page === "sources" ? (
+          {page === "gallery" ? (
+            <OnlineGallery
+              source={gallerySource}
+              onSourceChange={setGallerySource}
+              tmdbToken={tmdbToken}
+              onTmdbTokenChange={setTmdbToken}
+            />
+          ) : page === "sources" ? (
             <section className="sources-page">
               <div className="eyebrow">Online image providers</div>
               <h1>Sources</h1>
-              <p className="subheading">Our first supported online source is Wikimedia Commons.</p>
-              <div className="provider-panel">
-                <div className="provider-icon" aria-hidden="true">✧</div>
-                <div>
-                  <h2>Wikimedia Commons</h2>
-                  <p>Public image search with dimensions and license metadata. No API key is required.</p>
-                  <p>Searches happen only when you request them. No background downloads.</p>
-                  <button type="button" onClick={() => setPage("gallery")} className="provider-link">Explore wallpapers</button>
-                </div>
+              <p className="subheading">
+                Browse sources individually. Every lookup is manual, with no background downloads.
+              </p>
+              <div className="provider-grid">
+                {catalogSources.map((source) => (
+                  <article className="provider-panel" key={source.id}>
+                    <div className="provider-icon" aria-hidden="true">✧</div>
+                    <div className="provider-info">
+                      <h2>{source.name}</h2>
+                      <p>{source.description}</p>
+                      <p className="provider-description">{source.hint}</p>
+                      <button
+                        type="button"
+                        onClick={() => openGallery(source.id)}
+                        className="provider-link"
+                      >Browse {source.name}</button>
+                    </div>
+                  </article>
+                ))}
+                <article className="provider-panel provider-disabled">
+                  <div className="provider-icon" aria-hidden="true">⊘</div>
+                  <div className="provider-info">
+                    <h2>Unsplash <span className="provider-pending">Not enabled</span></h2>
+                    <p>Unsplash's API requires approval for wallpaper-app use. No API integration is enabled here.</p>
+                    <p className="provider-description">We'll only enable this source if its permitted use is established.</p>
+                  </div>
+                </article>
               </div>
-              <p className="provider-footnote">Each file may have different attribution rules. Browsing it does not automatically approve it for wallpaper use.</p>
+              <p className="provider-footnote">
+                These are previews, not rights-cleared wallpaper downloads. External provider
+                terms, attributions and artwork permissions must be checked before applying images.
+              </p>
             </section>
           ) : (
           <>
@@ -91,11 +127,11 @@ export default function App() {
 
           <section className="hero" aria-labelledby="foundation-title">
             <div className="hero-content">
-              <span className="hero-kicker">Milestone 1 · PR #1</span>
-              <h2 id="foundation-title">The desktop shell is taking shape.</h2>
+              <span className="hero-kicker">Milestone 1 · PR #2</span>
+              <h2 id="foundation-title">Find your next desktop background.</h2>
               <p>
-                This build checks that the React interface can communicate with the
-                Rust application. Gallery browsing is available now. Applying wallpaper comes in PR #3.
+                Browse recent Bing photography, Earth View landscapes, sports team artwork,
+                and TV show backdrops. Applying images as wallpaper is a later milestone.
               </p>
               <div className="host-pill" role="status">
                 <span
@@ -117,7 +153,7 @@ export default function App() {
 
           <div className="section-heading">
             <h2>Coming up</h2>
-            <span>Online gallery is ready to explore</span>
+            <span>Browse sources now. Applying wallpapers is coming later.</span>
           </div>
           <section className="preview-grid" aria-label="Upcoming features">
             {upcoming.map((item) => (
@@ -126,7 +162,7 @@ export default function App() {
                 <h3>{item.title}</h3>
                 <p>{item.detail}</p>
                 {item.title === "Online gallery" ? (
-                  <button type="button" className="gallery-open-link" onClick={() => setPage("gallery")}>Open gallery</button>
+                  <button type="button" className="gallery-open-link" onClick={() => openGallery("bing")}>Open gallery</button>
                 ) : <span className="coming-soon">Planned</span>}
               </article>
             ))}
