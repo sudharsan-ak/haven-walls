@@ -91,6 +91,7 @@ fn parse_images(data: &Value, min_width: u32, min_height: u32) -> Result<Catalog
                     title.chars().take(180).collect()
                 },
                 preview_url: thumbnail.to_string(),
+                original_url: Some(original.to_string()),
                 page_url: page.to_string(),
                 credit: if source.is_empty() { "Source page".into() } else { source.to_string() },
                 rights: "Discovered via Google Images. Copyright and permission are NOT verified; check the original source.".into(),

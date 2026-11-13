@@ -24,8 +24,8 @@ export const catalogSources: SourceDefinition[] = [
   {
     id: "google",
     name: "Google Images",
-    description: "Search Google Images across the web using SerpApi, then filter and rank suitable desktop images.",
-    hint: "Requires a personal SerpApi key. Filters are based on reported dimensions, orientation, and duplicates.",
+    description: "Search with SerpApi or browse Google Images manually in a separate window, without an API key.",
+    hint: "SerpApi is optional for automatic results. Google browser searches and manually selected images do not require a key.",
     action: "Search Google Images",
     defaultQuery: "Golden State Warriors 4K desktop wallpaper",
     suggestions: [

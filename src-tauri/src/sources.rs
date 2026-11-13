@@ -20,6 +20,7 @@ pub struct CatalogImage {
     pub source: String,
     pub title: String,
     pub preview_url: String,
+    pub original_url: Option<String>,
     pub page_url: String,
     pub credit: String,
     pub rights: String,
@@ -96,6 +97,7 @@ fn bing_from_json(data: &Value) -> CatalogResponse {
                 source: "Bing Daily".into(),
                 title: if title.is_empty() { credit.into() } else { title.into() },
                 preview_url: format!("https://www.bing.com{base}_1920x1080.jpg"),
+                original_url: None,
                 page_url,
                 credit: credit.into(),
                 rights: "Bing image rights not independently verified; preview only".into(),
@@ -151,6 +153,7 @@ fn earth_from_json(data: &Value, query: &str) -> CatalogResponse {
                 source: "Google Earth View".into(),
                 title: if title.is_empty() { "Earth View".into() } else { title },
                 preview_url: url.into(),
+                original_url: None,
                 page_url,
                 credit: "Google Earth imagery".into(),
                 rights: "Google imagery rights not verified for third-party wallpaper use; preview only".into(),
@@ -207,6 +210,7 @@ fn sports_from_json(data: &Value) -> CatalogResponse {
                 source: "TheSportsDB".into(),
                 title: value(team, "strTeam").into(),
                 preview_url: preview.into(),
+                original_url: None,
                 page_url: format!("https://www.thesportsdb.com/team/{id}"),
                 credit: format!(
                     "{} · {}",
@@ -261,6 +265,7 @@ fn tmdb_shows_from_json(data: &Value) -> CatalogResponse {
                 source: "TMDB".into(),
                 title: value(show, "name").into(),
                 preview_url: poster_url,
+                original_url: None,
                 page_url: format!("https://www.themoviedb.org/tv/{id}"),
                 credit: format!("TV series · {}", value(show, "first_air_date")),
                 rights: "Select the correct series to view backdrops; artwork rights require verification".into(),
@@ -288,11 +293,13 @@ fn tmdb_backdrops_from_json(id: u64, data: &Value) -> CatalogResponse {
             let Some(preview_url) = tmdb_image_url(value(backdrop, "file_path"), "w780") else {
                 continue;
             };
+            let original_url = tmdb_image_url(value(backdrop, "file_path"), "original");
             items.push(CatalogImage {
                 id: format!("tmdb-{id}-{index}"),
                 source: "TMDB".into(),
                 title: format!("TV backdrop {}", index + 1),
                 preview_url,
+                original_url,
                 page_url: format!("https://www.themoviedb.org/tv/{id}"),
                 credit: "Backdrop via TMDB".into(),
                 rights: "Third-party TV artwork; usage rights require verification".into(),

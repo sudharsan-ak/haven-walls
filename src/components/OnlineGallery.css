@@ -120,3 +120,51 @@
 @media (max-width: 900px) {
   .online-web-discovery { flex-direction: column; align-items: stretch; }
 }
+
+
+/* Full-size image preview: visible validation and explicit thumbnail fallback. */
+.online-hires-preview {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+}
+.online-hires-unavailable {
+  padding: 65px 20px;
+  text-align: center;
+  color: #e6f1fa;
+  font-size: 12px;
+}
+.online-hires-unavailable strong { font-size: 16px; }
+.online-hires-unavailable p { opacity: .8; line-height: 1.5; }
+.online-hires-footer { align-items: flex-start; }
+.online-hires-copy { min-width: 0; flex: 1; }
+.online-hires-actions {
+  display: flex;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+.online-hires-validation {
+  background: #edf5fc;
+  color: #325f82;
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+.online-hires-validation strong { font-weight: 750; }
+.online-hires-validation span { font-weight: 550; }
+.online-hires-validation small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #6c879b;
+}
+.online-hires-warning {
+  color: #985c25 !important;
+}
+@media (max-width: 840px) {
+  .online-hires-actions { width: 100%; }
+}

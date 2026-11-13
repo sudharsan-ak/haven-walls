@@ -7,6 +7,8 @@ import {
   type CatalogSourceId,
 } from "../lib/native";
 import { catalogSources, getCatalogSource } from "../lib/catalog";
+import FullResolutionPreview from "./FullResolutionPreview";
+import ManualImageImport from "./ManualImageImport";
 import "./OnlineGallery.css";
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -74,7 +76,6 @@ export default function OnlineGallery({
   const [selectedShow, setSelectedShow] = useState<CatalogImage | null>(null);
   const [shows, setShows] = useState<CatalogImage[]>([]);
   const [showSearchNote, setShowSearchNote] = useState("");
-  const [copied, setCopied] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [minimumSize, setMinimumSize] = useState<"1080p" | "1440p" | "4K">("1080p");
   const requestId = useRef(0);
@@ -93,17 +94,7 @@ export default function OnlineGallery({
     setSelectedShow(null);
     setShows([]);
     setShowSearchNote("");
-    setCopied(false);
   }, [source, googleSearchSeed]);
-
-  useEffect(() => {
-    if (!selected) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelected(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selected]);
 
   async function lookup(term: string) {
     const clean = term.trim();
@@ -196,16 +187,6 @@ export default function OnlineGallery({
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void lookup(query);
-  }
-
-  async function copySource() {
-    if (!selected) return;
-    try {
-      await navigator.clipboard.writeText(selected.pageUrl);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
   }
 
   return (
@@ -356,6 +337,10 @@ export default function OnlineGallery({
         )}
       </section>
 
+      {source === "google" && (
+        <ManualImageImport query={query} onPreview={setSelected} />
+      )}
+
       <div className="online-results-heading">
         <div>
           {selectedShow && (
@@ -428,7 +413,6 @@ export default function OnlineGallery({
                   void openShow(image);
                 } else {
                   setSelected(image);
-                  setCopied(false);
                 }
               }}
               aria-label={(image.kind === "tv-show" ? "Browse backdrops for " : "Preview ") + image.title}
@@ -478,39 +462,11 @@ export default function OnlineGallery({
       </p>
 
       {selected && (
-        <div
-          className="online-overlay"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setSelected(null);
-          }}
-        >
-          <section
-            className="online-detail"
-            role="dialog"
-            aria-modal="true"
-            aria-label={"Preview " + selected.title}
-          >
-            <div className="online-detail-image">
-              <img src={selected.previewUrl} alt={selected.title} />
-              <button
-                className="online-close"
-                type="button"
-                onClick={() => setSelected(null)}
-                aria-label="Close preview"
-              >×</button>
-            </div>
-            <div className="online-detail-footer">
-              <div>
-                <h2>{selected.title}</h2>
-                <p>{selected.source} · {selected.credit}</p>
-                <p>{selected.rights}</p>
-              </div>
-              <button className="online-secondary" type="button" onClick={() => void copySource()}>
-                {copied ? "Source link copied" : "Copy source link"}
-              </button>
-            </div>
-          </section>
-        </div>
+        <FullResolutionPreview
+          key={selected.previewUrl}
+          image={selected}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );

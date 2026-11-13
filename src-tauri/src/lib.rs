@@ -1,5 +1,6 @@
 mod sources;
 mod google_images;
+mod google_browser;
 
 use serde::Serialize;
 
@@ -27,7 +28,8 @@ pub fn run() {
             get_host_info,
             sources::browse_wallpaper_source,
             sources::browse_tmdb_backdrops,
-            google_images::browse_google_images
+            google_images::browse_google_images,
+            google_browser::open_google_images_browser
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");

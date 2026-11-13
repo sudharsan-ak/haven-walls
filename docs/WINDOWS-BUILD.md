@@ -168,6 +168,17 @@ git push origin feature/online-wallpaper-discovery
 
 Don't merge the PR until the four source flows and your local Windows build have been reviewed.
 
+## PR #2 final additions: original preview and Google browser
+
+This commit adds **two ways to use Google Images**, retaining the existing SerpApi result grid:
+
+1. **Full-resolution preview:** click a SerpApi result. Haven Walls attempts the provider's `original` URL first. If the host rejects hotlinking or the image fails to load, the dialog falls back to the thumbnail and labels it as such. The WebView image element reports the **actual pixels loaded**, with a warning if the image is below 1080p or not a typical landscape aspect ratio. TMDB backdrops likewise request the original provider file. Provider-reported dimensions are shown for comparison. These are browser rendering checks, not independent image-file validation, blur scoring or rights approval.
+2. **Manual Google Images browser:** in **Gallery → Google Images**, choose **Browse Google Images**. A separate Tauri WebView2 window opens Google's own image search for the text in the query field. Google pages have no Haven Walls native API capability; navigation is restricted to approved Google hosts. No automatic scraping of the Google DOM or image extraction takes place. Some Google flows or popups may be blocked in embedded WebView2; if that happens, use **Copy Google search link** and open it in your regular browser.
+3. **Manual selection:** right-click/copy a direct HTTPS image URL on the web, then paste it into **Paste a direct image address → Preview URL**. Or download a file using your browser, then choose it with **Preview image file** (JPG, PNG or WebP, 32 MB maximum). The preview inspects the loaded pixels. Files are previewed via temporary browser object URLs and are **not copied into the Haven Walls wallpaper library**.
+4. **Library metadata preparation:** `src/lib/imageInspection.ts` defines the inspection draft: source, original URL when available, source page, actual/reported dimensions, aspect, attribution, and unverified rights. This is a preview-only structure for future PR #3; there is no Save, Apply or Add to Rotation action yet.
+
+**Test on Windows yourself:** verify the separate Google webview opens, copy an image address, paste it for preview, and select a downloaded local file. Test image grid → original image preview at 4K and a blocked source → thumbnail fallback. Close the modal with Escape or × and check that the main custom title bar remains unchanged. Only the user performs builds/tests.
+
 ## Google Images access and limitations
 
 Google's older Custom Search JSON API is closed to new developers. Haven Walls therefore uses the documented **SerpApi Google Images API** as an optional web-image discovery adapter, not Google's old API and not direct HTML scraping of Google Search.
