@@ -70,9 +70,8 @@ Quit any previous Haven Walls instance before rebuilding. Run:
 ```powershell
 $ErrorActionPreference = "Stop"
 
-# The initial scaffold does not yet include a lockfile. Use npm install
-# for PR #1; later PRs can switch to npm ci once a lockfile is committed.
-npm install
+# Restore exactly the pinned frontend dependencies from package-lock.json.
+npm ci
 if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
 
 npm run build

@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "check": "tsc -b",
+    "build": "npm run check && vite build",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "preview": "vite preview",
     "tauri": "tauri"
   },

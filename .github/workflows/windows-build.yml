@@ -24,11 +24,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-
-      # Bootstrap PR: install creates the lockfile. Commit package-lock.json
-      # and Cargo.lock once dependency resolution is verified on Windows.
       - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Check and build frontend
         run: npm run build
