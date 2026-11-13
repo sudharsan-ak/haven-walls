@@ -1,3 +1,5 @@
+mod commons;
+
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -20,7 +22,7 @@ fn get_host_info() -> HostInfo {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_host_info])
+        .invoke_handler(tauri::generate_handler![get_host_info, commons::search_commons_wallpapers])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");
 }
