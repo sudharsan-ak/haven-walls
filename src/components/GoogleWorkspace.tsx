@@ -535,7 +535,7 @@ export default function GoogleWorkspace({
                 <summary>Alternative: Paste an image address or choose a downloaded file</summary>
                 <div className="gws-manual-grid">
                   <form onSubmit={(event) => { event.preventDefault(); importImageAddress(importUrl); }}>
-                    <label htmlFor="gws-image-url">Direct HTTPS image URL</label>
+                    <label htmlFor="gws-image-url">Image link (direct HTTPS or Google imgres)</label>
                     <div className="gws-manual-input">
                       <input id="gws-image-url" type="url" value={importUrl} maxLength={4000}
                         onChange={(event) => setImportUrl(event.target.value)}

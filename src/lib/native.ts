@@ -21,6 +21,8 @@ export interface CatalogImage {
   previewUrl: string;
   /** Direct original-size image link, when the provider supplies it. */
   originalUrl?: string | null;
+  /** Alternative directly linked source URLs, tried when inspecting image quality. */
+  candidateUrls?: string[];
   pageUrl: string;
   credit: string;
   rights: string;

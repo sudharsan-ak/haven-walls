@@ -21,7 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # in Cargo.lock as dependencies of Tauri/Wry; keep them pinned for COM ABI parity.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.39.1"
-windows = { version = "=0.62.2", features = ["Win32_System_Com"] }
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_Com"] }
 
 [profile.release]
 codegen-units = 1

@@ -1,6 +1,7 @@
 import { useEffect, useState, type SyntheticEvent } from "react";
 import type { CatalogImage } from "../lib/native";
 import { inspectLoadedImage, type InspectedImageDraft } from "../lib/imageInspection";
+import { resolveBestAvailableImage, type ResolvedImage } from "../lib/imageResolution";
 
 interface Props {
   image: CatalogImage;
@@ -17,12 +18,38 @@ function isRemote(url: string): boolean {
  * HTMLImageElement; we never claim provider metadata is a verified 4K image.
  */
 export default function FullResolutionPreview({ image, onClose }: Props) {
-  const original = image.originalUrl || image.previewUrl;
-  const [src, setSrc] = useState(original);
+  const [src, setSrc] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<ResolvedImage | null>(null);
+  const [resolving, setResolving] = useState(true);
   const [fallback, setFallback] = useState(false);
   const [failed, setFailed] = useState(false);
   const [inspection, setInspection] = useState<InspectedImageDraft | null>(null);
   const [copied, setCopied] = useState<"image" | "source" | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setSrc(null);
+    setResolved(null);
+    setResolving(true);
+    setFallback(false);
+    setFailed(false);
+    setInspection(null);
+    void resolveBestAvailableImage(image, controller.signal).then((result) => {
+      if (controller.signal.aborted) return;
+      setResolved(result);
+      setResolving(false);
+      if (result) {
+        setFallback(result.isThumbnailFallback);
+        setSrc(result.url);
+      } else {
+        // Preserve the previously supported preview behavior when the
+        // original host rejects all available image links.
+        setFallback(true);
+        setSrc(image.previewUrl);
+      }
+    });
+    return () => controller.abort();
+  }, [image]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -34,12 +61,16 @@ export default function FullResolutionPreview({ image, onClose }: Props) {
 
   function onLoaded(event: SyntheticEvent<HTMLImageElement>) {
     const element = event.currentTarget;
-    setInspection(inspectLoadedImage(image, element.naturalWidth, element.naturalHeight));
+    setInspection(inspectLoadedImage(
+      { ...image, originalUrl: src || image.originalUrl },
+      element.naturalWidth,
+      element.naturalHeight,
+    ));
     setFailed(false);
   }
 
   function onFailed() {
-    if (!fallback && original !== image.previewUrl) {
+    if (src !== image.previewUrl) {
       setFallback(true);
       setSrc(image.previewUrl);
       setInspection(null);
@@ -58,7 +89,7 @@ export default function FullResolutionPreview({ image, onClose }: Props) {
     }
   }
 
-  const canCopyImage = isRemote(original);
+  const canCopyImage = Boolean(src && isRemote(src));
   return (
     <div className="online-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
@@ -66,7 +97,12 @@ export default function FullResolutionPreview({ image, onClose }: Props) {
       <section className="online-detail" role="dialog" aria-modal="true"
         aria-label={"Image preview: " + image.title}>
         <div className="online-detail-image online-hires-preview">
-          {!failed ? (
+          {resolving ? (
+            <div className="online-hires-unavailable" role="status">
+              <strong>Finding the best available image</strong>
+              <p>Checking the source link and available image sizes…</p>
+            </div>
+          ) : !failed && src ? (
             <img
               src={src}
               alt={image.title}
@@ -91,6 +127,7 @@ export default function FullResolutionPreview({ image, onClose }: Props) {
 
             <div className="online-hires-validation" role="status" aria-live="polite">
               {failed ? "Original and fallback preview are unavailable."
+                : resolving ? "Checking available image URLs for the largest version…"
                 : !inspection ? "Loading image and checking actual pixel dimensions…"
                   : (
                     <>
@@ -114,18 +151,27 @@ export default function FullResolutionPreview({ image, onClose }: Props) {
                   )}
             </div>
 
-            {fallback && (
-              <p className="online-hires-warning">
-                The original image could not be loaded. This is a lower-quality thumbnail,
-                not proof that a usable wallpaper is available.
+            {resolved && (
+              <p className={resolved.isThumbnailFallback ? "online-hires-warning" : ""}>
+                {resolved.note}
               </p>
             )}
+            {fallback && !resolved && (
+              <p className="online-hires-warning">
+                We could not find a usable higher-resolution image at this address.
+                The fallback preview may be small, even if the Google search was for 4K.
+              </p>
+            )}
+            <p>
+              The pixel dimensions above come from the loaded image, not from Google's
+              search label. Pixel count alone does not guarantee sharpness.
+            </p>
             <p>{image.rights}</p>
           </div>
           <div className="online-hires-actions">
             {canCopyImage && (
               <button className="online-secondary" type="button"
-                onClick={() => void copyUrl("image", original)}>
+                onClick={() => { if (src) void copyUrl("image", src); }}>
                 {copied === "image" ? "Image URL copied" : "Copy image URL"}
               </button>
             )}

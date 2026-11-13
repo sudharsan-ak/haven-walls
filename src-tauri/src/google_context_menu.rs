@@ -20,8 +20,8 @@ use webview2_com::{
     take_pwstr,
 };
 use windows::{
-    core::{BOOL, Interface, PWSTR, w},
-    Win32::System::Com::IStream,
+    core::{Interface, PWSTR, w},
+    Win32::{Foundation::BOOL, System::Com::IStream},
 };
 
 pub const IMAGE_PICKED_EVENT: &str = "google-image-picked";
@@ -32,6 +32,7 @@ pub const CONTEXT_MENU_ERROR_EVENT: &str = "google-image-menu-error";
 struct BrowserImagePicked {
     image_url: String,
     page_url: String,
+    link_url: String,
 }
 
 fn valid_remote_image_url(raw: &str) -> bool {
@@ -64,11 +65,15 @@ pub unsafe fn register(
     app: AppHandle,
 ) -> windows::core::Result<()> {
     let webview11 = core.cast::<ICoreWebView2_11>()?;
-    let environment = webview11.Environment()?.cast::<ICoreWebView2Environment9>()?;
 
-    let menu_handler = ContextMenuRequestedEventHandler::create(Box::new(move |_, args| {
-        let Some(args) = args else {
+    let menu_handler = ContextMenuRequestedEventHandler::create(Box::new(move |sender, args| {
+        let (Some(sender), Some(args)) = (sender, args) else {
             return Ok(());
+        };
+        // Acquire the environment within the UI callback rather than
+        // capturing a non-Send COM interface across event handler threads.
+        let environment = unsafe {
+            sender.cast::<ICoreWebView2_11>()?.Environment()?.cast::<ICoreWebView2Environment9>()?
         };
         let target = unsafe { args.ContextMenuTarget()? };
         let mut kind = COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND::default();
@@ -102,6 +107,27 @@ pub unsafe fn register(
             String::new()
         };
 
+        // An image can be wrapped in a Google link containing the actual
+        // original image URL. Pass the link URI separately so the local UI can
+        // unwrap documented imgurl parameters without scraping Google's DOM.
+        let mut has_link = BOOL::default();
+        unsafe { target.HasLinkUri(&mut has_link)?; }
+        let link_url = if has_link.as_bool() {
+            let mut raw_link = PWSTR::null();
+            if unsafe { target.LinkUri(&mut raw_link) }.is_ok() {
+                let link = take_pwstr(raw_link);
+                if valid_remote_image_url(&link) {
+                    link
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
         // Keep the existing right-click menu and append only one native command.
         let menu = unsafe {
             environment.CreateContextMenuItem(
@@ -119,6 +145,7 @@ pub unsafe fn register(
                 BrowserImagePicked {
                     image_url: image_url.clone(),
                     page_url: page_url.clone(),
+                    link_url: link_url.clone(),
                 },
             );
             Ok(())

@@ -251,3 +251,18 @@ The embedded Google Images child WebView2 adds one command to its own native ima
 This is a Windows-specific host-level integration using WebView2's ContextMenuRequested and CustomItemSelected APIs. The external Google page never receives native app permissions, no DOM scraping or script injection occurs, and no selected image is saved to the wallpaper library or rotation.
 
 Only the user pulls, builds, tests and merges PR #2.
+
+
+## Image-link resolution and actual quality verification
+
+When an image is added by the native **Add to Haven Walls review** menu or by pasting its direct HTTPS address, Haven Walls tries to identify its best available source before displaying an inspection preview:
+
+1. If a Google imgres/redirect URL contains an explicit original image address, Haven Walls extracts that address. When WebView2 exposes both an image SourceUri and an enclosing link LinkUri, the source is kept as the preview while the link may provide a better original.
+2. For certain known image providers (currently Pexels, Unsplash image URLs, and TMDB's image CDN), Haven Walls may request a larger **candidate image URL** using their URL-size conventions. An upgraded URL is not assumed to be valid.
+3. **Inspect** checks a limited set of candidates, one by one, through image loading in the desktop webview. It compares the actual naturalWidth/naturalHeight, prefers a suitable high-resolution landscape, and stops early upon loading a 4K image. It does not run a broad crawl or save source images to the wallpaper library.
+4. If all larger candidates fail or are blocked, the preview falls back to the provided image. It reports the pixels actually loaded and explains if only a Google-cached thumbnail was available.
+5. Image pixels reported as 4K do not guarantee genuine optical sharpness; some image hosts resize/upscale small originals. The source's copyright and permissions still need review before any library import.
+
+**Manual Windows checks:** Right-click and add a Google image, then inspect it; paste a direct Pexels or TMDB thumbnail-sized image URL and inspect for a larger source; paste a Google imgres link containing an imgurl parameter and inspect the unwrapped source; try a Google encrypted-thumbnail URL and verify the app warns when no original image is available. Compare the loaded pixels and follow the copy-image/source buttons. Verify multiple additions, dedupe and fallback behavior. The user alone builds and tests.
+
+No external image-analysis service, telemetry, automatic download, wallpaper apply or rotation was added in this commit.
