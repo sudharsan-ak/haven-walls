@@ -22,6 +22,21 @@ export const catalogSources: SourceDefinition[] = [
     suggestions: [],
   },
   {
+    id: "google",
+    name: "Google Images",
+    description: "Search Google Images across the web using SerpApi, then filter and rank suitable desktop images.",
+    hint: "Requires a personal SerpApi key. Filters are based on reported dimensions, orientation, and duplicates.",
+    action: "Search Google Images",
+    defaultQuery: "Golden State Warriors 4K desktop wallpaper",
+    suggestions: [
+      "Golden State Warriors 4K desktop wallpaper",
+      "Landman TV series 4K wallpaper",
+      "Switzerland Alps landscape wallpaper",
+      "Mumbai Indians IPL 4K wallpaper",
+    ],
+    requiresToken: true,
+  },
+  {
     id: "earth",
     name: "Google Earth View",
     description: "Explore aerial landscapes from a community archive of Earth View imagery.",

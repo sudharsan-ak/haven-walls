@@ -22,10 +22,17 @@ export default function App() {
   const [page, setPage] = useState<"dashboard" | "gallery" | "sources">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("bing");
   const [tmdbToken, setTmdbToken] = useState("");
+  const [serpapiKey, setSerpapiKey] = useState("");
+  const [googleSearchSeed, setGoogleSearchSeed] = useState("");
 
   function openGallery(source: CatalogSourceId) {
     setGallerySource(source);
     setPage("gallery");
+  }
+
+  function searchWebForWallpaper(term: string) {
+    setGoogleSearchSeed(term);
+    openGallery("google");
   }
 
   useEffect(() => {
@@ -78,6 +85,10 @@ export default function App() {
               onSourceChange={setGallerySource}
               tmdbToken={tmdbToken}
               onTmdbTokenChange={setTmdbToken}
+              serpapiKey={serpapiKey}
+              onSerpapiKeyChange={setSerpapiKey}
+              googleSearchSeed={googleSearchSeed}
+              onSearchWeb={searchWebForWallpaper}
             />
           ) : page === "sources" ? (
             <section className="sources-page">

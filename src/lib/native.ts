@@ -12,7 +12,7 @@ export async function readHostInfo(): Promise<HostInfo | null> {
   return invoke<HostInfo>("get_host_info");
 }
 
-export type CatalogSourceId = "bing" | "earth" | "sports" | "tmdb";
+export type CatalogSourceId = "bing" | "earth" | "sports" | "tmdb" | "google";
 
 export interface CatalogImage {
   id: string;
@@ -60,4 +60,26 @@ export async function browseTMDBBackdrops(
     throw new Error("TV artwork browsing requires the Haven Walls desktop application.");
   }
   return invoke<CatalogResponse>("browse_tmdb_backdrops", { tvId, tmdbToken });
+}
+
+
+/** Real Google Images results are supplied through a user-owned SerpApi key.
+ * The query and key are sent directly from Rust to SerpApi over HTTPS.
+ * Haven Walls never writes the key or the image catalog to application storage.
+ */
+export async function browseGoogleImages(
+  query: string,
+  serpapiKey: string,
+  minWidth: number,
+  minHeight: number,
+): Promise<CatalogResponse> {
+  if (!isTauri()) {
+    throw new Error("Google Images browsing requires the Haven Walls Windows application.");
+  }
+  return invoke<CatalogResponse>("browse_google_images", {
+    query,
+    serpapiKey,
+    minWidth,
+    minHeight,
+  });
 }
