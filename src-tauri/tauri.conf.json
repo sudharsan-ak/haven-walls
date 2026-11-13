@@ -18,7 +18,10 @@
         "height": 750,
         "minWidth": 840,
         "minHeight": 600,
-        "backgroundColor": "#F4F7FA"
+        "backgroundColor": "#F4F7FA",
+        "decorations": false,
+        "resizable": true,
+        "shadow": true
       }
     ],
     "security": {
@@ -27,7 +30,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico"]
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ]
   }
 }

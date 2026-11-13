@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { readHostInfo, type HostInfo } from "./lib/native";
+import WindowChrome from "./components/WindowChrome";
 import "./App.css";
 
 type HostState =
@@ -40,13 +41,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="identity">
-          <div className="brand-mark" aria-hidden="true">H</div>
-          <span>Haven Walls</span>
-        </div>
-        <span className="app-version">Foundation · v0.1.0</span>
-      </header>
+      <WindowChrome />
 
       <div className="layout">
         <aside className="sidebar" aria-label="Application navigation">

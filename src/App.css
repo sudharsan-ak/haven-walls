@@ -10,19 +10,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 760px; }
 .app { min-height: 100vh; background: #f4f7fa; }
-.topbar {
-  height: 56px; display: flex; align-items: center;
-  justify-content: space-between; padding: 0 24px;
-  border-bottom: 1px solid #dce5ee; background: #fff;
-}
-.identity { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; }
-.brand-mark {
-  width: 30px; height: 30px; display: grid; place-items: center;
-  border-radius: 9px; color: white; font-size: 17px;
-  background: linear-gradient(140deg, #5ca9f1, #1767b6);
-}
-.app-version { color: #8394a5; font-size: 12px; }
-.layout { display: grid; grid-template-columns: 222px minmax(0, 1fr); min-height: calc(100vh - 56px); }
+.layout { display: grid; grid-template-columns: 222px minmax(0, 1fr); min-height: calc(100vh - 48px); }
 .sidebar {
   background: #eaf2f8; padding: 26px 15px 18px;
   border-right: 1px solid #dce5ee; display: flex; flex-direction: column;

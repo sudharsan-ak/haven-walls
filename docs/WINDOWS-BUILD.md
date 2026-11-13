@@ -107,7 +107,7 @@ The direct EXE is for testing on the **build PC**. This does **not** establish t
 Start-Process -FilePath $appExe
 ```
 
-For PR #1, verify the Haven Walls window opens, the basic dashboard renders, and the status says **Haven Walls v0.1.0 · windows**. Upcoming gallery/rotation controls are only placeholders.
+For PR #1, verify the Haven Walls window opens with **one custom white Haven Walls titlebar** (no orange Windows bar), the basic dashboard renders, and the status says **Haven Walls v0.1.0 · windows**. Drag the titlebar to move the window, test minimize / maximize / restore / close, and resize by dragging the window edges. Upcoming gallery/rotation controls are only placeholders.
 
 For a fast development preview (without generating a release EXE):
 
