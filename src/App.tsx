@@ -6,7 +6,9 @@ import OnlineGallery from "./components/OnlineGallery";
 import SettingsPage from "./components/SettingsPage";
 import LibraryPage from "./components/LibraryPage";
 import LibraryImportDialog from "./components/LibraryImportDialog";
+import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
 import type { CatalogImage } from "./lib/native";
+import type { LibraryWallpaper } from "./lib/wallpaperLibrary";
 import "./App.css";
 
 type HostState =
@@ -30,6 +32,7 @@ export default function App() {
   const [serpapiKey, setSerpapiKey] = useState("");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
+  const [applyCandidate, setApplyCandidate] = useState<LibraryWallpaper | null>(null);
   const [libraryRevision, setLibraryRevision] = useState(0);
 
   function openGallery(source: CatalogSourceId) {
@@ -217,10 +220,21 @@ export default function App() {
           images={importCandidates}
           onClose={() => setImportCandidates(null)}
           onImported={() => setLibraryRevision((count) => count + 1)}
+          onSetNow={(image) => {
+            setImportCandidates(null);
+            setApplyCandidate(image);
+          }}
           onOpenLibrary={() => {
             setImportCandidates(null);
             setPage("library");
           }}
+        />
+      )}
+      {applyCandidate && (
+        <ApplyWallpaperDialog
+          image={applyCandidate}
+          onClose={() => setApplyCandidate(null)}
+          onApplied={() => setLibraryRevision((count) => count + 1)}
         />
       )}
     </div>
