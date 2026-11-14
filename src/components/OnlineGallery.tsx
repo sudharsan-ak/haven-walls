@@ -22,6 +22,7 @@ type Props = {
   serpapiKey: string;
   onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
+  lensRequest: { imageId: string; requestId: number } | null;
   onSearchWeb: (query: string) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
   blockingDialogOpen: boolean;
@@ -491,6 +492,7 @@ export default function OnlineGallery(props: Props) {
         serpapiKey={props.serpapiKey}
         onSerpapiKeyChange={props.onSerpapiKeyChange}
         googleSearchSeed={props.googleSearchSeed}
+        lensRequest={props.lensRequest}
         onSaveToLibrary={props.onSaveToLibrary}
         blockingDialogOpen={props.blockingDialogOpen}
       />

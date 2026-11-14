@@ -602,6 +602,59 @@ pub fn get_library_wallpaper_image(
     Ok(format!("data:{mime};base64,{}", BASE64.encode(data)))
 }
 
+
+/// Returns only the user-selected managed Library image. The full file bytes
+/// never pass through the React WebView or a Google image URL.
+pub(crate) fn lens_wallpaper_bytes(app: &AppHandle, id: &str) -> Result<(Vec<u8>, &'static str), String> {
+    const MAX_GOOGLE_LENS_BYTES: u64 = 20 * 1024 * 1024;
+    let state = app.state::<StorageLock>();
+    let _lock = storage_guard(&state)?;
+    let (paths, conn, _) = connected(app)?;
+    let (filename, recorded_size) = file_record(&conn, &paths, id)?
+        .ok_or_else(|| "This image is no longer in the Library.".to_string())?;
+    if recorded_size > MAX_GOOGLE_LENS_BYTES {
+        return Err("Google Lens only accepts images under 20 MB. Choose a smaller image for the manual upload.".into());
+    }
+    let bytes = fs::read(paths.library().join(filename))
+        .map_err(|e| format!("Could not read the saved wallpaper: {e}"))?;
+    if bytes.len() as u64 > MAX_GOOGLE_LENS_BYTES {
+        return Err("The saved image exceeds Google Lens's 20 MB upload limit.".into());
+    }
+    let (_, format) = image_format(&bytes)?;
+    let mime = match format.as_str() {
+        "jpg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        _ => return Err("The saved image format is not supported by Google Lens.".into()),
+    };
+    Ok((bytes, mime))
+}
+
+/// Explicit fallback: show this exact managed file to the user, without
+/// copying or uploading it. Explorer is opened only after another user click.
+#[tauri::command]
+pub fn show_library_wallpaper_for_lens(app: AppHandle, id: String) -> Result<(), String> {
+    let state = app.state::<StorageLock>();
+    let _lock = storage_guard(&state)?;
+    let (paths, conn, _) = connected(&app)?;
+    let (filename, _) = file_record(&conn, &paths, &id)?
+        .ok_or_else(|| "This image is no longer in the Library.".to_string())?;
+    let full_path = paths.library().join(filename);
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", full_path.display()))
+            .spawn()
+            .map_err(|e| format!("Could not show the saved image in Explorer: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = full_path;
+        Err("File Explorer is only available on Windows.".into())
+    }
+}
+
 #[tauri::command]
 pub fn set_wallpaper_favorite(
     app: AppHandle,

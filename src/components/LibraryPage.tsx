@@ -19,11 +19,11 @@ type Filter = "all" | "favorites" | "4k" | "portrait";
 interface Props {
   revision: number;
   onDiscover: () => void;
-  onSearchWeb: (query: string) => void;
+  onReverseSearch: (image: LibraryWallpaper) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
 }
 
-export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveToLibrary }: Props) {
+export default function LibraryPage({ revision, onDiscover, onReverseSearch, onSaveToLibrary }: Props) {
   const [items, setItems] = useState<LibraryWallpaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -244,21 +244,6 @@ export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveT
     onSaveToLibrary([candidate]);
   }
 
-  function searchImagesFor(image: LibraryWallpaper) {
-    const sourcePath = validHttpsSource(image.sourcePage)
-      ? new URL(image.sourcePage).pathname.split("/").pop() || "" : "";
-    const originalPath = validHttpsSource(image.originalUrl)
-      ? new URL(image.originalUrl).pathname.split("/").pop() || "" : "";
-    const descriptive = [sourcePath, originalPath, image.title]
-      .map((value) => value.replace(/\.(html?|jpe?g|png|webp|avif)$/i, "")
-        .replace(/[-_]+/g, " ").replace(/\b\d{3,5}x\d{3,5}\b/gi, "").trim())
-      .find((value) => value.length > 10) || image.title;
-    selectedId.current = null;
-    setSelected(null);
-    // Explicit user search opens our existing free embedded Google Images tab.
-    onSearchWeb((descriptive + " 4K wallpaper").slice(0, 100));
-  }
-
   async function openFreeVisualSearch(image: LibraryWallpaper) {
     setSourceError("");
     setVisualSearchNote("");
@@ -469,15 +454,15 @@ export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveT
                     <strong>Need more sources? Free search options</strong>
                     <div className="hwl-source-links">
                       <button type="button" className="hwl-secondary"
-                        onClick={() => searchImagesFor(selected)}>
-                        Search Google Images in Haven Walls
+                        onClick={() => onReverseSearch(selected)}>
+                        Reverse search this image in Google Lens
                       </button>
                       <button type="button" className="hwl-secondary"
                         onClick={() => void openFreeVisualSearch(selected)}>
                         Reverse image search with Bing ↗
                       </button>
                     </div>
-                    <small>Google search uses the photo's available title/filename. Bing searches visually after you paste an image link or choose a file. Inspect results before importing; no paid API or background upload.</small>
+                    <small>Clicking Google Lens sends the actual saved wallpaper to Google for visual matching, not its title or filename. If Google's automatic upload fails, you can choose the saved file manually. No paid key required.</small>
                     {visualSearchNote && <p role="status" className="hwl-search-note">{visualSearchNote}</p>}
                   </div>
                 </div>

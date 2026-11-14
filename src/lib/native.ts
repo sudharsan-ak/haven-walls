@@ -108,6 +108,29 @@ export async function openGoogleImagesInline(
   await invoke<void>("open_google_images_inline", { query, bounds });
 }
 
+/** Opens a Google-owned Lens results page in our isolated native WebView2. */
+export async function openGoogleLensInline(
+  url: string, bounds: GoogleInlineBounds,
+): Promise<void> {
+  if (!isTauri()) throw new Error("Google Lens requires the Haven Walls Windows app.");
+  await invoke<void>("open_google_lens_inline", { url, bounds });
+}
+
+/** Sends the exact saved Library image to Google's Lens upload endpoint.
+ * Runs only after a click on "Reverse search this image".
+ * Google may reject its non-public upload endpoint; use the manual fallback.
+ */
+export async function uploadLibraryWallpaperToLens(imageId: string): Promise<string> {
+  if (!isTauri()) throw new Error("Google Lens requires the Haven Walls Windows app.");
+  return invoke<string>("upload_library_wallpaper_to_lens", { imageId });
+}
+
+/** Opens Windows Explorer at the saved managed image for manual Lens upload. */
+export async function showLibraryWallpaperForLens(id: string): Promise<void> {
+  if (!isTauri()) throw new Error("Windows Explorer requires the desktop app.");
+  await invoke<void>("show_library_wallpaper_for_lens", { id });
+}
+
 /** Moves, resizes, or hides the Google Images child WebView2. */
 export async function layoutGoogleImagesInline(
   bounds: GoogleInlineBounds | null,

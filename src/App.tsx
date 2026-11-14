@@ -31,6 +31,7 @@ export default function App() {
   const [tmdbToken, setTmdbToken] = useState("");
   const [serpapiKey, setSerpapiKey] = useState("");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
+  const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
   const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
   const [applyCandidate, setApplyCandidate] = useState<LibraryWallpaper | null>(null);
   const [libraryRevision, setLibraryRevision] = useState(0);
@@ -41,7 +42,15 @@ export default function App() {
   }
 
   function searchWebForWallpaper(term: string) {
+    setLensRequest(null);
     setGoogleSearchSeed(term);
+    openGallery("google");
+  }
+
+  function reverseSearchSavedImage(image: LibraryWallpaper) {
+    setLensRequest((previous) => ({
+      imageId: image.id, requestId: (previous?.requestId || 0) + 1,
+    }));
     openGallery("google");
   }
 
@@ -99,7 +108,7 @@ export default function App() {
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               onDiscover={() => openGallery("bing")}
-              onSearchWeb={searchWebForWallpaper}
+              onReverseSearch={reverseSearchSavedImage}
               onSaveToLibrary={setImportCandidates} />
           ) : page === "gallery" ? (
             <OnlineGallery
@@ -110,6 +119,7 @@ export default function App() {
               serpapiKey={serpapiKey}
               onSerpapiKeyChange={setSerpapiKey}
               googleSearchSeed={googleSearchSeed}
+              lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}
               onSaveToLibrary={setImportCandidates}
               blockingDialogOpen={importCandidates !== null || applyCandidate !== null}

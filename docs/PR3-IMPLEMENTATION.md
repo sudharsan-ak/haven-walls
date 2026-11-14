@@ -387,3 +387,58 @@ the Google search or losing the review selection.
 
 No Rust, dependencies or Cargo.lock changes. This must be confirmed with
 the Windows build. No assistant build, test, GitHub Actions or merge was run.
+
+
+## Google Lens: actual saved-image reverse search (targeted PR #3 follow-up)
+
+**User requirement:** "Search Google Images in Haven Walls" must NOT
+quietly search the photo title. This is a visual reverse-image lookup using
+the exact saved managed Library file.
+
+- Library -> saved wallpaper -> **Reverse search this image in Google Lens**
+  navigates to the existing embedded Google WebView2 workspace.
+- On that explicit click alone, the Rust host securely reads the managed
+  Library original (validated SHA-based file ID/path) and submits its bytes to
+  Google's Lens image upload endpoint. No filename/title keyword query, no
+  app-owned proxy, no provider-key requirement and no background monitoring.
+- The upload uses the image's actual JPEG/PNG/WebP bytes, limited to 20 MB
+  by Google Lens. The managed Library original is never altered or deleted.
+- If Google returns a valid Google-owned visual-search results address, it is
+  loaded inside the same isolated child WebView2, where the user can inspect
+  visually matching sources, pick a promising result, and use the existing
+  manual review and high-resolution import pipeline.
+- The Lens upload endpoint is not a supported public API and may reject
+  app-side requests or change without notice. On failure the embedded browser
+  opens Google's normal image search homepage and displays instructions:
+  click the camera icon -> Upload a file -> select your saved image.
+  **Show saved image in Explorer** reveals the exact existing file only after
+  another user click. We do NOT claim an upload succeeded on failure.
+- External search is explicit: clicking Reverse search shares image content
+  with Google. No image is uploaded at app startup, during import, or while
+  browsing Library. Google controls its own search results and data handling.
+- The original source-checking, 4K pixel verification, visual matching,
+  duplicate protections and separate higher-quality Library saves are
+  unchanged. Bing remains an optional, manual alternative.
+- No new Rust dependency crates or Cargo.lock changes.
+
+### User-owned Windows acceptance
+
+1. Library -> open a saved photo -> **Reverse search this image in Google Lens**.
+   Verify the app no longer searches using the photo's title/filename.
+2. Confirm the selected managed image is sent only after your click. If Google
+   accepts, visually similar results appear in the embedded browser. If not,
+   the UI must say the upload failed and offer manual image selection.
+3. In the fallback, click **Show saved image in Explorer**, then use Google's
+   upload-file chooser. The file should be the exact saved wallpaper.
+4. Try two different saved photos in sequence and ensure correct image
+   selection; opening the same one again should start a new lookup.
+5. Confirm regular keyword searches, Google right-click review selection,
+   Save to Library, source-quality checks, and Set Now still work.
+6. Test a local-only image with no public URL: reverse search should still
+   use its saved file. Confirm error handling if Google rejects >20 MB files.
+7. No original Library image, active Windows wallpaper or history record
+   should change as a side effect of reverse searching.
+
+**Important:** Google's non-public Lens upload behavior and actual WebView2
+navigation require local Windows validation before merge. No assistant
+Windows build, workflow run or merge was performed.

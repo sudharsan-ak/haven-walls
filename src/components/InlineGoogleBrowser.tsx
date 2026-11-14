@@ -3,6 +3,7 @@ import {
   closeGoogleImagesInline,
   layoutGoogleImagesInline,
   openGoogleImagesInline,
+  openGoogleLensInline,
   setGoogleImagesInlineZoom,
   type GoogleInlineBounds,
 } from "../lib/native";
@@ -10,6 +11,7 @@ import {
 interface Props {
   query: string;
   searchRevision: number;
+  lensNavigation: { url: string; revision: number } | null;
   obscured: boolean;
   zoom: number;
   viewportHeight: number;
@@ -20,7 +22,7 @@ interface Props {
  * Cross-origin content never becomes DOM data available to this React component.
  */
 export default function InlineGoogleBrowser({
-  query, searchRevision, obscured, zoom, viewportHeight, onError,
+  query, searchRevision, lensNavigation, obscured, zoom, viewportHeight, onError,
 }: Props) {
   const slotRef = useRef<HTMLDivElement>(null);
   const hasView = useRef(false);
@@ -138,6 +140,40 @@ export default function InlineGoogleBrowser({
     };
   // Only an explicit search changes searchRevision; typing must not navigate.
   }, [searchRevision]);
+
+
+  // Results are loaded by the browser after Rust uploads the actual file.
+  // Do not search with the image title. The homepage route is only a manual
+  // fallback when the upload endpoint is blocked by Google.
+  useEffect(() => {
+    if (!lensNavigation) return;
+    let canceled = false;
+    let pendingFrame = 0;
+    slotRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
+    pendingFrame = requestAnimationFrame(async () => {
+      if (canceled || disposing.current) return;
+      const bounds = measure();
+      if (!bounds) {
+        onError("Scroll the Google Lens browser area into view and retry.");
+        return;
+      }
+      try {
+        await openGoogleLensInline(lensNavigation.url, bounds);
+        if (canceled || disposing.current) return;
+        hasView.current = true;
+        setLoaded(true);
+        await setGoogleImagesInlineZoom(zoomRef.current);
+        scheduleLayout();
+      } catch (reason) {
+        if (!canceled) onError(reason instanceof Error ? reason.message : String(reason));
+      }
+    });
+    return () => {
+      canceled = true;
+      if (pendingFrame) cancelAnimationFrame(pendingFrame);
+    };
+  // Only a new Lens navigation action should trigger this.
+  }, [lensNavigation?.revision]);
 
   return (
     <div className="gws-browser-viewport" style={{ height: viewportHeight }}>

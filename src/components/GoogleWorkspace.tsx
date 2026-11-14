@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { listen } from "@tauri-apps/api/event";
 import {
   browseGoogleImages,
+  uploadLibraryWallpaperToLens,
+  showLibraryWallpaperForLens,
   type CatalogImage,
   type CatalogSourceId,
 } from "../lib/native";
@@ -16,6 +18,7 @@ interface Props {
   serpapiKey: string;
   onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
+  lensRequest: { imageId: string; requestId: number } | null;
   onSaveToLibrary: (images: CatalogImage[]) => void;
   blockingDialogOpen: boolean;
 }
@@ -167,12 +170,15 @@ function ApiResultCard({
 
 export default function GoogleWorkspace({
   onSourceChange, serpapiKey, onSerpapiKeyChange, googleSearchSeed,
-  onSaveToLibrary, blockingDialogOpen,
+  lensRequest, onSaveToLibrary, blockingDialogOpen,
 }: Props) {
   const [mode, setMode] = useState<SearchMode>("browser");
   const [browserQuery, setBrowserQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [apiQuery, setApiQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [browserRevision, setBrowserRevision] = useState(0);
+  const [lensNavigation, setLensNavigation] = useState<{ url: string; revision: number } | null>(null);
+  const [lensStatus, setLensStatus] = useState<{ kind: "uploading" | "results" | "manual"; message: string } | null>(null);
+  const [lensFallbackNote, setLensFallbackNote] = useState("");
   const [browserZoom, setBrowserZoom] = useState(100);
   const [browserHeight, setBrowserHeight] = useState(490);
   const [browserError, setBrowserError] = useState("");
@@ -194,7 +200,7 @@ export default function GoogleWorkspace({
   const blobUrls = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!googleSearchSeed) return;
+    if (!googleSearchSeed || lensRequest) return;
     setBrowserQuery(googleSearchSeed);
     setApiQuery(googleSearchSeed);
     // Searches opened by an explicit action in Sports/Library must actually run,
@@ -208,6 +214,60 @@ export default function GoogleWorkspace({
     blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
     blobUrls.current.clear();
   }, []);
+
+  useEffect(() => {
+    if (!lensRequest) return;
+    let active = true;
+    setMode("browser");
+    setLensFallbackNote("");
+    setBrowserError("");
+    setLensStatus({
+      kind: "uploading",
+      message: "Uploading the actual saved Library image to Google Lens for visual matching…",
+    });
+    // Each request comes from an explicit click on a saved Library image.
+    // No automatic background searches, keyword substitutions or public
+    // image URL uploads. Rust reads the managed bytes and posts them to Google.
+    void uploadLibraryWallpaperToLens(lensRequest.imageId)
+      .then((url) => {
+        if (!active) return;
+        setLensStatus({
+          kind: "results",
+          message: "Google Lens accepted the image and returned a results address. Review visual matches in the embedded browser.",
+        });
+        setLensNavigation((old) => ({ url, revision: (old?.revision || 0) + 1 }));
+      })
+      .catch((reason) => {
+        if (!active) return;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        setLensStatus({
+          kind: "manual",
+          message: "Google did not accept automatic upload: " + message +
+            " Use Google's Upload a file control below and select your saved image.",
+        });
+        setLensNavigation((old) => ({
+          url: "https://www.google.com/imghp", revision: (old?.revision || 0) + 1,
+        }));
+      });
+    return () => { active = false; };
+  }, [lensRequest?.requestId]);
+
+  async function revealLensImage() {
+    if (!lensRequest) return;
+    try {
+      await showLibraryWallpaperForLens(lensRequest.imageId);
+      setLensFallbackNote("The saved image is selected in Explorer. In Google Lens choose Upload a file, then select that image.");
+    } catch (reason) {
+      setLensFallbackNote(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  function startNewKeywordSearch(term: string) {
+    setLensStatus(null);
+    setLensNavigation(null);
+    setBrowserQuery(term);
+    setBrowserRevision((value) => value + 1);
+  }
 
   // Windows WebView2 reports the selected image URL when the user chooses
   // our native context-menu command. No script is injected into Google.
@@ -397,6 +457,8 @@ export default function GoogleWorkspace({
     }
     setBrowserError("");
     setBrowserNote("");
+    setLensStatus(null);
+    setLensNavigation(null);
     setBrowserRevision((value) => value + 1);
   }
 
@@ -510,12 +572,25 @@ export default function GoogleWorkspace({
               {["Golden State Warriors 4K wallpaper", "Landman TV series background",
                 "Switzerland Alps landscape wallpaper"].map((term) => (
                 <button className="online-chip" type="button" key={term}
-                  onClick={() => { setBrowserQuery(term); setBrowserRevision((v) => v + 1); }}>
+                  onClick={() => startNewKeywordSearch(term)}>
                   {term.startsWith("Golden") ? "Warriors" : term.startsWith("Landman") ? "Landman" : "Swiss Alps"}
                 </button>
               ))}
             </div>
-            {browserError && <p className="gws-error" role="alert">{browserError}</p>}
+            {lensStatus && (
+              <div className="gws-info" role="status">
+                <strong>Reverse image search · Google Lens</strong>
+                <p>{lensStatus.message}</p>
+                {lensStatus.kind === "manual" && (
+                  <button type="button" className="online-secondary"
+                    onClick={() => void revealLensImage()}>
+                    Show saved image in Explorer
+                  </button>
+                )}
+                {lensFallbackNote && <p>{lensFallbackNote}</p>}
+              </div>
+            )}
+            {browserError && <p className="gws-error" role="alert">{browserError}</p>
             {browserNote && <p className="gws-info" role="status">{browserNote}</p>}
           </div>
 
@@ -550,6 +625,7 @@ export default function GoogleWorkspace({
                   </div>
                 </div>
                 <InlineGoogleBrowser query={browserQuery} searchRevision={browserRevision}
+                  lensNavigation={lensNavigation}
                   obscured={preview !== null || blockingDialogOpen} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
