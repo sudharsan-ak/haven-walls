@@ -165,3 +165,50 @@ fn protect(_: &[u8]) -> Result<Vec<u8>, String> {
 fn unprotect(_: &[u8]) -> Result<String, String> {
     Err("Persistent API credentials require Windows DPAPI.".into())
 }
+
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use crate::local_storage::{DataPaths, StorageMode};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn dpapi_encrypts_and_recovers_credential_for_current_windows_user() {
+        let key = "test-key-not-a-real-credential";
+        let encrypted = protect(key.as_bytes()).expect("Windows DPAPI encryption should succeed");
+        assert_ne!(encrypted, key.as_bytes());
+        let restored = unprotect(&encrypted).expect("Windows DPAPI decryption should succeed");
+        assert_eq!(restored, key);
+    }
+
+    #[test]
+    fn credential_persists_across_database_reopens_and_schema_initialization() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH)
+            .expect("system clock").as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "haven-walls-credential-test-{}-{stamp}", std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create temporary data root");
+        let paths = DataPaths { root: root.clone(), mode: StorageMode::AppData };
+        {
+            let conn = app_settings::open_database(&paths).expect("create DB");
+            let value = protect(b"test-persisted-key").expect("encrypt key");
+            conn.execute(
+                "INSERT INTO api_credentials(provider,ciphertext) VALUES (?1, ?2)",
+                params!["serpapi", value],
+            ).expect("write encrypted credential");
+        }
+        {
+            // Normal app restart/rebuild runs open_database again. CREATE TABLE
+            // IF NOT EXISTS must not overwrite encrypted credentials.
+            let conn = app_settings::open_database(&paths).expect("reopen DB");
+            let cipher = read_encrypted(&conn, "serpapi")
+                .expect("read DB").expect("credential should still exist");
+            assert_eq!(unprotect(&cipher).expect("decrypt"), "test-persisted-key");
+            assert!(status(&conn).expect("status").serpapi);
+        }
+        fs::remove_dir_all(root).expect("remove temporary test DB");
+    }
+}
