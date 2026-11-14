@@ -1,0 +1,60 @@
+.hws-settings-page { width: 100%; padding-bottom: 42px; max-width: 1300px; }
+.hws-settings-summary { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: 0 0 20px; }
+.hws-settings-summary > div { border: 1px solid #dce7f0; background: #fff; border-radius: 11px; padding: 15px 17px; min-width: 0; }
+.hws-settings-summary span, .hws-storage-totals span { display: block; font-size: 10px; color: #8196a8; margin-bottom: 7px; }
+.hws-settings-summary strong { font-size: 12px; color: #224562; }
+.hws-settings-panel { background: white; border: 1px solid #dae5ee; border-radius: 14px; padding: 22px 24px; margin-bottom: 15px; box-shadow: 0 8px 23px #18375308; }
+.hws-settings-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid #e7eef4; padding-bottom: 15px; margin-bottom: 17px; }
+.hws-settings-section-header h2 { font-size: 17px; margin: 0 0 5px; color: #253a53; }
+.hws-settings-section-header p { font-size: 11px; color: #849aaf; margin: 0; line-height: 1.6; }
+.hws-settings-phase, .hws-settings-live { border-radius: 8px; padding: 6px 9px; font-size: 10px; white-space: nowrap; font-weight: 680; background: #f0f5fb; color: #6389a6; }
+.hws-settings-live { background: #e7f5ef; color: #36785b; }
+.hws-settings-fields { display: grid; gap: 20px; margin: 16px 0; }
+.hws-settings-fields.two { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.hws-settings-field { display: flex; flex-direction: column; gap: 8px; font-size: 11px; min-width: 0; }
+.hws-settings-field > strong { font-size: 12px; color: #263c54; }
+.hws-settings-field > small, .hws-settings-note { font-size: 10px; line-height: 1.6; color: #8499aa; }
+.hws-settings-field input:not([type=checkbox]):not([type=range]),
+.hws-settings-field select, .hws-settings-field textarea { background: #fbfdff; color: #294660; padding: 11px 12px; border-radius: 9px; border: 1px solid #cfdfeb; font: inherit; font-size: 12px; width: 100%; max-width: 100%; }
+.hws-settings-field textarea { resize: vertical; }
+.hws-settings-field input[type=range] { width: 100%; accent-color: #1d78bc; }
+.hws-settings-toggle { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 0; border-top: 1px solid #edf1f5; cursor: pointer; }
+.hws-settings-toggle strong { display: block; font-size: 12px; color: #2a4058; }
+.hws-settings-toggle small { display: block; margin-top: 4px; color: #8599ab; font-size: 10px; line-height: 1.5; }
+.hws-settings-toggle input[type=checkbox] { width: 18px; height: 18px; accent-color: #1c78bc; cursor: pointer; flex: none; }
+.hws-settings-note { margin: 12px 0 0; }
+.hws-storage-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; }
+.hws-storage-totals > div { padding: 13px 14px; border-radius: 9px; border: 1px solid #e1eaf1; background: #f8fbfd; }
+.hws-storage-totals strong { font-size: 13px; color: #315874; }
+.hws-settings-secondary, .hws-settings-primary {
+  border: 1px solid #cddfed; border-radius: 9px; padding: 11px 15px;
+  background: white; font: inherit; font-size: 11px; font-weight: 700;
+  color: #1969a4; cursor: pointer;
+}
+.hws-settings-primary { background: #176eb2; color: #fff; border-color: #176eb2; min-width: 145px; }
+.hws-settings-secondary:hover:not(:disabled) { background: #e8f4fd; }
+.hws-settings-primary:hover:not(:disabled) { background: #0d5b9c; }
+.hws-settings-secondary:disabled,.hws-settings-primary:disabled { cursor: default; opacity: .52; }
+.hws-storage-location { border-top: 1px solid #e8eef4; padding-top: 17px; margin-top: 15px; }
+.hws-storage-location > strong { display: block; font-size: 12px; margin-bottom: 8px; }
+.hws-storage-location > code { background: #eff6fb; border-radius: 7px; padding: 10px 12px; font-size: 11px; display: block; overflow-wrap: anywhere; color: #326282; }
+.hws-storage-location > small { color: #8197a7; display: block; font-size: 10px; line-height: 1.7; margin-top: 10px; }
+.hws-storage-switch { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.hws-storage-switch label { display: inline-flex; gap: 6px; align-items: center; color: #476b89; font-size: 11px; cursor: pointer; }
+.hws-storage-switch input[type=radio] { accent-color: #176eb2; }
+.hws-image-types { display: flex; gap: 10px; flex-wrap: wrap; }
+.hws-image-types label { display: inline-flex; align-items: center; gap: 6px; background: #f2f8fd; border: 1px solid #dce9f3; border-radius: 9px; padding: 8px 13px; font-size: 11px; cursor: pointer; }
+.hws-image-types input { accent-color: #1674bc; }
+.hws-privacy-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 0; font-size: 12px; border-bottom: 1px solid #edf2f6; }
+.hws-privacy-row:last-child { border: 0; }
+.hws-privacy-row strong { font-weight: 650; color: #334d63; }
+.hws-privacy-row span { color: #8298a9; text-align: right; font-size: 11px; }
+.hws-settings-actions { position: sticky; bottom: -42px; background: #f5f8fbeF; backdrop-filter: blur(9px); padding: 16px 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; border-top: 1px solid #dfe7ef; }
+.hws-settings-status { flex: 1; font-size: 11px; color: #8196aa; }
+.hws-settings-status p { margin: 0; }
+.hws-settings-error { color: #a74135 !important; }
+.hws-settings-success { color: #27795d; }
+.hws-settings-loading { border: 1px solid #dfe9f2; border-radius: 11px; background: white; padding: 50px 22px; color: #7a92a8; font-size: 13px; text-align: center; }
+.hws-settings-page input:focus-visible, .hws-settings-page select:focus-visible, .hws-settings-page textarea:focus-visible, .hws-settings-page button:focus-visible { outline: 2px solid #1e84cc; outline-offset: 2px; }
+@media (max-width: 1050px) { .hws-storage-totals { grid-template-columns: repeat(2,minmax(0,1fr)); } .hws-settings-fields.two { grid-template-columns: 1fr; } }
+@media (max-width: 780px) { .hws-settings-panel { padding: 16px; } .hws-settings-summary { grid-template-columns: 1fr; } .hws-settings-section-header { flex-wrap: wrap; } .hws-settings-actions { flex-wrap: wrap; } }

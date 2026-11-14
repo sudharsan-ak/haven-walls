@@ -3,7 +3,12 @@ import { readHostInfo, type HostInfo, type CatalogSourceId } from "./lib/native"
 import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
-import WallpaperDisplayPrefs from "./components/WallpaperDisplayPrefs";
+import SettingsPage from "./components/SettingsPage";
+import LibraryPage from "./components/LibraryPage";
+import LibraryImportDialog from "./components/LibraryImportDialog";
+import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
+import type { CatalogImage } from "./lib/native";
+import type { LibraryWallpaper } from "./lib/wallpaperLibrary";
 import "./App.css";
 
 type HostState =
@@ -14,26 +19,43 @@ type HostState =
 
 const upcoming = [
   { title: "Online gallery", detail: "Explore photography, TV backdrops and team artwork", icon: "▧" },
-  { title: "Set wallpaper", detail: "Apply selected images through Windows", icon: "▣" },
+  { title: "Wallpaper Library", detail: "Save, favorite and organize images offline", icon: "▣" },
+  { title: "Set wallpaper", detail: "Apply saved images to Windows displays", icon: "▤" },
   { title: "Rotation", detail: "Schedules and category preferences", icon: "↻" },
 ];
 
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
-  const [page, setPage] = useState<"dashboard" | "gallery" | "sources">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "library" | "sources" | "settings">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("bing");
   const [tmdbToken, setTmdbToken] = useState("");
   const [serpapiKey, setSerpapiKey] = useState("");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
+  const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
+  const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
+  const [applyCandidate, setApplyCandidate] = useState<LibraryWallpaper | null>(null);
+  const [libraryRevision, setLibraryRevision] = useState(0);
 
   function openGallery(source: CatalogSourceId) {
+    setLensRequest(null);
     setGallerySource(source);
     setPage("gallery");
   }
 
   function searchWebForWallpaper(term: string) {
+    setLensRequest(null);
     setGoogleSearchSeed(term);
     openGallery("google");
+  }
+
+  function reverseSearchSavedImage(image: LibraryWallpaper) {
+    setLensRequest((previous) => ({
+      imageId: image.id, requestId: (previous?.requestId || 0) + 1,
+    }));
+    // Do not call openGallery here: that is a normal browse action and
+    // deliberately clears pending one-shot Lens uploads.
+    setGallerySource("google");
+    setPage("gallery");
   }
 
   useEffect(() => {
@@ -68,28 +90,49 @@ export default function App() {
             <button type="button" onClick={() => setPage("dashboard")}
               className={"nav-item " + (page === "dashboard" ? "current" : "")}
               aria-current={page === "dashboard" ? "page" : undefined}>⌂ <span>Dashboard</span></button>
-            <button type="button" onClick={() => setPage("gallery")}
+            <button type="button" onClick={() => {
+              setLensRequest(null);
+              setPage("gallery");
+            }}
               className={"nav-item " + (page === "gallery" ? "current" : "")}
               aria-current={page === "gallery" ? "page" : undefined}>▧ <span>Gallery</span></button>
+            <button type="button" onClick={() => setPage("library")}
+              className={"nav-item " + (page === "library" ? "current" : "")}
+              aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
             <button type="button" onClick={() => setPage("sources")}
               className={"nav-item " + (page === "sources" ? "current" : "")}
               aria-current={page === "sources" ? "page" : undefined}>✧ <span>Sources</span></button>
-            <span className="nav-item upcoming">⚙ <span>Settings</span><small>Soon</small></span>
+            <button type="button" onClick={() => setPage("settings")}
+              className={"nav-item " + (page === "settings" ? "current" : "")}
+              aria-current={page === "settings" ? "page" : undefined}>⚙ <span>Settings</span></button>
           </nav>
           <div className="sidebar-footer">Local-first. No accounts or telemetry.</div>
         </aside>
 
         <main className="content">
-          {page === "gallery" ? (
+          {page === "settings" ? (
+            <SettingsPage />
+          ) : page === "library" ? (
+            <LibraryPage revision={libraryRevision}
+              onDiscover={() => openGallery("bing")}
+              onReverseSearch={reverseSearchSavedImage}
+              onSaveToLibrary={setImportCandidates} />
+          ) : page === "gallery" ? (
             <OnlineGallery
               source={gallerySource}
-              onSourceChange={setGallerySource}
+              onSourceChange={(source) => {
+                setLensRequest(null);
+                setGallerySource(source);
+              }}
               tmdbToken={tmdbToken}
               onTmdbTokenChange={setTmdbToken}
               serpapiKey={serpapiKey}
               onSerpapiKeyChange={setSerpapiKey}
               googleSearchSeed={googleSearchSeed}
+              lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}
+              onSaveToLibrary={setImportCandidates}
+              blockingDialogOpen={importCandidates !== null || applyCandidate !== null}
             />
           ) : page === "sources" ? (
             <section className="sources-page">
@@ -123,7 +166,11 @@ export default function App() {
                   </div>
                 </article>
               </div>
-              <WallpaperDisplayPrefs />
+              <div className="provider-footnote">
+                Wallpaper caption and photo-credit preferences are now in
+                <button type="button" className="gallery-open-link"
+                  onClick={() => setPage("settings")}>Settings</button>.
+              </div>
               <p className="provider-footnote">
                 These are previews, not rights-cleared wallpaper downloads. External provider
                 terms, attributions and artwork permissions must be checked before applying images.
@@ -135,16 +182,16 @@ export default function App() {
           <h1>Welcome to Haven Walls</h1>
           <p className="subheading">
             A better way to discover and manage desktop wallpapers.
-            Online wallpaper discovery is our first priority.
+            Save wallpapers locally and apply them to Windows. Automatic rotation is coming later.
           </p>
 
           <section className="hero" aria-labelledby="foundation-title">
             <div className="hero-content">
-              <span className="hero-kicker">Milestone 1 · PR #2</span>
+              <span className="hero-kicker">Milestone 2 · PR #3</span>
               <h2 id="foundation-title">Find your next desktop background.</h2>
               <p>
                 Browse recent Bing photography, Earth View landscapes, sports team artwork,
-                and TV show backdrops. Applying images as wallpaper is a later milestone.
+                and TV show backdrops. Save approved images to your offline Library.
               </p>
               <div className="host-pill" role="status">
                 <span
@@ -165,8 +212,8 @@ export default function App() {
           </section>
 
           <div className="section-heading">
-            <h2>Coming up</h2>
-            <span>Browse sources now. Applying wallpapers is coming later.</span>
+            <h2>Get started</h2>
+            <span>Find, save and apply a wallpaper directly to your Windows desktop.</span>
           </div>
           <section className="preview-grid" aria-label="Upcoming features">
             {upcoming.map((item) => (
@@ -176,6 +223,11 @@ export default function App() {
                 <p>{item.detail}</p>
                 {item.title === "Online gallery" ? (
                   <button type="button" className="gallery-open-link" onClick={() => openGallery("bing")}>Open gallery</button>
+                ) : item.title === "Wallpaper Library" || item.title === "Set wallpaper" ? (
+                  <button type="button" className="gallery-open-link"
+                    onClick={() => setPage("library")}>
+                    {item.title === "Set wallpaper" ? "Set wallpaper" : "Open Library"}
+                  </button>
                 ) : <span className="coming-soon">Planned</span>}
               </article>
             ))}
@@ -184,6 +236,28 @@ export default function App() {
           )}
         </main>
       </div>
+      {importCandidates && (
+        <LibraryImportDialog
+          images={importCandidates}
+          onClose={() => setImportCandidates(null)}
+          onImported={() => setLibraryRevision((count) => count + 1)}
+          onSetNow={(image) => {
+            setImportCandidates(null);
+            setApplyCandidate(image);
+          }}
+          onOpenLibrary={() => {
+            setImportCandidates(null);
+            setPage("library");
+          }}
+        />
+      )}
+      {applyCandidate && (
+        <ApplyWallpaperDialog
+          image={applyCandidate}
+          onClose={() => setApplyCandidate(null)}
+          onApplied={() => setLibraryRevision((count) => count + 1)}
+        />
+      )}
     </div>
   );
 }

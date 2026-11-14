@@ -1,0 +1,712 @@
+# PR #3: Wallpaper Library, Windows Integration and Settings
+
+**Branch:** feature/wallpaper-library-settings
+**Target:** main, after PR #2 merger
+**Windows builds, tests and merges:** User only. Assistant pushes source commits.
+
+## One PR, three combined commits
+
+### Commit 1: Settings and persistent storage foundation (this commit)
+- Replace the inactive Settings sidebar item with a functional Settings page.
+- Rust-managed SQLite metadata with an explicit schema version.
+- Save defaults for wallpaper fit, minimum resolution, 4K preference, credit/caption, image types, duplicate sensitivity, excluded terms and sources, and the 2 GB default cache limit.
+- One-time migration of PR #2's caption/credit choices into SQLite.
+- Separate app-owned directories: discovery cache, pending review, managed library, active wallpaper working copies and offline reserve.
+- Actual storage root and per-class usage numbers in Settings.
+- Safe manual **Clear temporary cache** removes only disposable discovery files.
+- AppData or portable-folder mode: migration into a **new empty destination**, staging/copy verification, old data retained. Refuse to overwrite an existing destination.
+- No telemetry or stored provider tokens.
+
+**Not active yet:** downloads/imports, file decoding, duplicate detection, automatic cache eviction, Windows wallpaper setting, history recording and rotation. The Settings screen marks those choices as stored defaults for subsequent commits.
+
+### Commit 2: Image importing, downloads, library and caching (pushed)
+
+- New Library sidebar page with offline originals, saved thumbnails, Favorites, search and 4K/portrait filters.
+- Import local JPG/PNG/WebP images up to 32 MB from Library or Google Browser Search; originals on your computer remain untouched.
+- Add to Library in Gallery image inspection and Save selected to Library in Google Images' shared Review selection.
+- Explicit image-rights confirmation, custom source/credit note, optional quality and similarity overrides.
+- Bounded HTTPS-only Rust downloads with public DNS pinning, no proxies/redirects, 32 MB/22-second limits, actual image decoding and format/dimension verification. Some image hosts block direct downloads, so a user-downloaded local image is the supported fallback.
+- SHA-256 exact duplicates, configurable perceptual dHash similarity detection, favorites and manually confirmed removal of managed copies.
+- Settings quality, image type, and exclusion preferences now apply when importing into the Library.
+- Managed library files and offline thumbnails are not disposable discovery cache. Cache cleanup leaves managed files and favorites untouched.
+- **Later:** automatic discovery-cache eviction, Windows wallpaper apply, applied-image protection and history belong in Commit 3. The 2 GB cache preference is for disposable discovery previews, not the managed Library.
+
+### Commit 3: Windows wallpaper application and final integration
+- Apply approved wallpapers to Windows desktop using documented native APIs, default fit and supported monitor targets.
+- Protected active working copies, Set Now from Library/review, history.
+- Photo-credit/caption overlays only on prepared copies where source rights permit.
+- Dashboard integration, error handling and settings polish.
+
+**After PR #3:** rotation schedules, system tray, lock screen, watched folders and advanced automated behavior.
+
+## Local validation for Commit 1 (USER ONLY)
+
+In PowerShell in the Haven Walls repository:
+
+~~~powershell
+git switch feature/wallpaper-library-settings
+git pull --ff-only origin feature/wallpaper-library-settings
+npm ci
+npm run tauri build -- --bundles nsis
+Start-Process .\src-tauri\target\release\haven-walls.exe
+~~~
+
+The new rusqlite dependency bundles SQLite. Cargo may update src-tauri/Cargo.lock on the user's Windows machine. Review changes and commit only that updated lockfile to the existing feature branch. Do not ignore lockfiles or commit provider credentials.
+
+1. Click **Settings** in the left sidebar. Confirm the page is functional, with the existing custom title bar/sidebar unchanged and the right pane scrolling.
+2. Edit fit, minimum resolution, prefer 4K, credits, captions, allowed image types, duplicate sensitivity, cache limit and excluded keywords/sources. Click **Save settings**. Navigate away/back and relaunch: saved values should persist.
+3. Remove all allowed image types and save. The Rust backend must reject it. Try an invalid cache limit; the backend must reject it too. Discard should restore saved values.
+4. Verify the initial AppData Local root and its subfolders: data/library, data/cache/discovery, data/cache/pending, data/active, data/reserve and data/haven-walls.sqlite3.
+5. **Clear temporary cache** should be safe and report empty when no image files are present. It must not delete managed, active, reserve or pending files.
+6. Optional portable test: choose **Portable folder beside EXE**, save other edits first, click **Move storage**, confirm and inspect the new HavenWallsData folder beside the EXE. Original AppData data is retained for recovery.
+7. A migration into a destination that already contains data is intentionally rejected. Do not delete or overwrite either location manually just to satisfy this test.
+8. Check Sources: the old separate caption/credit switches are replaced by a link to Settings. Verify Bing, Earth View, TheSportsDB, TMDB and Google Images discovery are unaffected.
+9. There should be no automatic image download, Windows wallpaper change or background rotation from opening/saving Settings.
+
+## Important safety/ownership rules
+
+- SQLite owns settings and metadata; wallpaper bytes live separately in the app-owned folders.
+- Disposable cache is separate from managed images, active images and offline reserve.
+- The user’s local original files are never changed by routine cleanup.
+- A settings value being stored does not mean an unfinished feature has been activated.
+- The application has no telemetry and no cloud account requirement.
+- The user handles all builds, testing and merging. Feedback after each combined commit stays in this PR.
+
+
+## Commit 2: Local Windows acceptance checks (USER ONLY)
+
+~~~powershell
+git switch feature/wallpaper-library-settings
+git pull --ff-only origin feature/wallpaper-library-settings
+npm ci
+npm run tauri build -- --bundles nsis
+Start-Process .\src-tauri\target\release\haven-walls.exe
+~~~
+
+**Cargo.lock:** This commit adds new Rust image, hashing and base64 dependencies. The first local Cargo build may update src-tauri/Cargo.lock. Review its changes and commit the updated lockfile only on this feature branch. Never merge without successful user-owned Windows testing.
+
+1. **Library:** New sidebar entry and initially empty Library with Discover Wallpapers and Import local images controls.
+2. **Local import:** Select one or several JPEG/PNG/WebP photos in Library. Confirm you reviewed their source permissions, then Save to Library. Open the Library and confirm thumbnail, title, true dimensions, source and file size.
+3. **Persistence:** Relaunch Haven Walls. Verify saved images, Favorites and original previews are still accessible without network access.
+4. **Online source:** In Gallery → Bing Daily or Google Earth View, inspect a photo and select Add to Library. Confirm rights. Original image downloads only work if the host permits it. If blocked, use an authorized downloaded local file.
+5. **Google Images:** Browser Search → add photos to Review selection and use Save selected to Library. Repeat with API Search. Confirm individual success/errors for a batch and duplicate prevention.
+6. **Quality:** In Settings set 4K minimum, then attempt to save a smaller image. It must reject it unless you explicitly allow smaller images in the import dialog. Disable an image format to ensure it is rejected too.
+7. **Duplicates:** Reimport the same file twice. It must not create two Library items. With similar photos, review the similarity warning and optional manual override.
+8. **Favorites:** Mark an image favorite, filter favorites, search by title/credit/provider, restart and confirm the favorite persists.
+9. **Deletion:** Open a saved image and select Remove from Library. Cancel first; nothing should change. Confirm to remove only the managed file and thumbnail. Your original file in Downloads or Pictures must remain intact.
+10. **Cache:** In Settings verify managed library usage grows after imports, while Clear temporary cache does not touch Library or Favorites.
+11. **Boundary:** The Library's Set as wallpaper action remains disabled. Actual Windows desktop application, monitors, credits/captions and history are part of Commit 3.
+
+**Limitations:** The Library currently loads up to 500 items without pagination; provider image hotlink restrictions and licensing may prevent downloading; automatic original-image licensing checks do not exist. Pixel dimensions do not prove a photograph is sharp or free of upscaling. No background downloads, telemetry or wallpaper rotation are enabled.
+
+
+## Commit 2 follow-up: saved source links, preview layout, Quick Save
+
+### User-facing changes
+- **Library preview:** The full-size saved image remains contained within the dialog. The source information scrolls in its own middle region, and the favorite/remove/Set as wallpaper buttons remain visible in a separate bottom footer. Test landscape and tall portrait photos on a maximized window and a smaller window.
+- **Open source page** opens the original page URL in the system's default browser. **Open original image** opens the original *online* image URL. These buttons are disabled and explain why when a saved Library record has no URL, especially for a local import. Opening the saved full-quality Library copy still works offline.
+- Source opening is a validated host-level command. It only accepts HTTPS URLs and uses the Tauri opener Rust plugin, not target=_blank navigation inside WebView2. Any failure should be displayed inside the Library preview.
+- **Settings → Library & importing → Quick Save to Library** is **enabled by default**. It is persisted in SQLite, including for users with an existing DB thanks to serde defaults. Clicking Add to Library opens a brief progress dialog and begins the user-requested import without a second confirmation click.
+- Turn Quick Save **off** to restore the old per-image rights confirmation and manual metadata controls.
+- If a Quick Save import fails because of minimum resolution or similarity policy, choose **Adjust quality or duplicate options and retry** inside the result dialog. Exact-duplicate and image validation rules continue to apply.
+- Quick Save does **not** represent a verified license or authorization. The Rust backend checks the saved preference and records that no per-image rights attestation was made. Attribution and source restrictions still apply.
+
+### Acceptance checks (user runs local build)
+1. Open an existing saved landscape image in Library; the full image and source metadata must be visible, with action buttons along the bottom. Resize the app smaller and verify the source details can scroll without cutting off the actions. Repeat with a portrait image.
+2. For an online image saved with URLs, click **Open source page** and **Open original image** separately. They must open in your normal default browser. If source links are missing, buttons are disabled and an explanation is visible.
+3. Check Settings → Library & importing. **Quick Save to Library** should be checked by default. Click Add to Library on a new image, and verify the import begins on its own, with a result and **Open Library** button. Restart the app to confirm the preference persists.
+4. Turn Quick Save off and save. Try another import; the original rights confirmation checkbox and optional metadata/quality controls should return.
+5. With Quick Save on, try importing a low-resolution or similar image. The normal validation must still reject it. Use the retry options to deliberately override only a minimum-resolution or similarity warning.
+6. Make sure the offline managed Library image still opens after disconnecting the internet. Opening an *online* source naturally requires network access.
+
+This follow-up adds the Rust Tauri opener plugin. A local Cargo build may update src-tauri/Cargo.lock; review and commit the expected lockfile changes to the same PR #3 branch. Do not run CI or merge without local validation.
+
+
+## Commit 3: Windows desktop wallpaper application and finish
+
+This commit adds manual Windows wallpaper application and current application history. The app **does not** automatically discover, rotate or change wallpapers without an explicit user action.
+
+### Implementation
+
+- Library thumbnails/cards and saved-image inspection show **Set Now / Set as Windows wallpaper** actions.
+- After a successful Gallery import, the results dialog also offers **Set Now** without requiring a separate trip to the Library.
+- The native Rust host uses Windows IDesktopWallpaper (Windows 10 and Windows 11) and retrieves actual attached monitor IDs and screen dimensions. Choose all displays or an individual attached display.
+- Supported Windows positioning: Smart Fit (choose Fill or Fit by aspect), Fill, Fit, Center, Stretch, and Span. Span is for **all displays only**. Windows exposes positioning as a shared desktop setting, so changing fit may also affect other monitors' presentation.
+- The original saved image remains unchanged. Each apply creates a JPEG working copy in app-owned active storage, and records an active assignment protected against Library deletion/temporary cache clearing. Old working copies are deleted only after a successful replacement and database history update.
+- Caption/photo-credit overlays are prepared on the saved image in the local webview and saved into the working copy. The user can toggle them per apply; saved defaults live in Settings. The image is not upscaled; overlays on very large originals may be prepared at up to 4K canvas size for bounded memory.
+- Source/photographer credits are shown if known. Unverified creator names are not invented. Source metadata remains in SQLite independently of whether an overlay is visible.
+- Application events are stored in SQLite. Library shows recent history and a label saying **Last applied by Haven Walls**. External changes made via Windows Settings are not yet detected/reconciled; configurable external-change behavior belongs to a later automation milestone.
+- No new Rust crates are introduced: the Windows bindings are already in Cargo.lock. This commit adds Windows API feature flags in Cargo.toml; your most recent user-pushed Cargo.lock commit is preserved. Future PR commits that change Rust dependency resolution must include Cargo.lock in the same commit.
+
+### User-owned Windows verification
+
+1. Pull the PR #3 branch, build and install it locally using the established commands above. Before testing, note your current Windows desktop wallpaper so you can restore it if desired.
+2. Open **Library**, choose a saved photo and click **Set Now** or **Set as Windows wallpaper**. In the new dialog, select **All displays**, **Fill**, and Apply. The actual Windows desktop background should change. The Library original image must be unchanged.
+3. Try Fit and Center with an image whose aspect ratio differs from the display. Look for expected letterboxing/cropping. Try Smart Fit. Try Span only with All displays.
+4. If you have more than one attached monitor, select a specific display and apply. Verify the chosen display receives the new wallpaper and that monitor IDs survive reopening the apply dialog. Windows positioning is global, not independently configurable per monitor.
+5. Switch on **Show caption** and **Show photo credit**. Apply, view the actual desktop and check the lower-right text. Disable both and reapply, confirming the text disappears from the newly generated working copy. The saved Library image should stay unchanged.
+6. Visit Settings → Storage & Cache. Active copies should now consume some space. Clear temporary cache and verify the desktop wallpaper and managed Library files are unaffected.
+7. In Library, try removing a wallpaper that is currently assigned to Windows. The app should prevent deleting its managed copy until you apply another wallpaper.
+8. Apply another image, then check **Last applied by Haven Walls** and **Recent wallpaper history**. Quit/reopen the app: history should still be present. Windows may keep an image as the current wallpaper even while Haven Walls is closed.
+9. From **Gallery → Add to Library**, use **Set Now** in the import results; verify the manual apply dialog opens after the image has been safely saved.
+10. Check that Google Images, Bing Daily, Google Earth View, sports, TMDB, Library favorites, Quick Save, and Settings still work. No external browser/window should appear without an action.
+11. If Windows itself changes the wallpaper outside Haven Walls, the Library label intentionally says **Last applied by Haven Walls**, not that it has rechecked the actual current desktop image.
+
+### Boundaries and recovery
+
+- No scheduled rotation, background discovery, automatic downloading, notifications, lock-screen updates or startup tray behavior in PR #3. Those are future work.
+- Caption rendering uses a generated active copy; it does not license or modify the source image. Review applicable copyright/attribution requirements.
+- For any Windows API error, check the message shown in the apply dialog and your current monitor configuration. Use Windows Settings → Personalization → Background to restore a previous wallpaper.
+- The assistant does not build, test, trigger GitHub Actions or merge. The user owns Windows validation. Leave PR #3 as a draft until tested.
+
+## Final quality fix: highest accessible original before saving
+
+The earlier online importer saved the first successfully downloaded image candidate. That meant a 740 × 494 Google/website preview could win even if a larger version existed. This change replaces that behavior for user-selected online imports.
+
+- **Probe before persisting:** Check selected and derived image URLs plus a small number of original-source webpage metadata URLs. Compare actual decoded dimensions and save only the largest verified matching image, never the first response.
+- **Original webpage image metadata:** Limited standard og:image, twitter:image, image_src and image-preload metadata is checked from the recorded original website. Google search pages are not scraped. Candidates from the website must visually resemble the selected photo to avoid substituting an unrelated image.
+- **Higher-resolution link candidates:** Provider-specific larger-image URLs, width/height query-parameter variations, and WordPress thumbnail filenames are tested. A larger URL does not establish real 4K without decoding.
+- **Safety:** Only user-initiated public HTTPS requests, revalidation of limited redirects, public DNS pinning, response size limits, and actual image decoding. If the original is unavailable, clearly report it rather than silently saving a preview.
+- **Settings enforcement:** Minimum resolution applies to decoded pixels for landscape and portrait images; Quick Save does not bypass quality rules. A deliberate smaller-image override remains available.
+- **Visible Library quality:** Show Below 1080p, 1080p, 1440p or 4K+ labels based on saved pixels. Existing saved images remain untouched. Open one and choose Find higher-quality version. You may paste the original source website or a full-size image URL; a successful upgrade is saved separately.
+- **Windows quality warning:** Set Now checks the chosen monitor and saved minimum resolution. Undersized images require explicit Apply anyway approval rather than silently looking blurred on the desktop.
+- **No fabricated resolution:** Actual larger pixels may still be upscaled by a provider; no app promises of optical sharpness or invented 4K content.
+
+### Local Windows quality checks (user only)
+
+1. From Google Images, select a thumbnail whose original source is known to have a high-quality version. Save to Library and check the reported candidate count and actual stored pixels. A real full-size file should win if it is accessible from the recorded source.
+2. If the original site does not provide a downloadable full-size image through its metadata or source links, the app should reject a below-minimum version rather than claiming it is 4K. Paste an authorized original-image URL as a recovery path.
+3. Try Bing Daily or TMDB with a known high-resolution original and verify the saved image and 1080p, 1440p and 4K+ badges.
+4. Inspect an older 740 × 494 saved image, choose Find higher-quality version, and optionally paste the original webpage or full-size image URL. A successful larger image should be added as a separate Library item; the old one remains.
+5. Try Set Now on the low-resolution image. Confirm the warning and disabled Apply button until you deliberately check Apply lower-resolution image anyway. A genuine 4K source should not warn on 1080p/1440p displays.
+6. Verify Favorites, Quick Save, source-link actions, active wallpaper protection and existing Gallery sources.
+
+This change uses the existing Rust dependencies and does not modify Cargo.lock. No assistant builds, tests, CI or merges were run; Windows validation is required.
+
+## PR #3 UI cleanup: in-app confirmations and verified source display
+
+This follow-up addresses two issues seen in Windows screenshots:
+
+- Default JavaScript confirm popups displayed as tauri.localhost says. Library removal, storage movement, discovery cache clearing, league removal, and restoring league defaults now use a reusable in-app confirmation modal. Cancel never mutates data.
+- Google search titles can say "4K" or "8K" even though the selected Google preview only loads at 800 × 450. Titles are not original-file pixel verification.
+- Image inspection now verifies original source pixels using the native Rust resolver, without writing an image to the Library. A larger accessible original is reported using its actual decoded pixels, separately from the smaller preview dimensions rendered in the dialog.
+- The native inspector creates a bounded 1600 × 1000 preview for UI display, without relabeling its dimensions as the original. Add to Library and Copy Image URL prefer the verified original URL if accessible.
+- If the full-size original is inaccessible or missing from the supplied URL/source metadata, the UI reports that only preview pixels were verified. Some sites require a separate direct download URL. Haven Walls never infers actual image resolution from the Google title.
+- No new Rust crates, no automatic discovery, and no modification to Cargo.lock.
+
+### Windows acceptance checks for UI cleanup
+
+1. Library: click Remove from Library. A Haven Walls modal with Cancel and Remove wallpaper should appear, not a tauri.localhost says popup. Cancel leaves the item; confirm removes only a managed copy. Active wallpapers remain protected.
+2. Settings: confirm clearing a nonempty temporary cache and moving storage both show the styled modal. Cancel preserves the current state.
+3. Sports league sources: remove a custom league or reset defaults. The same confirmation UI appears and Cancel changes nothing.
+4. Google Images Browser Search: inspect a result titled 4K/8K whose image preview is small. Before source checking finishes, its loaded preview should show 800 × 450 or whatever was actually loaded.
+5. Where a publicly accessible original is found, the app reports Verified downloaded source with the original decoded dimensions and a separate rendered-preview size. Add to Library uses its original URL.
+6. If the original cannot be accessed or is offered only via a separate source-site download, the app must not claim the image is 4K. The user can visit the source site to obtain an authorized full-size file.
+7. Verify Gallery, Quick Save, favorites, library removal protection, manual Set Now, wallpaper fit, captions, and source links still work.
+
+Only the user builds and tests on Windows. No assistant CI, builds or merges.
+
+## Source-resolution downloads: explicit publisher links
+
+**Problem reproduced:** The publisher's Switzerland page offers a 3840x2160 file,
+but the embedded Google Images thumbnail loaded at only 800x450. A Google
+search title mentioning 4K or 8K is not proof of the downloaded file's quality.
+
+**Publisher example:**
+- Web page:
+  https://wallpapershome.com/nature/meadows/switzerland-5k-4k-wallpaper-8k-hd-mountains-sunset-hills-5303.html
+- Explicit 4K image linked by that page:
+  https://wallpapershome.com/images/wallpapers/switzerland-wallpaper-3840x2160-8k-nature-5303.jpg
+
+**Resolver changes:**
+- On **user-initiated** inspect/import only, fetch the recorded original publisher webpage
+  over a validated public HTTPS connection with bounded HTML.
+- Parse same-site image/download links that advertise a real resolution such as
+  3840x2160, 2560x1440, 1920x1080 or "Download original". Rank advertised
+  resolution for **probe order only**, never as verified pixels.
+- WallpapersHome's download paths are additionally constrained to match the
+  numeric wallpaper ID from the original page (5303 in both filenames). This
+  protects against selecting unrelated images and allows a site-identified
+  4K original to replace a differently compressed preview.
+- For other supported original websites, retain visual-similarity verification
+  against the selected preview, restricting download links to the publisher's
+  website and its subdomains.
+- Attempt full-resolution download links before ordinary social/OG preview
+  candidates, then actually decode downloaded images and compare their pixels.
+  Store only the best valid candidate and continue to enforce user Settings.
+- Supply a normal same-host Referer header when requesting an original image
+  from the publisher's own website. Never leak a source-page URL across domains
+  or disable the existing DNS/redirect/size protections.
+- If Google couldn't capture the publisher's URL, **Save to Library / retry**
+  now accepts an original source webpage or direct full-resolution image URL.
+  Never save a Google search-results page as the image's original website.
+- The Library and source images are not silently replaced, and automatic
+  discovery/rotation remain out of scope.
+
+**Copyright:** Publishers may restrict images to personal use, or require
+attribution. Haven Walls does not grant any usage rights; imports remain
+subject to the publisher's terms.
+
+### User-owned Windows acceptance
+
+1. Pull this PR branch, build locally. In Google Images Browser Search, add
+   the Switzerland result called 5303.jpg to Review selection.
+2. If the original publisher page was captured, inspect/save again. Expect
+   publisher 4K download links to be probed, and if the direct link is
+   accessible, a **decoded 3840x2160 image**, not the 800x450 preview.
+3. If the initial save still fails at 800x450, choose
+   **Check original website or adjust quality and retry**. Paste the
+   WallpapersHome 5303 webpage URL above, then retry. Verify actual pixels
+   and that the saved image appears in Library.
+4. Retry by pasting the **direct 3840x2160 JPG URL** instead of its webpage
+   if the website blocks HTML or download-link discovery. It must still be
+   validated as an image and meet the configured resolution minimum.
+5. Try a different publisher with explicit resolution-labeled image links.
+   It should select the largest verified *matching* image, not an unrelated
+   wallpaper or thumbnail.
+6. Verify no automatic image searches or downloads run without explicit
+   user action. Recheck Google Images, Bing, Library, Favorites, Set Now,
+   captions, Quick Save and storage safety.
+7. Check original source metadata and respect usage rights. If a site blocks
+   automated fetching, import an authorized locally downloaded full-size file.
+
+**Dependency policy:** This commit adds no new Rust dependencies and leaves
+src-tauri/Cargo.lock unchanged. No assistant builds, tests, CI workflows or
+merges were run. The user owns Windows validation.
+
+## Existing-image quality upgrade and free visual-search fallback
+
+An existing Library photo's **Find higher-quality version** is now an **upgrade**
+operation, not an ordinary duplicate-prone import. It checks the original image
+URL and the publisher page (including explicit resolution download links).
+A URL pasted into the Library field may be a publisher page or a direct image.
+An explicit direct image URL takes priority; it must still be validated.
+
+- Backend checks actual decoded pixels against the saved original: both width
+  and height must increase. Equal/smaller results display **No higher-resolution
+  version found**, without writing a file.
+- A larger candidate must match the saved image's perceptual fingerprint and
+  aspect ratio. Unrelated photos and crops that fail the check are rejected.
+- Once a matching upgrade is verified, normal near-duplicate screening may be
+  bypassed for this *specific* upgrade, but exact duplicates remain protected.
+- A successful higher-resolution version is a separate managed Library item.
+  The saved original, favorites, active working copies and wallpaper history are
+  unchanged. No silent replacement or upscaling.
+- If the source does not offer anything better, the Library detail now offers:
+  1. **Search Google Images in Haven Walls**: an actual keyword/filename-based
+     Browser Search, free without an API key, initiated by user click. Select
+     and verify a promising result manually.
+  2. **Reverse image search with Bing**: opens the documented, free Bing Visual
+     Search interface in the user's browser. When available, copies the public
+     saved image URL to clipboard for manual paste. Users can also select a
+     file themselves. No Library file is uploaded automatically.
+- Free public services do not provide an approved, stable, no-key API for
+  programmatic reverse-image search results; this is a **manual visual-search
+  fallback**, not an automated cross-web image matcher. Source rights still apply.
+- Existing Gallery/Sports launch-to-Google flows now run the selected Browser
+  Search query instead of only filling its input.
+
+### Windows acceptance (user only)
+
+1. On a saved 1920 × 1080 image, retry the *same* 1920 × 1080 URL. Expect
+   **No higher-resolution version found**, no duplicate-success state.
+2. Retry with an accessible matching 3840 × 2160 URL. Expect a distinct
+   managed 4K Library entry while the 1080p item remains, even with strict
+   near-duplicate screening. Do not replace the active desktop wallpaper.
+3. Supply an unrelated 4K URL. Expect a visual-match failure and no new file.
+4. Supply a publisher page that offers downloadable full-size versions.
+   Confirm the best matching source is verified from decoded pixels.
+5. Click **Search Google Images in Haven Walls**. Check that the embedded
+   browser actually starts the prepared search, without a SerpApi key.
+6. Click **Reverse image search with Bing**. Confirm it opens the normal browser;
+   paste the copied URL if offered, or upload a file manually. Select any result
+   yourself; no upload occurs merely by opening the Library.
+7. Check ordinary imports, favorites, active-copy protection, Windows Set Now
+   and Google Images source selection for regressions.
+
+No Rust crate was added or upgraded; Cargo.lock is unchanged. Windows app
+build and live-provider behavior must be tested by the user before merging.
+
+## Local-time display and Library history cleanup
+
+- The oversized **Recent wallpaper history** panel is removed from the
+  Library screen. SQLite wallpaper history, active assignments and timestamps
+  remain intact for the future History view and rotation features.
+- The current wallpaper's last-applied time is formatted using the Windows
+  device's current timezone and locale, including DST adjustments. No raw UTC
+  suffix is displayed in the UI.
+- Existing SQLite `CURRENT_TIMESTAMP` values are UTC and have no offset.
+  Convert them correctly to a UTC instant before formatting locally; ISO
+  timestamps with explicit offsets are also supported. UTC remains the stable
+  internal timestamp format for comparisons, portability and backup/restore.
+- Do not rewrite existing history to naive local timestamps; that would make
+  ordering ambiguous during DST transitions or after a timezone change.
+
+### Local Windows acceptance
+
+1. Apply a wallpaper and check its **Last applied** time on the Library page.
+   It should reflect Windows system time, not the raw UTC value.
+2. Change the Windows timezone and reopen the Library. The displayed time
+   should change to the new zone without changing the recorded instant.
+3. Check around a DST boundary; timestamps must not be shifted twice.
+4. The old full-width Recent wallpaper history section should be absent,
+   while the Last applied block and stored history remain available.
+
+
+## Fix: Google Images native WebView2 overlapping Set as wallpaper
+
+**Bug:** A wallpaper saved from embedded Google Images can be applied using
+Save to Library -> Set Now. The import dialog closes as the Apply Wallpaper
+dialog opens, but the native Google child WebView2 was only hidden while the
+Library import dialog (or a Google preview) was open. It could reappear and
+paint on top of the Apply dialog regardless of CSS z-index.
+
+**Fix:** Forward the combined app-level dialog state (Library import OR Set
+as wallpaper) through OnlineGallery to GoogleWorkspace, and keep the child
+WebView2 obscured while either modal is visible. Existing embedded-browser
+layout code sends a null layout to the Rust host to hide it. The child
+browser is restored after the last blocking dialog closes, without reloading
+the Google search or losing the review selection.
+
+### User-owned Windows regression checks
+
+1. Gallery -> Google Images -> Browser Search. Start a search, right-click a
+   result -> Add to Haven Walls review -> Save selected to Library.
+2. Once saving completes, click **Set Now** without leaving Gallery. Check
+   the entire **Set as wallpaper** dialog: its preview, monitor choices,
+   scrolling content, buttons and footer must all be in front of Google.
+3. Close the Set Now dialog, confirm the Google Images browser reappears
+   in its correct embedded slot and remains usable.
+4. Repeat the flow several times, including with Quick Save on/off, a
+   duplicate image, and a smaller-than-monitor image. Check modal opening,
+   closing and changing selections.
+5. Open Google Images -> Inspect original, and Save to Library. Both dialogs
+   should obscure native Google Images and restore it on close.
+6. Recheck normal Library -> Set Now and Gallery switching. No duplicate
+   Google child window or source selection loss.
+
+No Rust, dependencies or Cargo.lock changes. This must be confirmed with
+the Windows build. No assistant build, test, GitHub Actions or merge was run.
+
+
+## Google Lens: actual saved-image reverse search (targeted PR #3 follow-up)
+
+**User requirement:** "Search Google Images in Haven Walls" must NOT
+quietly search the photo title. This is a visual reverse-image lookup using
+the exact saved managed Library file.
+
+- Library -> saved wallpaper -> **Reverse search this image in Google Lens**
+  navigates to the existing embedded Google WebView2 workspace.
+- On that explicit click alone, the Rust host securely reads the managed
+  Library original (validated SHA-based file ID/path) and submits its bytes to
+  Google's Lens image upload endpoint. No filename/title keyword query, no
+  app-owned proxy, no provider-key requirement and no background monitoring.
+- The upload uses the image's actual JPEG/PNG/WebP bytes, limited to 20 MB
+  by Google Lens. The managed Library original is never altered or deleted.
+- If Google returns a valid Google-owned visual-search results address, it is
+  loaded inside the same isolated child WebView2, where the user can inspect
+  visually matching sources, pick a promising result, and use the existing
+  manual review and high-resolution import pipeline.
+- The Lens upload endpoint is not a supported public API and may reject
+  app-side requests or change without notice. On failure the embedded browser
+  opens Google's normal image search homepage and displays instructions:
+  click the camera icon -> Upload a file -> select your saved image.
+  **Show saved image in Explorer** reveals the exact existing file only after
+  another user click. We do NOT claim an upload succeeded on failure.
+- External search is explicit: clicking Reverse search shares image content
+  with Google. No image is uploaded at app startup, during import, or while
+  browsing Library. Google controls its own search results and data handling.
+- The original source-checking, 4K pixel verification, visual matching,
+  duplicate protections and separate higher-quality Library saves are
+  unchanged. Bing remains an optional, manual alternative.
+- No new Rust dependency crates or Cargo.lock changes.
+
+### User-owned Windows acceptance
+
+1. Library -> open a saved photo -> **Reverse search this image in Google Lens**.
+   Verify the app no longer searches using the photo's title/filename.
+2. Confirm the selected managed image is sent only after your click. If Google
+   accepts, visually similar results appear in the embedded browser. If not,
+   the UI must say the upload failed and offer manual image selection.
+3. In the fallback, click **Show saved image in Explorer**, then use Google's
+   upload-file chooser. The file should be the exact saved wallpaper.
+4. Try two different saved photos in sequence and ensure correct image
+   selection; opening the same one again should start a new lookup.
+5. Confirm regular keyword searches, Google right-click review selection,
+   Save to Library, source-quality checks, and Set Now still work.
+6. Test a local-only image with no public URL: reverse search should still
+   use its saved file. Confirm error handling if Google rejects >20 MB files.
+7. No original Library image, active Windows wallpaper or history record
+   should change as a side effect of reverse searching.
+
+**Important:** Google's non-public Lens upload behavior and actual WebView2
+navigation require local Windows validation before merge. No assistant
+Windows build, workflow run or merge was performed.
+
+Additional navigation guard: leaving the Lens result screen through normal Gallery/source navigation clears the one-shot upload request, so merely revisiting Gallery does not re-upload a saved image.
+
+
+Lens result continuity: when an image is chosen from Google Lens results (via
+the native right-click review action or a copied image URL), its review entry
+retains `upgradeFromId` for the original Library photo. The existing Rust
+high-resolution and perceptual-match checks then permit only a larger match.
+This context is cleared when the user starts a normal keyword search.
+Google Lens URLs are not mislabeled as publisher source pages.
+
+
+## Lens broken-image regression: use the same WebView2 session
+
+Windows recording on 2026-11-14 showed a Google Lens redirect and broken
+image thumbnail. The Rust HTTP upload was separate from the browser displaying
+the redirected results, so it was wrong to claim Google accepted the image.
+Instead, after the user's reverse-search click, Rust reads the selected
+Library image, encodes a temporary max-1600px JPEG entirely in memory and
+opens Google's image-search page in the existing isolated child WebView2.
+A one-shot page-load hook submits a multipart browser form with that image to
+Google Lens. The form and its redirect stay in the SAME browser session.
+Google may still block this unofficial automation. We no longer claim a
+redirect guarantees matches, and Manual upload instead is always visible:
+the user can open the official upload UI and reveal their exact saved image in
+Explorer. The managed original is not touched. No new dependencies.
+
+Test on Windows: reverse-search a saved image; ensure the actual image and
+visual matches load, not just a blank results page. If Google rejects the
+submission, use Manual upload instead. Confirm repeated searches, keywords,
+Review selection, Save to Library and Set Now are unchanged.
+
+
+## Google Lens right-click fallback + remembered browser zoom
+
+- Remember Google embedded browser zoom (70–150%) in local WebView2
+  localStorage, retaining the last chosen value across Gallery switches and
+  app restarts. No network setting sync or telemetry. The browser toolbar
+  stays visible when the host scrolling panel moves; the native child WebView2
+  is clipped below the sticky toolbar to avoid another z-order overlap.
+- A Google Lens result may present a blob/data thumbnail, meaning WebView2
+  does not expose an HTTPS image SourceUri. The native context-menu action
+  now forwards the selected result's publisher LinkUri when available instead
+  of failing before the frontend can inspect it.
+- If no direct image URL exists, the frontend first checks for a direct HTTPS
+  image in that link. Otherwise a new Rust command inspects only standard
+  og:image, twitter:image and image_src publisher metadata (not Google's
+  page), with bounded download size, redirects, safe public HTTPS/DNS checks
+  and decoded image verification. It returns a candidate for the user's
+  Review queue; metadata is **not** considered proof of an exact visual match
+  or genuine 4K. Existing inspection and Library upgrade validation apply.
+- If Lens supplies no publisher link, metadata is absent, the publisher
+  blocks requests, or the selected result cannot be verified, show a clear
+  fallback message; manual Copy image link still works.
+- No new dependency crates, and no main-branch changes.
+
+### Windows acceptance
+
+1. Change zoom to 70% or 120%, switch Gallery/Library, relaunch Haven Walls,
+   and confirm the selected level is restored. Scroll the app with Lens
+   results visible; the zoom buttons should stay accessible and must not
+   be covered by the native browser.
+2. Lens -> Visual matches -> right-click a thumbnail -> Add to Haven Walls
+   review. Confirm it works for a result with a direct image URL, and for a
+   publisher result with an advertised og:image.
+3. Inspect a publisher-derived candidate for image correctness before saving.
+   No source page may be silently treated as a decoded image.
+4. Confirm a Lens thumbnail that exposes no usable URL or publisher metadata
+   produces an actionable fallback, without a broken or unrelated import.
+5. Confirm normal Google Images right-click, copied-link fallback, Quick Save,
+   upgrade similarity checks, and Set Now all still work.
+
+
+## Reverse search: save a new image versus upgrade the original
+
+**Observed on Windows:** The user reverse-searched a 1080p `Licensed to chill`
+image, picked a DIFFERENT Maldives photograph from Lens (5464 × 3640), and
+received a visual-match rejection. Previously every picked Lens result
+inherited `upgradeFromId` and was treated as a strict same-photo upgrade.
+
+- Google Lens review candidates now explicitly mark `reverseSearchMatch`
+  when they retain a possible original Library reference.
+- The Library import dialog offers **Save as new wallpaper** (default) and
+  **Upgrade original wallpaper** for Lens results. The former sends
+  `upgradeFrom: null`, so normal image-resolution, format, exact/near-duplicate,
+  rights and storage safeguards apply. A different photograph is no longer
+  compared against the starting wallpaper.
+- The latter sends the original `upgradeFromId` to Rust and preserves its
+  strict fingerprint, aspect-ratio and higher-resolution validation. Existing
+  images are never overwritten.
+- For direct `Find higher-quality version` imports from Library, there is no
+  Lens mode choice: strict upgrade validation remains the default.
+- **Quick Save cannot auto-start on reverse-search selections**. The user must
+  see and choose the mode and explicitly press Save. Other ordinary Quick Save
+  and direct Library upgrade flows remain unchanged.
+- A batch of reverse-search results uses one clearly labeled mode choice for
+  the batch. After importing, a success/duplicate/error log still distinguishes
+  actual Library saves from items merely added to Review.
+
+### Windows acceptance
+
+1. From Library, reverse-search `Licensed to chill`, choose a different
+   high-quality Maldives image in Lens, add to Review, then Save to Library.
+   Confirm **Save as new wallpaper** is preselected and that the image saves
+   if it passes ordinary checks; reopening Library shows a new card.
+2. Repeat with the exact same saved image, select **Upgrade original wallpaper**,
+   and verify only a genuinely larger visual match succeeds.
+3. Select an unrelated high-resolution image with Upgrade selected; it must
+   still be rejected without changing the existing Library image.
+4. With Quick Save enabled, verify the Lens mode choice stays visible and
+   requires a click on Save to Library, rather than importing immediately.
+5. From Library, use its direct **Find higher-quality version** flow. It must
+   still enforce same-photo upgrade rules automatically.
+6. Check standard Gallery saves, duplicate detection, protected active
+   Windows wallpaper files and Open Library after successful import.
+
+
+## Publisher source retrieval fallback (PR #3 reliability fix)
+
+The selected HTTPS image URL can sometimes return a webpage, anti-hotlink
+response or an unavailable CDN image even though the publisher page advertises
+an image. The resolver previously skipped all metadata candidates whenever
+the initially selected direct URL failed, leaving no valid original to import.
+
+- Try all explicitly selected image URLs first, so an accessible image provides
+  the visual anchor for alternative source candidates.
+- Then try the chosen publisher page's explicit download links and standard
+  `og:image`, `twitter:image`, or `image_src` metadata when direct image links
+  are unavailable. Every destination and redirect retains public HTTPS and
+  DNS/IP protections, image size limits, decoded-file checks and time budgets.
+- An initial publisher metadata image without a usable original is a
+  **provisional** candidate. This is not proof of exact photographic identity:
+  the user should review it before using it as a wallpaper. Further source
+  candidates must match the selected baseline. Never crawl Google results,
+  accept arbitrary HTML as images, or bypass publisher restrictions.
+- Send ordinary desktop browser-compatible request and Accept headers so
+  normal public image hosts do not mistake the request for a non-image client.
+  No cookies, user credentials or background downloads are added.
+- If all selected publisher links return HTML or otherwise fail, show an
+  actionable failure instead of pretending the image was saved.
+
+Windows acceptance: retry the Lens result whose image link returned HTML;
+verify the chosen publisher metadata image is a real decoded photograph,
+inspect the preview to confirm identity and pixels, then save as new wallpaper.
+Also test a publisher with unrelated `og:image` and reject it if it does not
+match the selected photo. Test invalid/blocked URLs and normal source imports.
+
+
+## Approved interactive prototype: image-first Library viewer
+
+The old vertically stacked Library details modal has been replaced with the
+approved Haven Walls viewer concept:
+
+- Large, full-height stage on the left and a compact, independently scrollable
+  details panel on the right (responsive stacked layout on narrow displays).
+- Fit / Fill controls affect preview presentation only; never transform or
+  overwrite the saved image or its Windows working copy.
+- Previous / Next chevrons, left/right keyboard navigation and a five-item
+  thumbnail filmstrip following the current Library search/filter, with a
+  visible selected-position counter. Navigation wraps within that filtered set.
+- Closing via Escape, Close or backdrop. Keyboard navigation is ignored inside
+  inputs/textarea/select and while Apply or Remove confirmation is active.
+- Image metadata, source links and explicit reverse-search tools remain in the
+  right panel; custom links, Bing fallback, rights and extended details are
+  collapsed until requested.
+- Favorite, Remove and Set as wallpaper actions stay fixed and visible at the
+  bottom of the details panel. Existing Library originals, active wallpaper
+  protections, Favorites, safe removal, source URLs and Windows apply actions
+  remain backed by the original commands.
+
+Windows acceptance: open the viewer, use chevrons/keyboard/filmstrip in All,
+Favorites and 4K+ filters; verify counter and image, including fast navigation.
+Check Fit/Fill with portrait and landscape photos, close/backdrop, favorite,
+source buttons, original-source search, Lens, Bing, Remove, Set as wallpaper,
+and short-height/narrow-window responsive behavior. No HTML prototype assets
+were copied into application storage; real Library thumbnails are used.
+
+
+## Library viewer usability: complete filmstrip and compact details
+
+- Removed the artificial five-thumbnail window. The viewer now displays every
+  Library item included by the current search/filter, using a horizontally
+  scrollable thumbnail strip. With eight saved wallpapers and adequate width,
+  all eight thumbnails fit. The selected item automatically scrolls into view
+  when navigating by keyboard, arrows or thumbnail clicks.
+- Lazy-load filmstrip thumbnails to avoid eagerly decoding every visible item.
+  Previous/Next navigation and the existing N / total counter still use the
+  filtered list, and keyboard arrows retain their behavior.
+- Compact the right panel: display the full filename via hover tooltip but
+  clamp the visible title to two lines, place dimensions/quality/format/size
+  in a compact chip row, and move Check original source / Google Lens near
+  the top in a small two-column control group.
+- Keep source page/original-image links directly accessible. Move custom links,
+  Bing fallback, metadata, photo credit and rights details into independently
+  expandable sections. Favorite, Remove and Set as wallpaper remain fixed
+  to the bottom, outside the scrolling details region.
+- No stored image metadata, file identity, wallpaper state or source-retrieval
+  behavior is changed by this UI-only follow-up.
+
+Windows acceptance:
+1. With eight saved images on a wide window, all eight thumbnails should be
+   available in the strip, not only five. With a larger Library or narrower
+   window, scroll horizontally and verify the active thumbnail moves into
+   view automatically.
+2. Filter to Favorites or 4K+; ensure filmstrip, N/total, and previous/next
+   remain within the filter.
+3. Confirm Check original source, Google Lens and original-source links are
+   readily accessible without scrolling on a normal desktop display.
+4. Expand each details section; ensure the right panel scrolls independently,
+   full filenames remain available by hovering, and Set as wallpaper stays
+   visible in the footer.
+5. Verify Fit/Fill, source errors, favorites, removal and Apply to Windows.
+
+## Quick Save: inline smaller-image retry
+
+When a **single image** is rejected specifically for falling below the configured
+minimum resolution, the completed import dialog now shows **Allow images below
+my minimum resolution** directly alongside the failure, with **Retry saving
+this image**. This works even with Quick Save enabled, without opening the
+advanced settings first. Retry is disabled until the user explicitly enables
+the override, which applies only to that import attempt and does not change
+global settings. The existing source-change/advanced retry remains available.
+
+Ordinary imports still enforce minimum resolution unless the user selects the
+exception. Supported-image decoding and duplicate detection remain unchanged.
+Multi-image batches retain their existing advanced retry flow to avoid
+silently re-importing other successfully saved items.
+
+Windows acceptance: with Quick Save enabled, import a valid 1600 × 900 image
+under a 1080p minimum and confirm the checkbox appears under the error. Click
+Retry before checking it (must be disabled), then enable it and retry. Verify
+the image saves only if it passes remaining checks, while normal 1080p/4K
+imports and other error types do not show the inline override.
+
+
+## Persisted smaller-image import policy (independent of Quick Save)
+
+- New toggle under **Settings -> Image quality & duplicate detection**:
+  **Allow images below minimum resolution**. It is stored with all other
+  settings in SQLite. It defaults to off, including for existing settings
+  records, and applies to both Quick Save and confirmation-based imports.
+- The import dialog reads the saved preference before its Quick Save effect
+  can start. Its one-image checkbox starts in the same state as Settings,
+  and changes in the dialog apply only to that import. They are not written
+  back to SQLite.
+- Native `ImportMetadata.allow_below_minimum` is optional. When omitted,
+  the Rust import validates against the persisted setting; an explicitly
+  supplied true/false uses that one-import choice. This protects callers
+  beyond the currently mounted React dialog and permits a one-time stricter
+  choice even when the global preference is enabled.
+- All image decoding, allowed-format validation, exact duplicate screening,
+  and explicit higher-resolution visual-match checks remain unchanged.
+  The persisted toggle does not upscale images or bypass those protections.
+
+Windows acceptance:
+1. Keep Quick Save on, set 1080p minimum, enable the new toggle in Settings
+   and Save settings. Import a valid 1600 x 900 image. It should save without
+   the below-minimum error.
+2. Disable Quick Save without changing the new toggle. Confirm the checkbox
+   is still checked in the manual import dialog and a sub-1080p image is
+   allowed after the normal rights confirmation.
+3. Disable the new toggle in Settings, leave Quick Save on, and attempt
+   another 1600 x 900 import. Confirm rejection, then use the inline
+   Allow smaller images + Retry workflow to override that one import.
+4. Reopen Settings and restart the app: the toggle should retain its saved
+   value. Changing it in an individual import must not change Settings.
+5. With the setting enabled, make sure unsupported formats, exact duplicates,
+   and mismatching resolution upgrades are still rejected normally.

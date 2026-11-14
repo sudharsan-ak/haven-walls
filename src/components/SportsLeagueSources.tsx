@@ -5,6 +5,7 @@ import {
   sportsWallpaperSearch, validLeagueName, type SportsLeague,
 } from "../lib/sportsLeagues";
 import "./SportsLeagueSources.css";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface Props {
   teamName: string;
@@ -18,6 +19,7 @@ export default function SportsLeagueSources({ teamName, onSearchWeb }: Props) {
   const [newWebsite, setNewWebsite] = useState("");
   const [message, setMessage] = useState("");
   const [saved, setSaved] = useState(true);
+  const [pendingAction, setPendingAction] = useState<"remove" | "reset" | null>(null);
 
   useEffect(() => {
     setSaved(saveSportsLeagues(leagues));
@@ -78,7 +80,7 @@ export default function SportsLeagueSources({ teamName, onSearchWeb }: Props) {
   }
 
   function removeLeague() {
-    if (!league || !window.confirm("Remove " + league.name + " and its saved websites?")) return;
+    if (!league) return;
     const remaining = leagues.filter((item) => item.id !== league.id);
     setLeagues(remaining);
     setLeagueId(remaining[0]?.id ?? "");
@@ -96,7 +98,7 @@ export default function SportsLeagueSources({ teamName, onSearchWeb }: Props) {
   }
 
   function reset() {
-    if (!window.confirm("Restore the default NBA and IPL websites? Custom leagues and sites will be replaced.")) return;
+
     const defaults = DEFAULT_SPORTS_LEAGUES.map((item) => ({ ...item, websites: [...item.websites] }));
     setLeagues(defaults);
     setLeagueId(defaults[0].id);
@@ -110,7 +112,7 @@ export default function SportsLeagueSources({ teamName, onSearchWeb }: Props) {
           <h2>League image websites</h2>
           <p>Choose websites for each league. Haven Walls searches Google Images within those sites; it does not scrape or download from them automatically.</p>
         </div>
-        <button type="button" className="online-secondary" onClick={reset}>Restore defaults</button>
+        <button type="button" className="online-secondary" onClick={() => setPendingAction("reset")}>Restore defaults</button>
       </div>
 
       <div className="sls-line">
@@ -143,7 +145,7 @@ export default function SportsLeagueSources({ teamName, onSearchWeb }: Props) {
         <>
           <div className="sls-site-heading">
             <strong>Preferred image websites for {league.name}</strong>
-            <button type="button" className="sls-text-action" onClick={removeLeague}>
+            <button type="button" className="sls-text-action" onClick={() => setPendingAction("remove")}>
               Remove league
             </button>
           </div>
@@ -190,6 +192,24 @@ export default function SportsLeagueSources({ teamName, onSearchWeb }: Props) {
       <p className="sls-footnote">
         Site searches use Google's site: operator. Adding a website doesn't guarantee available wallpaper-sized images or permission to reuse them. The saved league list stays on this PC.
       </p>
+      {pendingAction && (
+        <ConfirmDialog
+          tone={pendingAction === "remove" ? "danger" : "warning"}
+          title={pendingAction === "remove" ? "Remove sports league?" : "Restore default sports websites?"}
+          description={pendingAction === "remove"
+            ? "Remove " + (league?.name || "this league") + " from Haven Walls?"
+            : "Reset the saved sports league and website list to the defaults?"}
+          note={pendingAction === "remove"
+            ? "The league and its saved image websites are removed from this app."
+            : "Your custom leagues and websites will be replaced with the initial NBA and IPL setup."}
+          confirmLabel={pendingAction === "remove" ? "Remove league" : "Restore defaults"}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            if (pendingAction === "remove") removeLeague();
+            else reset();
+            setPendingAction(null);
+          }} />
+      )}
     </section>
   );
 }

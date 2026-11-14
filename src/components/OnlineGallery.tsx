@@ -22,7 +22,10 @@ type Props = {
   serpapiKey: string;
   onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
+  lensRequest: { imageId: string; requestId: number } | null;
   onSearchWeb: (query: string) => void;
+  onSaveToLibrary: (images: CatalogImage[]) => void;
+  blockingDialogOpen: boolean;
 };
 
 function CatalogThumbnail({ image }: { image: CatalogImage }) {
@@ -65,6 +68,7 @@ function SourceGallery({
   onSerpapiKeyChange,
   googleSearchSeed,
   onSearchWeb,
+  onSaveToLibrary,
 }: Props) {
   const config = getCatalogSource(source);
   const [query, setQuery] = useState(config.defaultQuery);
@@ -467,6 +471,10 @@ function SourceGallery({
           key={selected.previewUrl}
           image={selected}
           onClose={() => setSelected(null)}
+          onAddToLibrary={(candidate) => {
+            setSelected(null);
+            onSaveToLibrary([candidate]);
+          }}
         />
       )}
     </div>
@@ -484,6 +492,9 @@ export default function OnlineGallery(props: Props) {
         serpapiKey={props.serpapiKey}
         onSerpapiKeyChange={props.onSerpapiKeyChange}
         googleSearchSeed={props.googleSearchSeed}
+        lensRequest={props.lensRequest}
+        onSaveToLibrary={props.onSaveToLibrary}
+        blockingDialogOpen={props.blockingDialogOpen}
       />
     );
   }

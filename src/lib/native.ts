@@ -23,6 +23,10 @@ export interface CatalogImage {
   originalUrl?: string | null;
   /** Alternative directly linked source URLs, tried when inspecting image quality. */
   candidateUrls?: string[];
+  /** Library reference for a candidate that can optionally upgrade an existing image. */
+  upgradeFromId?: string;
+  /** A Lens result may be a different photo; default its import to a new wallpaper. */
+  reverseSearchMatch?: boolean;
   pageUrl: string;
   credit: string;
   rights: string;
@@ -104,6 +108,39 @@ export async function openGoogleImagesInline(
     throw new Error("Google Images browser requires the Windows desktop application.");
   }
   await invoke<void>("open_google_images_inline", { query, bounds });
+}
+
+/** Opens a Google-owned Lens results page in our isolated native WebView2. */
+export async function openGoogleLensInline(
+  url: string, bounds: GoogleInlineBounds,
+): Promise<void> {
+  if (!isTauri()) throw new Error("Google Lens requires the Haven Walls Windows app.");
+  await invoke<void>("open_google_lens_inline", { url, bounds });
+}
+
+/** Initiate a visual search by uploading a search-sized copy from the
+ * saved image inside Google's own embedded browser session. This does not
+ * prove that Google has produced usable results.
+ */
+export async function reverseSearchLibraryWallpaperInline(
+  imageId: string, bounds: GoogleInlineBounds,
+): Promise<void> {
+  if (!isTauri()) throw new Error("Google Lens requires the Haven Walls Windows app.");
+  return invoke<void>("reverse_search_library_wallpaper_inline", { imageId, bounds });
+}
+
+/** Opens Windows Explorer at the saved managed image for manual Lens upload. */
+export async function showLibraryWallpaperForLens(id: string): Promise<void> {
+  if (!isTauri()) throw new Error("Windows Explorer requires the desktop app.");
+  await invoke<void>("show_library_wallpaper_for_lens", { id });
+}
+
+/** Look up image metadata from a user-selected Lens publisher link only.
+ * Rust enforces bounded HTML/image fetches and public HTTPS host checks.
+ */
+export async function resolveLensPublisherPreview(sourcePage: string): Promise<string> {
+  if (!isTauri()) throw new Error("Publisher image lookup requires the Windows app.");
+  return invoke<string>("resolve_lens_publisher_preview", { sourcePage });
 }
 
 /** Moves, resizes, or hides the Google Images child WebView2. */

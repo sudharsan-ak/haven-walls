@@ -139,3 +139,6 @@ button.nav-item:focus-visible { outline: 2px solid #287dd0; outline-offset: -2px
 }
 .provider-description { color: #9baab8 !important; }
 @media (max-width: 1100px) { .provider-grid { grid-template-columns: 1fr; } }
+
+/* Settings is now a real navigation page in PR #3. */
+.provider-footnote .gallery-open-link { margin-left: 4px; }

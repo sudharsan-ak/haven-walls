@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { listen } from "@tauri-apps/api/event";
 import {
   browseGoogleImages,
+  resolveLensPublisherPreview,
+  showLibraryWallpaperForLens,
   type CatalogImage,
   type CatalogSourceId,
 } from "../lib/native";
@@ -16,6 +18,9 @@ interface Props {
   serpapiKey: string;
   onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
+  lensRequest: { imageId: string; requestId: number } | null;
+  onSaveToLibrary: (images: CatalogImage[]) => void;
+  blockingDialogOpen: boolean;
 }
 
 type SearchMode = "browser" | "api";
@@ -29,6 +34,38 @@ interface GoogleImagePicked {
 }
 
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+const ZOOM_STORAGE_KEY = "haven-walls.google-browser-zoom.v1";
+
+function savedGoogleZoom(): number {
+  // Only this non-sensitive UI preference is stored in WebView2 localStorage.
+  try {
+    const saved = window.localStorage.getItem(ZOOM_STORAGE_KEY);
+    if (saved === null) return 100;
+    const value = Number(saved);
+    return Number.isFinite(value) ? Math.max(70, Math.min(150, value)) : 100;
+  } catch {
+    return 100;
+  }
+}
+
+function publisherLinkFromLens(value: string | undefined): string | null {
+  const candidate = value ? unwrapKnownImageLink(value) : null;
+  const valid = validRemoteUrl(candidate);
+  if (!valid) return null;
+  const host = new URL(valid).hostname.toLowerCase();
+  if (host === "google.com" || host.endsWith(".google.com") ||
+      host.endsWith(".gstatic.com") || host.endsWith(".googleusercontent.com")) {
+    return null;
+  }
+  return valid;
+}
+
+function looksLikeDirectImage(url: string): boolean {
+  const parsed = new URL(url);
+  return /\.(?:jpe?g|png|webp)(?:$|\/)/i.test(parsed.pathname) ||
+    ["images.unsplash.com", "images.pexels.com", "image.tmdb.org",
+      "images.wallpaperscraft.com"].includes(parsed.hostname);
+}
 const DEFAULT_QUERY = getCatalogSource("google").defaultQuery;
 
 function imageKey(item: CatalogImage): string {
@@ -65,12 +102,13 @@ function makeManualImage(
 }
 
 function ReviewQueue({
-  items, onRemove, onClear, onInspect,
+  items, onRemove, onClear, onInspect, onSave,
 }: {
   items: CatalogImage[];
   onRemove: (item: CatalogImage) => void;
   onClear: () => void;
   onInspect: (item: CatalogImage) => void;
+  onSave: (items: CatalogImage[]) => void;
 }) {
   return (
     <aside className="gws-review" aria-label="Shared Google Images review selection">
@@ -113,8 +151,9 @@ function ReviewQueue({
           onClick={onClear}>
           Clear selection ({items.length})
         </button>
-        <button className="online-secondary" type="button" disabled>
-          Add to library · PR #3
+        <button className="online-primary" type="button" disabled={items.length === 0}
+          onClick={() => onSave(items)}>
+          Save selected to Library
         </button>
       </div>
       <p className="gws-review-footnote">
@@ -163,12 +202,20 @@ function ApiResultCard({
 
 export default function GoogleWorkspace({
   onSourceChange, serpapiKey, onSerpapiKeyChange, googleSearchSeed,
+  lensRequest, onSaveToLibrary, blockingDialogOpen,
 }: Props) {
   const [mode, setMode] = useState<SearchMode>("browser");
   const [browserQuery, setBrowserQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [apiQuery, setApiQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [browserRevision, setBrowserRevision] = useState(0);
-  const [browserZoom, setBrowserZoom] = useState(100);
+  const [lensNavigation, setLensNavigation] = useState<
+    | { kind: "upload"; imageId: string; revision: number }
+    | { kind: "manual"; url: string; revision: number }
+    | null
+  >(null);
+  const [lensStatus, setLensStatus] = useState<{ kind: "uploading" | "results" | "manual"; message: string } | null>(null);
+  const [lensFallbackNote, setLensFallbackNote] = useState("");
+  const [browserZoom, setBrowserZoom] = useState(savedGoogleZoom);
   const [browserHeight, setBrowserHeight] = useState(490);
   const [browserError, setBrowserError] = useState("");
   const [nativeMenuStatus, setNativeMenuStatus] = useState("Native image menu: not connected yet");
@@ -187,11 +234,24 @@ export default function GoogleWorkspace({
   const [apiError, setApiError] = useState("");
   const requestNumber = useRef(0);
   const blobUrls = useRef(new Set<string>());
+  const selectionAttempt = useRef(0);
 
   useEffect(() => {
-    if (!googleSearchSeed) return;
+    try { window.localStorage.setItem(ZOOM_STORAGE_KEY, String(browserZoom)); }
+    catch { /* Browser storage unavailable; zoom still works this session. */ }
+  }, [browserZoom]);
+  // Context survives the native Google Lens navigation so selected results
+  // are checked against the exact original Library image on import.
+  const lensUpgradeId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!googleSearchSeed || lensRequest) return;
     setBrowserQuery(googleSearchSeed);
     setApiQuery(googleSearchSeed);
+    // Searches opened by an explicit action in Sports/Library must actually run,
+    // not merely populate the input of the embedded browser.
+    setMode("browser");
+    setBrowserRevision((value) => value + 1);
   }, [googleSearchSeed]);
 
   useEffect(() => () => {
@@ -200,19 +260,92 @@ export default function GoogleWorkspace({
     blobUrls.current.clear();
   }, []);
 
+  useEffect(() => {
+    if (!lensRequest) return;
+    setMode("browser");
+    lensUpgradeId.current = lensRequest.imageId;
+    setLensFallbackNote("");
+    setBrowserError("");
+    setLensStatus({
+      kind: "uploading",
+      message: "Sending a search-sized copy of the saved wallpaper from the embedded Google browser. If Lens shows a broken image or no matches, choose Manual upload below.",
+    });
+    setLensNavigation((old) => ({
+      kind: "upload", imageId: lensRequest.imageId,
+      revision: (old?.revision || 0) + 1,
+    }));
+  }, [lensRequest?.requestId]);
+
+  async function revealLensImage() {
+    if (!lensRequest) return;
+    setLensStatus({
+      kind: "manual",
+      message: "Use Google's camera icon, then Upload a file. Choose the saved image highlighted in Windows Explorer.",
+    });
+    setLensNavigation((old) => ({
+      kind: "manual", url: "https://www.google.com/imghp",
+      revision: (old?.revision || 0) + 1,
+    }));
+    try {
+      await showLibraryWallpaperForLens(lensRequest.imageId);
+      setLensFallbackNote("Your saved wallpaper is selected in Explorer. Choose it in Google's Upload a file dialog.");
+    } catch (reason) {
+      setLensFallbackNote(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  function startNewKeywordSearch(term: string) {
+    lensUpgradeId.current = null;
+    setLensStatus(null);
+    setLensNavigation(null);
+    setBrowserQuery(term);
+    setBrowserRevision((value) => value + 1);
+  }
+
   // Windows WebView2 reports the selected image URL when the user chooses
   // our native context-menu command. No script is injected into Google.
   useEffect(() => {
     let mounted = true;
     const unsubscribers: Array<() => void> = [];
 
-    void listen<GoogleImagePicked>("google-image-picked", (event) => {
+    void listen<GoogleImagePicked>("google-image-picked", async (event) => {
+      const attempt = ++selectionAttempt.current;
       const suppliedUrl = directHttpsImageAddress(event.payload.imageUrl);
-      if (!suppliedUrl) {
-        setSelectionError("Google did not provide a usable HTTPS image link. Try Copy image link or open the original source.");
+      const linked = publisherLinkFromLens(event.payload.linkUrl);
+      const fallbackPage = linked || publisherLinkFromLens(event.payload.pageUrl);
+      let chosen = suppliedUrl;
+      let resolvedFromPublisher = false;
+
+      // Google Lens can render result cards using blob:/data: thumbnails.
+      // A right-click then has no native SourceUri, but its publisher LinkUri
+      // may still expose metadata for that *selected* result. Never scrape
+      // Google HTML or add a publisher page as if it were an image.
+      if (!chosen && fallbackPage) {
+        if (looksLikeDirectImage(fallbackPage)) {
+          chosen = fallbackPage;
+        } else {
+          setSelectionError("");
+          setBrowserNote("Checking the selected Lens result's publisher for its image…");
+          try {
+            chosen = await resolveLensPublisherPreview(fallbackPage);
+            resolvedFromPublisher = true;
+          } catch (cause) {
+            if (attempt !== selectionAttempt.current) return;
+            setBrowserNote("");
+            setSelectionError("This Lens result did not expose a verifiable image URL. " +
+              (cause instanceof Error ? cause.message : String(cause)) +
+              " Try Copy image link on the image or visit its publisher.");
+            return;
+          }
+        }
+      }
+      if (attempt !== selectionAttempt.current) return;
+      if (!chosen) {
+        setBrowserNote("");
+        setSelectionError("Google Lens did not provide a direct image URL or usable publisher link for this selection. Try Copy image link.");
         return;
       }
-      const resolved = chooseOriginalFromLink(suppliedUrl, event.payload.linkUrl);
+      const resolved = chooseOriginalFromLink(chosen, event.payload.linkUrl);
       const directUrl = resolved.original;
       const rawPath = new URL(directUrl).pathname.split("/").pop() || "Google image";
       let filename = "Google image";
@@ -222,12 +355,17 @@ export default function GoogleWorkspace({
         filename = rawPath.slice(0, 140) || filename;
       }
 
-      const page = resolved.sourcePage || directHttpsImageAddress(event.payload.pageUrl) || "";
-      const candidate = makeManualImage(directUrl, filename, false, resolved.preview, page);
-      if (resolved.original !== resolved.preview) {
+      // Google results pages are not publisher sites.
+      const browserPage = publisherLinkFromLens(event.payload.pageUrl);
+      const page = resolved.sourcePage || fallbackPage || browserPage || "";
+      const candidate = makeManualImage(directUrl, filename, false, directUrl, page);
+      if (lensUpgradeId.current) {
+        candidate.upgradeFromId = lensUpgradeId.current;
+        candidate.reverseSearchMatch = true;
+      }
+      if (!resolvedFromPublisher && resolved.original !== resolved.preview) {
         candidate.candidateUrls = [resolved.preview];
       }
-
       setQueue((items) => {
         if (items.length >= 30 ||
           items.some((existing) => imageKey(existing) === imageKey(candidate))) {
@@ -236,7 +374,9 @@ export default function GoogleWorkspace({
         return [...items, candidate];
       });
       setSelectionError("");
-      setBrowserNote("Image added to Review selection. Inspect it for the actual resolution. Duplicates are ignored.");
+      setBrowserNote(resolvedFromPublisher
+        ? "Publisher preview added to Review selection. Confirm it matches the photo and inspect its actual resolution before saving."
+        : "Image added to Review selection. Inspect its actual resolution before saving. Duplicates are ignored.");
     })
       .then((unlisten) => {
         if (mounted) unsubscribers.push(unlisten);
@@ -248,6 +388,16 @@ export default function GoogleWorkspace({
 
     void listen<string>("google-image-menu-status", (event) => {
       setNativeMenuStatus(event.payload);
+    })
+      .then((unlisten) => {
+        if (mounted) unsubscribers.push(unlisten);
+        else unlisten();
+      })
+      .catch(() => {});
+
+    void listen<string>("google-lens-upload-error", (event) => {
+      setLensStatus({ kind: "manual", message: event.payload });
+      setBrowserError("");
     })
       .then((unlisten) => {
         if (mounted) unsubscribers.push(unlisten);
@@ -314,6 +464,10 @@ export default function GoogleWorkspace({
     try { title = decodeURIComponent(segment); }
     catch { title = segment; }
     const image = makeManualImage(url, title.slice(0, 140), false);
+    if (lensUpgradeId.current) {
+      image.upgradeFromId = lensUpgradeId.current;
+      image.reverseSearchMatch = true;
+    }
     addToQueue(image);
     setSelectionError("");
     setBrowserNote("Image link added. Inspect it to check the best available version and actual resolution.");
@@ -381,6 +535,9 @@ export default function GoogleWorkspace({
     }
     setBrowserError("");
     setBrowserNote("");
+    lensUpgradeId.current = null;
+    setLensStatus(null);
+    setLensNavigation(null);
     setBrowserRevision((value) => value + 1);
   }
 
@@ -494,11 +651,22 @@ export default function GoogleWorkspace({
               {["Golden State Warriors 4K wallpaper", "Landman TV series background",
                 "Switzerland Alps landscape wallpaper"].map((term) => (
                 <button className="online-chip" type="button" key={term}
-                  onClick={() => { setBrowserQuery(term); setBrowserRevision((v) => v + 1); }}>
+                  onClick={() => startNewKeywordSearch(term)}>
                   {term.startsWith("Golden") ? "Warriors" : term.startsWith("Landman") ? "Landman" : "Swiss Alps"}
                 </button>
               ))}
             </div>
+            {lensStatus && (
+              <div className="gws-info" role="status">
+                <strong>Reverse image search · Google Lens</strong>
+                <p>{lensStatus.message}</p>
+                <button type="button" className="online-secondary"
+                  onClick={() => void revealLensImage()}>
+                  {lensStatus.kind === "manual" ? "Show saved image in Explorer" : "Manual upload instead"}
+                </button>
+                {lensFallbackNote && <p>{lensFallbackNote}</p>}
+              </div>
+            )}
             {browserError && <p className="gws-error" role="alert">{browserError}</p>}
             {browserNote && <p className="gws-info" role="status">{browserNote}</p>}
           </div>
@@ -534,7 +702,8 @@ export default function GoogleWorkspace({
                   </div>
                 </div>
                 <InlineGoogleBrowser query={browserQuery} searchRevision={browserRevision}
-                  obscured={preview !== null} zoom={browserZoom / 100}
+                  lensNavigation={lensNavigation}
+                  obscured={preview !== null || blockingDialogOpen} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
                   <span>Right-click a Google image. Use Add to Haven Walls review, or Copy image link as fallback.</span>
@@ -586,7 +755,7 @@ export default function GoogleWorkspace({
               </div>
             </div>
             <ReviewQueue items={queue} onRemove={removeFromQueue} onClear={clearQueue}
-              onInspect={setPreview} />
+              onInspect={setPreview} onSave={onSaveToLibrary} />
           </div>
         </section>
       ) : (
@@ -671,19 +840,23 @@ export default function GoogleWorkspace({
               {apiNote && <div className="gws-api-note">{apiNote}</div>}
             </div>
             <ReviewQueue items={queue} onRemove={removeFromQueue} onClear={clearQueue}
-              onInspect={setPreview} />
+              onInspect={setPreview} onSave={onSaveToLibrary} />
           </div>
         </section>
       )}
 
       <p className="gws-disclaimer">
         Image search is discovery, not licensing. Original sites may block full-size
-        images. Nothing is saved, approved for reuse, or added to rotation in PR #2.
+        images. Only user-approved images are saved locally; applying and rotation arrive later.
       </p>
 
       {preview && (
         <FullResolutionPreview key={imageKey(preview)} image={preview}
-          onClose={() => setPreview(null)} />
+          onClose={() => setPreview(null)}
+          onAddToLibrary={(image) => {
+            setPreview(null);
+            onSaveToLibrary([image]);
+          }} />
       )}
     </div>
   );

@@ -3,6 +3,8 @@ import {
   closeGoogleImagesInline,
   layoutGoogleImagesInline,
   openGoogleImagesInline,
+  openGoogleLensInline,
+  reverseSearchLibraryWallpaperInline,
   setGoogleImagesInlineZoom,
   type GoogleInlineBounds,
 } from "../lib/native";
@@ -10,6 +12,10 @@ import {
 interface Props {
   query: string;
   searchRevision: number;
+  lensNavigation:
+    | { kind: "upload"; imageId: string; revision: number }
+    | { kind: "manual"; url: string; revision: number }
+    | null;
   obscured: boolean;
   zoom: number;
   viewportHeight: number;
@@ -20,7 +26,7 @@ interface Props {
  * Cross-origin content never becomes DOM data available to this React component.
  */
 export default function InlineGoogleBrowser({
-  query, searchRevision, obscured, zoom, viewportHeight, onError,
+  query, searchRevision, lensNavigation, obscured, zoom, viewportHeight, onError,
 }: Props) {
   const slotRef = useRef<HTMLDivElement>(null);
   const hasView = useRef(false);
@@ -38,7 +44,12 @@ export default function InlineGoogleBrowser({
     const box = slot.getBoundingClientRect();
     const viewport = content.getBoundingClientRect();
     const x = Math.max(0, box.left, viewport.left);
-    const y = Math.max(0, box.top, viewport.top);
+    // When the toolbar sticks to the scrolling window, the native child
+    // must remain BELOW it (CSS cannot cover a native WebView2 surface).
+    const toolbar = slot.closest(".gws-browser-frame")
+      ?.querySelector(".gws-browser-toolbar");
+    const toolbarBottom = toolbar?.getBoundingClientRect().bottom ?? 0;
+    const y = Math.max(0, box.top, viewport.top, toolbarBottom);
     const right = Math.min(window.innerWidth, box.right, viewport.right);
     const bottom = Math.min(window.innerHeight, box.bottom, viewport.bottom);
     const width = Math.floor(right - x);
@@ -138,6 +149,43 @@ export default function InlineGoogleBrowser({
     };
   // Only an explicit search changes searchRevision; typing must not navigate.
   }, [searchRevision]);
+
+
+  // Lens file uploads happen inside Google's WebView2 browsing session,
+  // not via a separate Rust HTTP client. The fallback is manual.
+  useEffect(() => {
+    if (!lensNavigation) return;
+    let canceled = false;
+    let pendingFrame = 0;
+    slotRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
+    pendingFrame = requestAnimationFrame(async () => {
+      if (canceled || disposing.current) return;
+      const bounds = measure();
+      if (!bounds) {
+        onError("Scroll the Google Lens browser area into view and retry.");
+        return;
+      }
+      try {
+        if (lensNavigation.kind === "upload") {
+          await reverseSearchLibraryWallpaperInline(lensNavigation.imageId, bounds);
+        } else {
+          await openGoogleLensInline(lensNavigation.url, bounds);
+        }
+        if (canceled || disposing.current) return;
+        hasView.current = true;
+        setLoaded(true);
+        await setGoogleImagesInlineZoom(zoomRef.current);
+        scheduleLayout();
+      } catch (reason) {
+        if (!canceled) onError(reason instanceof Error ? reason.message : String(reason));
+      }
+    });
+    return () => {
+      canceled = true;
+      if (pendingFrame) cancelAnimationFrame(pendingFrame);
+    };
+  // Only a new Lens navigation action should trigger this.
+  }, [lensNavigation?.revision]);
 
   return (
     <div className="gws-browser-viewport" style={{ height: viewportHeight }}>

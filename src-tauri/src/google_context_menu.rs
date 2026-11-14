@@ -142,11 +142,15 @@ pub unsafe fn register(core: &ICoreWebView2, app: AppHandle) -> windows::core::R
 
             let app_for_selection = app_for_menu.clone();
             let on_selection = CustomItemSelectedEventHandler::create(Box::new(move |_, _| {
-                if chosen.is_empty() {
+                // Lens often exposes a publisher LinkUri without a direct
+                // image SourceUri. Give the frontend that *selected* link so
+                // it can inspect publisher image metadata safely. Do not
+                // pretend the page URI itself is an image.
+                if chosen.is_empty() && link_uri.is_empty() {
                     let _ = app_for_selection.emit_to(
                         "main",
                         CONTEXT_MENU_ERROR_EVENT,
-                        "This Google image has no direct HTTPS image URL. Try Copy image link or open its original source website.",
+                        "Google Lens supplied neither an image address nor a publisher link. Try Copy image link.",
                     );
                 } else {
                     let _ = app_for_selection.emit_to(
