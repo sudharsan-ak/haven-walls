@@ -1,12 +1,14 @@
 //! A real Google Images webview embedded in the existing Haven Walls window.
-//! Navigation remains within Google's own HTTPS origins. No DOM injection,
-//! scraping, or IPC permission is granted to untrusted Google content.
+//! Navigation stays within Google's HTTPS origins. A one-shot browser-owned
+//! form submits a user-selected image to Lens; no scraping or IPC permission
+//! is granted to Google or other remote content.
 use serde::Deserialize;
 use crate::wallpaper_library;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use std::io::Cursor;
 use std::sync::Mutex;
 use tauri::webview::PageLoadEvent;
+use tauri::Emitter;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
     AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl,
@@ -175,7 +177,10 @@ async fn open_google_webview_at_url(
             if let Some(script) = pending {
                 // The image goes only to the Google image-upload page. This
                 // script is one-shot and never injected into other websites.
-                let _ = webview.eval(script);
+                if webview.eval(script).is_err() {
+                    let _ = load_app.emit_to("main", "google-lens-upload-error",
+                        "Google Lens could not submit the image from the browser. Use Manual upload instead.");
+                }
             }
         });
     let child = parent

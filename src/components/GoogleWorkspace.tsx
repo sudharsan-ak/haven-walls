@@ -327,6 +327,16 @@ export default function GoogleWorkspace({
       })
       .catch(() => {});
 
+    void listen<string>("google-lens-upload-error", (event) => {
+      setLensStatus({ kind: "manual", message: event.payload });
+      setBrowserError("");
+    })
+      .then((unlisten) => {
+        if (mounted) unsubscribers.push(unlisten);
+        else unlisten();
+      })
+      .catch(() => {});
+
     void listen<string>("google-image-menu-error", (event) => {
       setBrowserError(event.payload + " The Copy image link method remains available.");
       setNativeMenuStatus("Native image menu: see error above");
