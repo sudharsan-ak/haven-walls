@@ -158,4 +158,3 @@ This commit adds manual Windows wallpaper application and current application hi
 - Caption rendering uses a generated active copy; it does not license or modify the source image. Review applicable copyright/attribution requirements.
 - For any Windows API error, check the message shown in the apply dialog and your current monitor configuration. Use Windows Settings → Personalization → Background to restore a previous wallpaper.
 - The assistant does not build, test, trigger GitHub Actions or merge. The user owns Windows validation. Leave PR #3 as a draft until tested.
-
