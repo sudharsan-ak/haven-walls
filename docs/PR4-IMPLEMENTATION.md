@@ -15,17 +15,17 @@ browsing tabs or PR #6's automatic rotation.
   for Earth/Space in combined mode. NASA asset manifests are used to locate
   original-size image links rather than assuming a search thumbnail is full size.
 - Optional user-owned Unsplash access key and SerpApi Google Images key.
-  Both are held in React session memory; neither is persisted or included in
-  app logs. Google Browser Search is still available without an API key.
-  Unsplash use remains subject to provider API eligibility and required
-  download tracking/attribution for production use.
+  Keys are entered once in Settings, DPAPI-encrypted in the existing
+  local SQLite DB, and read only by native search requests. Google Browser
+  Search is available without an API key. Unsplash use remains subject to
+  provider API eligibility and required download tracking/attribution.
 - Combined results when optional keys are supplied. Each search clearly
   identifies provider failures instead of silently inventing photo results.
 - Inspect images with the existing FullResolutionPreview inspector, add to
   Review selection, batch Save selected to Library using PR #3's existing
   validation, duplicate checks, credits, rights review, and Quick Save policy.
-- No hidden background downloads, credential persistence, automatic image
-  rotation, photo upscaling, or claim that catalog-reported 4K is verified.
+- No hidden background downloads, automatic image rotation, photo upscaling,
+  or claim that catalog-reported 4K is verified.
 
 ## Design notes
 
@@ -51,9 +51,9 @@ browsing tabs or PR #6's automatic rotation.
    should be claimed to be verified 4K originals.
 4. Filter by provider and 4K/1080p; unknown-size NASA results should not
    be mislabeled 4K.
-5. Enter a SerpApi key, refresh, and confirm Google results join the grid.
-   Enter an authorized Unsplash key, refresh, and confirm photo results and
-   photographer/source metadata. Keys must not survive a full app restart.
+5. Set SerpApi and authorized Unsplash keys once under Settings, then
+   refresh the category gallery and confirm their results join the grid.
+   Restart the app and confirm keys remain configured and results still load.
 6. Remove either key and select its provider: show a clear key-required
    message without crashing or suppressing other sources.
 7. Create a custom category, browse it, restart the app and check its
@@ -82,8 +82,8 @@ specific application's eligibility and download-tracking requirements.
 - Native paging: Wikimedia generator search `gsroffset`, NASA `page` and
   `total_hits`, Unsplash `page` and `total_pages`, Google Images via
   SerpApi's zero-indexed `ijn`. Requests validate pages 1–100.
-- The original search query, provider list, and session-only API credentials
-  are reused across pages. A new search/category/topic clears discovery
+- The original search query and provider list are reused across pages.
+  Credentials are re-read from the protected SQLite store by native requests. A new search/category/topic clears discovery
   results and pagination state, but not Review selection. On a provider error
   the current results stay visible and that source is skipped until refresh.
 
@@ -109,7 +109,7 @@ Test on Windows:
   Search continues to work without a key; Wikimedia Commons and NASA need
   no keys.
 - Normal source builds, Git pulls, Tauri installer updates and additional
-  feature PRs must not delete or replace the Haven Walls AppData database.
+  feature PRs must not delete or replace the Haven Walls data database.
   The existing `open_database` initialization uses
   `CREATE TABLE IF NOT EXISTS`, preserving existing credentials and
   wallpaper rows. Changing storage mode migrates the existing database;
@@ -133,3 +133,15 @@ Windows acceptance:
    written by PR #3. Existing wallpapers, settings and credentials must remain.
 6. Confirm encrypted BLOBs, not readable keys, in the local
    `api_credentials` SQLite table. Do not print actual keys in test reports.
+
+Durability constraints for future development:
+- Keep the Tauri application identifier `com.havenwalls.app` unchanged, or
+  provide an explicit migration from the previous app data directory.
+- Do not delete `haven-walls.sqlite3` during a build, startup, schema upgrade,
+  or feature rollback. Use additive/idempotent migrations; never replace the
+  existing DB with the empty schema.
+- In portable mode the database lives in `HavenWallsData` beside the running
+  executable. Keep that folder with the EXE when switching build/output
+  locations. Normal rebuilds in the same folder preserve the data.
+- The encrypted keys require the same Windows user profile. Moving a portable
+  folder to another Windows account requires re-entering those keys.
