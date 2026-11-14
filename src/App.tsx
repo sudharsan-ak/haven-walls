@@ -37,6 +37,7 @@ export default function App() {
   const [libraryRevision, setLibraryRevision] = useState(0);
 
   function openGallery(source: CatalogSourceId) {
+    setLensRequest(null);
     setGallerySource(source);
     setPage("gallery");
   }
@@ -51,7 +52,10 @@ export default function App() {
     setLensRequest((previous) => ({
       imageId: image.id, requestId: (previous?.requestId || 0) + 1,
     }));
-    openGallery("google");
+    // Do not call openGallery here: that is a normal browse action and
+    // deliberately clears pending one-shot Lens uploads.
+    setGallerySource("google");
+    setPage("gallery");
   }
 
   useEffect(() => {
@@ -86,7 +90,10 @@ export default function App() {
             <button type="button" onClick={() => setPage("dashboard")}
               className={"nav-item " + (page === "dashboard" ? "current" : "")}
               aria-current={page === "dashboard" ? "page" : undefined}>⌂ <span>Dashboard</span></button>
-            <button type="button" onClick={() => setPage("gallery")}
+            <button type="button" onClick={() => {
+              setLensRequest(null);
+              setPage("gallery");
+            }}
               className={"nav-item " + (page === "gallery" ? "current" : "")}
               aria-current={page === "gallery" ? "page" : undefined}>▧ <span>Gallery</span></button>
             <button type="button" onClick={() => setPage("library")}
@@ -113,7 +120,10 @@ export default function App() {
           ) : page === "gallery" ? (
             <OnlineGallery
               source={gallerySource}
-              onSourceChange={setGallerySource}
+              onSourceChange={(source) => {
+                setLensRequest(null);
+                setGallerySource(source);
+              }}
               tmdbToken={tmdbToken}
               onTmdbTokenChange={setTmdbToken}
               serpapiKey={serpapiKey}

@@ -442,3 +442,5 @@ the exact saved managed Library file.
 **Important:** Google's non-public Lens upload behavior and actual WebView2
 navigation require local Windows validation before merge. No assistant
 Windows build, workflow run or merge was performed.
+
+Additional navigation guard: leaving the Lens result screen through normal Gallery/source navigation clears the one-shot upload request, so merely revisiting Gallery does not re-upload a saved image.
