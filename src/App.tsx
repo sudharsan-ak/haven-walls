@@ -3,7 +3,7 @@ import { readHostInfo, type HostInfo, type CatalogSourceId } from "./lib/native"
 import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
-import WallpaperDisplayPrefs from "./components/WallpaperDisplayPrefs";
+import SettingsPage from "./components/SettingsPage";
 import "./App.css";
 
 type HostState =
@@ -20,7 +20,7 @@ const upcoming = [
 
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
-  const [page, setPage] = useState<"dashboard" | "gallery" | "sources">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "sources" | "settings">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("bing");
   const [tmdbToken, setTmdbToken] = useState("");
   const [serpapiKey, setSerpapiKey] = useState("");
@@ -74,13 +74,17 @@ export default function App() {
             <button type="button" onClick={() => setPage("sources")}
               className={"nav-item " + (page === "sources" ? "current" : "")}
               aria-current={page === "sources" ? "page" : undefined}>✧ <span>Sources</span></button>
-            <span className="nav-item upcoming">⚙ <span>Settings</span><small>Soon</small></span>
+            <button type="button" onClick={() => setPage("settings")}
+              className={"nav-item " + (page === "settings" ? "current" : "")}
+              aria-current={page === "settings" ? "page" : undefined}>⚙ <span>Settings</span></button>
           </nav>
           <div className="sidebar-footer">Local-first. No accounts or telemetry.</div>
         </aside>
 
         <main className="content">
-          {page === "gallery" ? (
+          {page === "settings" ? (
+            <SettingsPage />
+          ) : page === "gallery" ? (
             <OnlineGallery
               source={gallerySource}
               onSourceChange={setGallerySource}
@@ -123,7 +127,11 @@ export default function App() {
                   </div>
                 </article>
               </div>
-              <WallpaperDisplayPrefs />
+              <div className="provider-footnote">
+                Wallpaper caption and photo-credit preferences are now in
+                <button type="button" className="gallery-open-link"
+                  onClick={() => setPage("settings")}>Settings</button>.
+              </div>
               <p className="provider-footnote">
                 These are previews, not rights-cleared wallpaper downloads. External provider
                 terms, attributions and artwork permissions must be checked before applying images.
