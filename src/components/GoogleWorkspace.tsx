@@ -599,7 +599,7 @@ export default function GoogleWorkspace({
                 {lensFallbackNote && <p>{lensFallbackNote}</p>}
               </div>
             )}
-            {browserError && <p className="gws-error" role="alert">{browserError}</p>
+            {browserError && <p className="gws-error" role="alert">{browserError}</p>}
             {browserNote && <p className="gws-info" role="status">{browserNote}</p>}
           </div>
 
