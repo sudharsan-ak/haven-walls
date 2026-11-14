@@ -136,7 +136,10 @@ export default function CategoryDiscovery({
       if (provider === "unsplash" && !unsplashKey.trim()) {
         return Promise.reject(new Error("Enter your Unsplash access key before using this source."));
       }
-      return browseCategoryImages(provider, query, unsplashKey);
+      if (provider === "commons" || provider === "nasa" || provider === "unsplash") {
+        return browseCategoryImages(provider, query, unsplashKey);
+      }
+      return Promise.reject(new Error("Unsupported image source."));
     });
     const completed = await Promise.allSettled(requests);
     if (requestId.current !== request) return;
