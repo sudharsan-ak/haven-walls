@@ -452,3 +452,24 @@ retains `upgradeFromId` for the original Library photo. The existing Rust
 high-resolution and perceptual-match checks then permit only a larger match.
 This context is cleared when the user starts a normal keyword search.
 Google Lens URLs are not mislabeled as publisher source pages.
+
+
+## Lens broken-image regression: use the same WebView2 session
+
+Windows recording on 2026-11-14 showed a Google Lens redirect and broken
+image thumbnail. The Rust HTTP upload was separate from the browser displaying
+the redirected results, so it was wrong to claim Google accepted the image.
+Instead, after the user's reverse-search click, Rust reads the selected
+Library image, encodes a temporary max-1600px JPEG entirely in memory and
+opens Google's image-search page in the existing isolated child WebView2.
+A one-shot page-load hook submits a multipart browser form with that image to
+Google Lens. The form and its redirect stay in the SAME browser session.
+Google may still block this unofficial automation. We no longer claim a
+redirect guarantees matches, and Manual upload instead is always visible:
+the user can open the official upload UI and reveal their exact saved image in
+Explorer. The managed original is not touched. No new dependencies.
+
+Test on Windows: reverse-search a saved image; ensure the actual image and
+visual matches load, not just a blank results page. If Google rejects the
+submission, use Manual upload instead. Confirm repeated searches, keywords,
+Review selection, Save to Library and Set Now are unchanged.

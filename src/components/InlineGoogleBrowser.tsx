@@ -4,6 +4,7 @@ import {
   layoutGoogleImagesInline,
   openGoogleImagesInline,
   openGoogleLensInline,
+  reverseSearchLibraryWallpaperInline,
   setGoogleImagesInlineZoom,
   type GoogleInlineBounds,
 } from "../lib/native";
@@ -11,7 +12,10 @@ import {
 interface Props {
   query: string;
   searchRevision: number;
-  lensNavigation: { url: string; revision: number } | null;
+  lensNavigation:
+    | { kind: "upload"; imageId: string; revision: number }
+    | { kind: "manual"; url: string; revision: number }
+    | null;
   obscured: boolean;
   zoom: number;
   viewportHeight: number;
@@ -142,9 +146,8 @@ export default function InlineGoogleBrowser({
   }, [searchRevision]);
 
 
-  // Results are loaded by the browser after Rust uploads the actual file.
-  // Do not search with the image title. The homepage route is only a manual
-  // fallback when the upload endpoint is blocked by Google.
+  // Lens file uploads happen inside Google's WebView2 browsing session,
+  // not via a separate Rust HTTP client. The fallback is manual.
   useEffect(() => {
     if (!lensNavigation) return;
     let canceled = false;
@@ -158,7 +161,11 @@ export default function InlineGoogleBrowser({
         return;
       }
       try {
-        await openGoogleLensInline(lensNavigation.url, bounds);
+        if (lensNavigation.kind === "upload") {
+          await reverseSearchLibraryWallpaperInline(lensNavigation.imageId, bounds);
+        } else {
+          await openGoogleLensInline(lensNavigation.url, bounds);
+        }
         if (canceled || disposing.current) return;
         hasView.current = true;
         setLoaded(true);

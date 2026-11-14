@@ -116,13 +116,15 @@ export async function openGoogleLensInline(
   await invoke<void>("open_google_lens_inline", { url, bounds });
 }
 
-/** Sends the exact saved Library image to Google's Lens upload endpoint.
- * Runs only after a click on "Reverse search this image".
- * Google may reject its non-public upload endpoint; use the manual fallback.
+/** Initiate a visual search by uploading a search-sized copy from the
+ * saved image inside Google's own embedded browser session. This does not
+ * prove that Google has produced usable results.
  */
-export async function uploadLibraryWallpaperToLens(imageId: string): Promise<string> {
+export async function reverseSearchLibraryWallpaperInline(
+  imageId: string, bounds: GoogleInlineBounds,
+): Promise<void> {
   if (!isTauri()) throw new Error("Google Lens requires the Haven Walls Windows app.");
-  return invoke<string>("upload_library_wallpaper_to_lens", { imageId });
+  return invoke<void>("reverse_search_library_wallpaper_inline", { imageId, bounds });
 }
 
 /** Opens Windows Explorer at the saved managed image for manual Lens upload. */

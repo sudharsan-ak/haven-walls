@@ -3,14 +3,50 @@
 //! scraping, or IPC permission is granted to untrusted Google content.
 use serde::Deserialize;
 use crate::wallpaper_library;
-use reqwest::header::{CONTENT_TYPE, LOCATION};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use std::io::Cursor;
+use std::sync::Mutex;
+use tauri::webview::PageLoadEvent;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
     AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl,
 };
 
 const WEBVIEW_LABEL: &str = "google-images-inline";
+
+#[derive(Default)]
+pub struct PendingLensUpload(pub Mutex<Option<String>>);
+
+/// A user-initiated form post from Google's own browser session. No Tauri
+/// permissions are granted to Google or other remote content.
+const LENS_FORM_SCRIPT: &str = r#"
+(() => {
+  if (!['www.google.com', 'google.com'].includes(location.hostname) ||
+      location.pathname !== '/imghp' || !document.body) return;
+  const binary = atob('__LENS_JPEG_BASE64__');
+  const pixels = new Uint8Array(binary.length);
+  for (let n = 0; n < binary.length; n++) pixels[n] = binary.charCodeAt(n);
+  const form = document.createElement('form');
+  form.action = 'https://lens.google.com/v3/upload?ep=ccm&s=&st=' + Date.now();
+  form.method = 'POST';
+  form.enctype = 'multipart/form-data';
+  form.style.display = 'none';
+  const upload = document.createElement('input');
+  upload.type = 'file';
+  upload.name = 'encoded_image';
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([pixels], 'haven-walls-image.jpg', { type: 'image/jpeg' }));
+  upload.files = transfer.files;
+  form.appendChild(upload);
+  const source = document.createElement('input');
+  source.type = 'hidden';
+  source.name = 'sbisrc';
+  source.value = 'Google Chrome';
+  form.appendChild(source);
+  document.body.appendChild(form);
+  form.submit();
+})();
+"#;
 
 #[derive(Debug, Deserialize)]
 pub struct BrowserBounds {
@@ -124,9 +160,24 @@ async fn open_google_webview_at_url(
 
     let parent = app.get_window("main")
         .ok_or_else(|| "Haven Walls main window is unavailable".to_string())?;
+    let load_app = app.clone();
     let builder = WebviewBuilder::new(WEBVIEW_LABEL, WebviewUrl::External(url))
         .on_navigation(allow_google_navigation)
-        .on_new_window(|_, _| NewWindowResponse::Deny);
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .on_page_load(move |webview, payload| {
+            if !matches!(payload.event(), PageLoadEvent::Finished) ||
+                payload.url().host_str() != Some("www.google.com") ||
+                payload.url().path() != "/imghp" {
+                return;
+            }
+            let state = load_app.state::<PendingLensUpload>();
+            let pending = state.0.lock().ok().and_then(|mut value| value.take());
+            if let Some(script) = pending {
+                // The image goes only to the Google image-upload page. This
+                // script is one-shot and never injected into other websites.
+                let _ = webview.eval(script);
+            }
+        });
     let child = parent
         .add_child(
             builder,
@@ -177,70 +228,44 @@ async fn open_google_webview_at_url(
 }
 
 
-/// User-initiated reverse image lookup using the exact saved Library bytes.
-/// Google's upload endpoint is not a public API: return an actionable error
-/// if it changes or denies the request instead of pretending a match exists.
-/// We never scrape, store results, or send the image to a third-party proxy.
+/// Upload a user-selected saved Library photo in the same WebView2 session
+/// that will display Google's results. The original file is never modified.
 #[tauri::command]
-pub async fn upload_library_wallpaper_to_lens(
-    app: AppHandle, image_id: String,
-) -> Result<String, String> {
-    let (bytes, mime) = tauri::async_runtime::spawn_blocking(move ||
-        wallpaper_library::lens_wallpaper_bytes(&app, &image_id)
-    ).await.map_err(|_| "Reading the Library image was interrupted.".to_string())??;
-
-    let extension = match mime {
-        "image/png" => "png",
-        "image/webp" => "webp",
-        _ => "jpg",
-    };
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH)
-        .map_err(|_| "System time is unavailable.".to_string())?.as_nanos();
-    let boundary = format!("haven-walls-lens-{:x}", suffix);
-    let header = format!(
-        "--{boundary}\r\nContent-Disposition: form-data; name=\"encoded_image\"; filename=\"wallpaper.{extension}\"\r\nContent-Type: {mime}\r\n\r\n"
-    );
-    let footer = format!(
-        "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"sbisrc\"\r\n\r\nGoogle Chrome\r\n--{boundary}--\r\n"
-    );
-    let mut body = Vec::with_capacity(header.len() + bytes.len() + footer.len());
-    body.extend_from_slice(header.as_bytes());
-    body.extend_from_slice(&bytes);
-    body.extend_from_slice(footer.as_bytes());
-
-    // Never forward the uploaded bytes to arbitrary redirect targets.
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .no_proxy()
-        .timeout(Duration::from_secs(30))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36")
-        .build().map_err(|e| format!("Could not create Lens upload request: {e}"))?;
-    let endpoint = reqwest::Url::parse("https://lens.google.com/v3/upload")
-        .map_err(|_| "Invalid Google Lens endpoint.".to_string())?;
-    let response = client.post(endpoint.clone())
-        .header(CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
-        .body(body)
-        .send().await.map_err(|e| format!("Google Lens upload request failed: {e}"))?;
-    if !response.status().is_redirection() {
-        return Err(format!(
-            "Google Lens did not accept the image automatically (HTTP {}). Use the upload file option below.",
-            response.status()
-        ));
+pub async fn reverse_search_library_wallpaper_inline(
+    app: AppHandle, image_id: String, bounds: BrowserBounds,
+) -> Result<(), String> {
+    if !bounds.is_valid() {
+        return Err("Scroll the embedded browser into view before reverse searching.".into());
     }
-    let location = response.headers().get(LOCATION)
-        .and_then(|v| v.to_str().ok())
-        .ok_or("Google Lens did not return a results address.")?;
-    let results = endpoint.join(location)
-        .map_err(|_| "Google Lens returned an invalid results address.".to_string())?;
-    let host = results.host_str().unwrap_or("");
-    let path = results.path();
-    if results.scheme() != "https" ||
-        !matches!(host, "www.google.com" | "google.com" | "lens.google.com") ||
-        !(path == "/search" || path.starts_with("/search/")) ||
-        results.as_str().len() > 8192 {
-        return Err("Google Lens redirected to an unsupported page. Use the manual upload option.".into());
+    let file_app = app.clone();
+    let encoded = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let (bytes, _) = wallpaper_library::lens_wallpaper_bytes(&file_app, &image_id)?;
+        let image = image::load_from_memory(&bytes)
+            .map_err(|e| format!("Could not decode the saved wallpaper for Lens: {e}"))?;
+        // Visual matching does not require the full 4K/8K original. The JPEG
+        // copy is kept in memory for this one explicit search only.
+        let preview = image.thumbnail(1600, 1600);
+        let mut encoded = Cursor::new(Vec::new());
+        preview.write_to(&mut encoded, image::ImageFormat::Jpeg)
+            .map_err(|e| format!("Could not prepare the Lens preview: {e}"))?;
+        Ok(BASE64.encode(encoded.into_inner()))
+    }).await.map_err(|_| "Could not prepare the Lens image.".to_string())??;
+    if encoded.len() > 10 * 1024 * 1024 {
+        return Err("The Lens preview is too large to submit.".into());
     }
-    Ok(results.to_string())
+    let state = app.state::<PendingLensUpload>();
+    {
+        let mut slot = state.0.lock()
+            .map_err(|_| "Google Lens upload is temporarily unavailable.".to_string())?;
+        *slot = Some(LENS_FORM_SCRIPT.replace("__LENS_JPEG_BASE64__", &encoded));
+    }
+    let url = tauri::Url::parse("https://www.google.com/imghp")
+        .map_err(|_| "Could not prepare the Google Lens image-upload page.".to_string())?;
+    if let Err(error) = open_google_webview_at_url(app.clone(), url, bounds).await {
+        if let Ok(mut slot) = state.0.lock() { *slot = None; }
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Keep the native child in the visible portion of the React browser slot.

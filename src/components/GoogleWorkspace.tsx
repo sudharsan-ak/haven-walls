@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { listen } from "@tauri-apps/api/event";
 import {
   browseGoogleImages,
-  uploadLibraryWallpaperToLens,
   showLibraryWallpaperForLens,
   type CatalogImage,
   type CatalogSourceId,
@@ -176,7 +175,11 @@ export default function GoogleWorkspace({
   const [browserQuery, setBrowserQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [apiQuery, setApiQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
   const [browserRevision, setBrowserRevision] = useState(0);
-  const [lensNavigation, setLensNavigation] = useState<{ url: string; revision: number } | null>(null);
+  const [lensNavigation, setLensNavigation] = useState<
+    | { kind: "upload"; imageId: string; revision: number }
+    | { kind: "manual"; url: string; revision: number }
+    | null
+  >(null);
   const [lensStatus, setLensStatus] = useState<{ kind: "uploading" | "results" | "manual"; message: string } | null>(null);
   const [lensFallbackNote, setLensFallbackNote] = useState("");
   const [browserZoom, setBrowserZoom] = useState(100);
@@ -220,47 +223,33 @@ export default function GoogleWorkspace({
 
   useEffect(() => {
     if (!lensRequest) return;
-    let active = true;
     setMode("browser");
     lensUpgradeId.current = lensRequest.imageId;
     setLensFallbackNote("");
     setBrowserError("");
     setLensStatus({
       kind: "uploading",
-      message: "Uploading the actual saved Library image to Google Lens for visual matching…",
+      message: "Sending a search-sized copy of the saved wallpaper from the embedded Google browser. If Lens shows a broken image or no matches, choose Manual upload below.",
     });
-    // Each request comes from an explicit click on a saved Library image.
-    // No automatic background searches, keyword substitutions or public
-    // image URL uploads. Rust reads the managed bytes and posts them to Google.
-    void uploadLibraryWallpaperToLens(lensRequest.imageId)
-      .then((url) => {
-        if (!active) return;
-        setLensStatus({
-          kind: "results",
-          message: "Google Lens accepted the image and returned a results address. Review visual matches in the embedded browser.",
-        });
-        setLensNavigation((old) => ({ url, revision: (old?.revision || 0) + 1 }));
-      })
-      .catch((reason) => {
-        if (!active) return;
-        const message = reason instanceof Error ? reason.message : String(reason);
-        setLensStatus({
-          kind: "manual",
-          message: "Google did not accept automatic upload: " + message +
-            " Use Google's Upload a file control below and select your saved image.",
-        });
-        setLensNavigation((old) => ({
-          url: "https://www.google.com/imghp", revision: (old?.revision || 0) + 1,
-        }));
-      });
-    return () => { active = false; };
+    setLensNavigation((old) => ({
+      kind: "upload", imageId: lensRequest.imageId,
+      revision: (old?.revision || 0) + 1,
+    }));
   }, [lensRequest?.requestId]);
 
   async function revealLensImage() {
     if (!lensRequest) return;
+    setLensStatus({
+      kind: "manual",
+      message: "Use Google's camera icon, then Upload a file. Choose the saved image highlighted in Windows Explorer.",
+    });
+    setLensNavigation((old) => ({
+      kind: "manual", url: "https://www.google.com/imghp",
+      revision: (old?.revision || 0) + 1,
+    }));
     try {
       await showLibraryWallpaperForLens(lensRequest.imageId);
-      setLensFallbackNote("The saved image is selected in Explorer. In Google Lens choose Upload a file, then select that image.");
+      setLensFallbackNote("Your saved wallpaper is selected in Explorer. Choose it in Google's Upload a file dialog.");
     } catch (reason) {
       setLensFallbackNote(reason instanceof Error ? reason.message : String(reason));
     }
@@ -590,12 +579,10 @@ export default function GoogleWorkspace({
               <div className="gws-info" role="status">
                 <strong>Reverse image search · Google Lens</strong>
                 <p>{lensStatus.message}</p>
-                {lensStatus.kind === "manual" && (
-                  <button type="button" className="online-secondary"
-                    onClick={() => void revealLensImage()}>
-                    Show saved image in Explorer
-                  </button>
-                )}
+                <button type="button" className="online-secondary"
+                  onClick={() => void revealLensImage()}>
+                  {lensStatus.kind === "manual" ? "Show saved image in Explorer" : "Manual upload instead"}
+                </button>
                 {lensFallbackNote && <p>{lensFallbackNote}</p>}
               </div>
             )}

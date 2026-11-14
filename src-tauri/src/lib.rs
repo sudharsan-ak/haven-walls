@@ -33,6 +33,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(local_storage::StorageLock::default())
+        .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
             configuration::initialize(app.handle()).map_err(std::io::Error::other)?;
             Ok(())
@@ -44,7 +45,7 @@ pub fn run() {
             google_images::browse_google_images,
             google_browser::open_google_images_inline,
             google_browser::open_google_lens_inline,
-            google_browser::upload_library_wallpaper_to_lens,
+            google_browser::reverse_search_library_wallpaper_inline,
             google_browser::layout_google_images_inline,
             google_browser::set_google_images_inline_zoom,
             google_browser::close_google_images_inline,
