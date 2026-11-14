@@ -4,6 +4,7 @@ import {
   type CatalogSourceId, type CategoryProvider,
 } from "../lib/native";
 import FullResolutionPreview from "./FullResolutionPreview";
+import { getApiCredentialStatus, type ApiCredentialStatus } from "../lib/apiCredentials";
 import "./CategoryDiscovery.css";
 
 type Category = {
@@ -19,7 +20,6 @@ type SearchSession = {
   nextPage: Partial<Record<Provider, number>>;
   more: Partial<Record<Provider, boolean>>;
   cursor: number;
-  keys: { serpapiKey: string; unsplashKey: string };
 };
 type Result = { photo: CatalogImage; key: string };
 
@@ -82,14 +82,9 @@ function imageKey(photo: CatalogImage): string {
 interface Props {
   onSourceChange: (source: CatalogSourceId) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
-  serpapiKey: string;
-  onSerpapiKeyChange: (value: string) => void;
-  unsplashKey: string;
-  onUnsplashKeyChange: (value: string) => void;
 }
 export default function CategoryDiscovery({
-  onSourceChange, onSaveToLibrary, serpapiKey, onSerpapiKeyChange,
-  unsplashKey, onUnsplashKeyChange,
+  onSourceChange, onSaveToLibrary,
 }: Props) {
   const [custom, setCustom] = useState<Category[]>(loadCustom);
   const [categoryId, setCategoryId] = useState("nature");
@@ -103,6 +98,7 @@ export default function CategoryDiscovery({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [canLoadMore, setCanLoadMore] = useState(false);
+  const [configured, setConfigured] = useState<ApiCredentialStatus | null>(null);
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
@@ -128,22 +124,16 @@ export default function CategoryDiscovery({
   }
 
   function fetchProviderPage(
-    provider: Provider, query: string, page: number, keys: SearchSession["keys"],
+    provider: Provider, query: string, page: number,
   ): Promise<CatalogResponse> {
     if (provider === "google") {
-      if (!keys.serpapiKey.trim()) {
-        return Promise.reject(new Error("Google Images needs a SerpApi key. Browser Search still works without one."));
-      }
-      return browseGoogleImages(query, keys.serpapiKey, 1920, 1080, page);
+      return browseGoogleImages(query, 1920, 1080, page);
     }
-    if (provider === "unsplash" && !keys.unsplashKey.trim()) {
-      return Promise.reject(new Error("Enter an Unsplash access key to search this source."));
-    }
-    return browseCategoryImages(provider, query, keys.unsplashKey, page);
+    return browseCategoryImages(provider, query, page);
   }
 
   async function load(nextCategory: Category, nextTopic: string, selectedSource: SourceChoice = source,
-    searchText: string = keywords) {
+    searchText: string = keywords, providerStatus = configured) {
     const request = ++requestId.current;
     searchSession.current = null;
     setLoading(true);
@@ -154,14 +144,13 @@ export default function CategoryDiscovery({
     setResults([]);
     const query = [nextCategory.prompt, nextTopic === "All" ? "" : nextTopic, searchText.trim()]
       .filter(Boolean).join(" ").slice(0, 100);
-    const keys = { serpapiKey, unsplashKey };
     const providers: Provider[] = selectedSource === "all"
       ? ["commons", ...(nextCategory.id === "space" || nextCategory.id === "earth" ? ["nasa" as const] : []),
-          ...(keys.unsplashKey.trim() ? ["unsplash" as const] : []),
-          ...(keys.serpapiKey.trim() ? ["google" as const] : [])]
+          ...(providerStatus?.unsplash ? ["unsplash" as const] : []),
+          ...(providerStatus?.serpapi ? ["google" as const] : [])]
       : [selectedSource];
     const completed = await Promise.allSettled(
-      providers.map((provider) => fetchProviderPage(provider, query, 1, keys))
+      providers.map((provider) => fetchProviderPage(provider, query, 1))
     );
     if (requestId.current !== request) return;
 
@@ -193,7 +182,7 @@ export default function CategoryDiscovery({
     found.sort((a, b) =>
       b.photo.width * b.photo.height - a.photo.width * a.photo.height
     );
-    searchSession.current = { query, providers, nextPage, more, cursor: 0, keys };
+    searchSession.current = { query, providers, nextPage, more, cursor: 0 };
     setResults(found);
     setErrors(failures);
     setNote(notes.join(" · "));
@@ -222,7 +211,7 @@ export default function CategoryDiscovery({
     setLoadingMore(true);
     setErrors([]);
     try {
-      const response = await fetchProviderPage(provider, session.query, page, session.keys);
+      const response = await fetchProviderPage(provider, session.query, page);
       if (requestId.current !== request || searchSession.current !== session) return;
       session.nextPage[provider] = page + 1;
       session.more[provider] = Boolean(response.hasMore) && page < 100;
@@ -253,11 +242,22 @@ export default function CategoryDiscovery({
     }
   }
 
-  // Opening Discover is an intentional browsing action. No search occurs in
-  // the background after leaving this screen; keys are never persisted.
+  // On every visit read credential *status*, never the keys themselves.
+  // When Settings is closed this view remounts, picking up updated providers.
   useEffect(() => {
-    void load(PRIMARY[0], "All", "all", "");
-    return () => { requestId.current++; };
+    let active = true;
+    void getApiCredentialStatus().then((found) => {
+      if (!active) return;
+      setConfigured(found);
+      void load(PRIMARY[0], "All", "all", "", found);
+    }).catch((problem: unknown) => {
+      if (!active) return;
+      setConfigured({ serpapi: false, unsplash: false, tmdb: false });
+      // Commons and NASA remain usable if credential status cannot be read.
+      void load(PRIMARY[0], "All", "all", "", null);
+      setErrors([problem instanceof Error ? problem.message : String(problem)]);
+    });
+    return () => { active = false; requestId.current++; };
   }, []);
 
   function chooseCategory(category: Category) {
@@ -369,22 +369,12 @@ export default function CategoryDiscovery({
           {loading ? "Searching…" : "Search / refresh"}
         </button>
       </form>
-      <details className="cdy-keys">
-        <summary>Optional provider API keys (session only)</summary>
-        <div className="cdy-key-grid">
-          <label>SerpApi key for Google Images
-            <input type="password" autoComplete="off" value={serpapiKey}
-              onChange={(e) => onSerpapiKeyChange(e.target.value)}
-              placeholder="Optional Google Images API search" />
-          </label>
-          <label>Unsplash access key
-            <input type="password" autoComplete="off" value={unsplashKey}
-              onChange={(e) => onUnsplashKeyChange(e.target.value)}
-              placeholder="Optional Unsplash photo search" />
-          </label>
-        </div>
-        <p>Keys stay in app memory and go only to their respective provider when you search. NASA and Commons need no key. Google Browser Search also needs no key.</p>
-      </details>
+      <div className="cdy-keys">
+        <strong>API credentials are managed under Settings → API credentials.</strong>
+        <p>Google Images (SerpApi): {configured?.serpapi ? "Configured" : "Not configured"} ·
+          Unsplash: {configured?.unsplash ? "Configured" : "Not configured"} ·
+          NASA and Wikimedia Commons need no key.</p>
+      </div>
 
       {errors.length > 0 && <div className="cdy-errors" role="alert">
         {errors.map((message, index) => <p key={index}>{message}</p>)}
