@@ -326,3 +326,28 @@ An explicit direct image URL takes priority; it must still be validated.
 
 No Rust crate was added or upgraded; Cargo.lock is unchanged. Windows app
 build and live-provider behavior must be tested by the user before merging.
+
+## Local-time display and Library history cleanup
+
+- The oversized **Recent wallpaper history** panel is removed from the
+  Library screen. SQLite wallpaper history, active assignments and timestamps
+  remain intact for the future History view and rotation features.
+- The current wallpaper's last-applied time is formatted using the Windows
+  device's current timezone and locale, including DST adjustments. No raw UTC
+  suffix is displayed in the UI.
+- Existing SQLite `CURRENT_TIMESTAMP` values are UTC and have no offset.
+  Convert them correctly to a UTC instant before formatting locally; ISO
+  timestamps with explicit offsets are also supported. UTC remains the stable
+  internal timestamp format for comparisons, portability and backup/restore.
+- Do not rewrite existing history to naive local timestamps; that would make
+  ordering ambiguous during DST transitions or after a timezone change.
+
+### Local Windows acceptance
+
+1. Apply a wallpaper and check its **Last applied** time on the Library page.
+   It should reflect Windows system time, not the raw UTC value.
+2. Change the Windows timezone and reopen the Library. The displayed time
+   should change to the new zone without changing the recorded instant.
+3. Check around a DST boundary; timestamps must not be shifted twice.
+4. The old full-width Recent wallpaper history section should be absent,
+   while the Last applied block and stored history remain available.

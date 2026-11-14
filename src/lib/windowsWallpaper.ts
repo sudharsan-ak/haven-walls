@@ -34,6 +34,26 @@ export interface WallpaperApplyResult {
   wallpaperId: string;
 }
 
+/**
+ * SQLite's legacy CURRENT_TIMESTAMP values are UTC without an explicit zone.
+ * Interpret those values as UTC, then render using the operating system's
+ * current local timezone and locale. Explicit ISO offsets remain respected.
+ * Never rewrite historical instants as naive wall-clock strings.
+ */
+export function formatWallpaperLocalTime(timestamp: string): string {
+  const value = timestamp.trim();
+  const legacyUtc = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+  const withZone = legacyUtc.test(value)
+    ? value.replace(" ", "T") + "Z"
+    : value;
+  const date = new Date(withZone);
+  if (!Number.isFinite(date.getTime())) return "Time unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  }).format(date);
+}
+
 function requireDesktop() {
   if (!isTauri()) throw new Error("Windows wallpaper application requires the Haven Walls desktop app.");
 }

@@ -8,7 +8,7 @@ import {
 import { formattedBytes } from "../lib/configuration";
 import { qualityTier } from "../lib/imageQuality";
 import {
-  getWallpaperActivity, type WallpaperActivity,
+  getWallpaperActivity, formatWallpaperLocalTime, type WallpaperActivity,
 } from "../lib/windowsWallpaper";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
@@ -310,9 +310,10 @@ export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveT
           <strong>Last applied by Haven Walls</strong>
           <div>
             {activity.current.map((active) => (
-              <span key={active.targetId} title={active.appliedAt}>
+              <span key={active.targetId} title={"Applied " + formatWallpaperLocalTime(active.appliedAt)}>
                 {active.targetId === "all" ? "All displays" :
                   "Selected display"}: {active.title}
+                <small>Applied {formatWallpaperLocalTime(active.appliedAt)}</small>
               </span>
             ))}
           </div>
@@ -390,20 +391,6 @@ export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveT
         Automatic rotation and background downloading are not enabled.
         Active working copies stay separate from saved Library originals.
       </p>
-      {activity && activity.history.length > 0 && (
-        <section className="hwl-history" aria-label="Recent wallpaper activity">
-          <h2>Recent wallpaper history</h2>
-          <div className="hwl-history-list">
-            {activity.history.slice(0, 12).map((event, index) => (
-              <div key={event.appliedAt + event.targetId + index}>
-                <strong>{event.title}</strong>
-                <span>{event.targetId === "all" ? "All displays" : "Specific display"}
-                  {" · "}{event.fit}{" · "}{event.appliedAt} UTC</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
       {activityError && <p className="hwl-error" role="alert">
         Windows wallpaper history is unavailable: {activityError}
       </p>}
