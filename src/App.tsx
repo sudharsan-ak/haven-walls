@@ -18,6 +18,7 @@ type HostState =
 const upcoming = [
   { title: "Online gallery", detail: "Explore photography, TV backdrops and team artwork", icon: "▧" },
   { title: "Wallpaper Library", detail: "Save, favorite and organize images offline", icon: "▣" },
+  { title: "Set wallpaper", detail: "Apply saved images to Windows displays", icon: "▤" },
   { title: "Rotation", detail: "Schedules and category preferences", icon: "↻" },
 ];
 
@@ -157,7 +158,7 @@ export default function App() {
           <h1>Welcome to Haven Walls</h1>
           <p className="subheading">
             A better way to discover and manage desktop wallpapers.
-            Saved wallpapers now have a local Library. Windows wallpaper application comes next.
+            Save wallpapers locally and apply them to Windows. Automatic rotation is coming later.
           </p>
 
           <section className="hero" aria-labelledby="foundation-title">
@@ -187,8 +188,8 @@ export default function App() {
           </section>
 
           <div className="section-heading">
-            <h2>Coming up</h2>
-            <span>Browse and save wallpapers now. Applying them to Windows comes next.</span>
+            <h2>Get started</h2>
+            <span>Find, save and apply a wallpaper directly to your Windows desktop.</span>
           </div>
           <section className="preview-grid" aria-label="Upcoming features">
             {upcoming.map((item) => (
@@ -198,9 +199,11 @@ export default function App() {
                 <p>{item.detail}</p>
                 {item.title === "Online gallery" ? (
                   <button type="button" className="gallery-open-link" onClick={() => openGallery("bing")}>Open gallery</button>
-                ) : item.title === "Wallpaper Library" ? (
+                ) : item.title === "Wallpaper Library" || item.title === "Set wallpaper" ? (
                   <button type="button" className="gallery-open-link"
-                    onClick={() => setPage("library")}>Open Library</button>
+                    onClick={() => setPage("library")}>
+                    {item.title === "Set wallpaper" ? "Set wallpaper" : "Open Library"}
+                  </button>
                 ) : <span className="coming-soon">Planned</span>}
               </article>
             ))}

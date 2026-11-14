@@ -157,8 +157,8 @@ export default function SettingsPage() {
       <div className="eyebrow">Haven Walls / Settings</div>
       <h1>Settings</h1>
       <p className="subheading">
-        Your preferences are stored locally. The library and Windows wallpaper integration
-        will use them in the next PR #3 commits.
+        Your preferences are stored locally. Wallpaper fit, captions and photo credits
+        now apply when you set a saved image as your Windows wallpaper.
       </p>
 
       <div className="hws-settings-summary">
@@ -171,9 +171,9 @@ export default function SettingsPage() {
         <div className="hws-settings-section-header">
           <div>
             <h2 id="hws-wallpaper">Wallpaper & display</h2>
-            <p>Saved defaults for the Windows wallpaper application work in this PR.</p>
+            <p>Defaults used by Set Now in Library and the Gallery import flow.</p>
           </div>
-          <span className="hws-settings-phase">Used in next commit</span>
+          <span className="hws-settings-live">Available now</span>
         </div>
         <div className="hws-settings-fields two">
           <label className="hws-settings-field">
@@ -199,7 +199,7 @@ export default function SettingsPage() {
             onChange={(event) => field("prefer4k", event.target.checked)} />
         </label>
         <label className="hws-settings-toggle">
-          <div><strong>Show photo credit</strong><small>Optional bottom-right overlay. Source attribution stays in metadata even when hidden.</small></div>
+          <div><strong>Show photo credit</strong><small>Bottom-right overlay on prepared wallpaper copies. Original Library images are unchanged.</small></div>
           <input type="checkbox" checked={form.showPhotoCredit}
             onChange={(event) => field("showPhotoCredit", event.target.checked)} />
         </label>

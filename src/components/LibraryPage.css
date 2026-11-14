@@ -147,3 +147,18 @@
 }
 
 .hwl-detail-text h2 { overflow-wrap: anywhere; }
+
+/* Active Windows wallpaper status and recent history in the local Library. */
+.hwl-current { border: 1px solid #cfe5d9; background: #f0faf5; border-radius: 11px; padding: 12px 16px; margin-bottom: 17px; }
+.hwl-current > strong { display: block; font-size: 12px; color: #266447; margin-bottom: 8px; }
+.hwl-current > div { display: flex; gap: 8px; flex-wrap: wrap; }
+.hwl-current span { color: #40765c; font-size: 11px; border: 1px solid #d1e8dd; background: white; border-radius: 7px; padding: 7px 10px; }
+.hwl-history { background: #fff; border: 1px solid #dbe8f1; border-radius: 12px; padding: 17px; margin-top: 19px; }
+.hwl-history h2 { font-size: 14px; margin: 0 0 12px; color: #304b61; }
+.hwl-history-list { display: flex; flex-direction: column; max-height: 250px; overflow-y: auto; }
+.hwl-history-list > div { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; padding: 10px 0; border-top: 1px solid #edf2f6; }
+.hwl-history-list strong { font-size: 11px; font-weight: 700; }
+.hwl-history-list span { font-size: 10px; color: #8298a9; text-align: right; }
+.hwl-card-actions { flex-wrap: wrap; }
+.hwl-card-actions button { flex: 1 1 30%; }
+@media (max-width: 780px) { .hwl-history-list > div { flex-direction: column; } }

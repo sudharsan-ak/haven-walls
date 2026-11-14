@@ -4,6 +4,7 @@ import type { CatalogImage } from "../lib/native";
 import { imageCandidates } from "../lib/imageResolution";
 import {
   fileBlobToBase64, importWallpaperData, importWallpaperUrl, type ImportOutcome,
+  type LibraryWallpaper,
 } from "../lib/wallpaperLibrary";
 import "./LibraryImportDialog.css";
 
@@ -12,6 +13,7 @@ interface Props {
   onClose: () => void;
   onImported: () => void;
   onOpenLibrary: () => void;
+  onSetNow: (image: LibraryWallpaper) => void;
 }
 
 interface ImportLog {
@@ -24,7 +26,7 @@ const fileCandidate = (image: CatalogImage): string | undefined =>
   [image.originalUrl, image.previewUrl].find((value) => value?.startsWith("blob:")) || undefined;
 
 export default function LibraryImportDialog({
-  images, onClose, onImported, onOpenLibrary,
+  images, onClose, onImported, onOpenLibrary, onSetNow,
 }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [quickMode, setQuickMode] = useState<boolean | null>(null);
@@ -39,6 +41,7 @@ export default function LibraryImportDialog({
   const [complete, setComplete] = useState(false);
   const [credit, setCredit] = useState(images.length === 1 ? images[0].credit : "");
   const [rightsNote, setRightsNote] = useState("");
+  const [lastSaved, setLastSaved] = useState<LibraryWallpaper | null>(null);
 
   const distinct = useMemo(() => {
     const urls = new Set<string>();
@@ -131,6 +134,7 @@ export default function LibraryImportDialog({
         }
 
         if (!result.alreadySaved) imported = true;
+        setLastSaved(result.wallpaper);
         setLogs((entries) => [...entries, {
           name: image.title,
           message: result.note,
@@ -167,7 +171,7 @@ export default function LibraryImportDialog({
         <div className="lidi-scroll">
           <p className="lidi-description">
             Haven Walls saves a verified managed copy to your local Library.
-            It does not change your Windows wallpaper yet. Images that are
+            You can apply a successfully saved image to Windows afterward. Images that are
             blocked, below your minimum resolution, or exact duplicates are handled individually.
           </p>
           <div className="lidi-preview-strip">
@@ -272,9 +276,15 @@ export default function LibraryImportDialog({
             {complete ? "Close" : "Cancel"}
           </button>
           {complete ? (
-            <button type="button" className="online-primary" onClick={onOpenLibrary}>
-              Open Library
-            </button>
+            <>
+              {lastSaved && (
+                <button type="button" className="online-secondary"
+                  onClick={() => onSetNow(lastSaved)}>Set Now</button>
+              )}
+              <button type="button" className="online-primary" onClick={onOpenLibrary}>
+                Open Library
+              </button>
+            </>
           ) : quickMode === null || (quickMode === true && !manualRetry) ? (
             <button type="button" className="online-primary" disabled>
               {busy ? "Saving automatically…" : "Preparing Quick Save…"}

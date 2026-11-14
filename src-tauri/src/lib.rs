@@ -3,6 +3,7 @@ mod local_storage;
 mod app_settings;
 mod configuration;
 mod wallpaper_library;
+mod windows_wallpaper;
 mod google_images;
 mod google_browser;
 #[cfg(windows)]
@@ -55,7 +56,10 @@ pub fn run() {
             wallpaper_library::get_library_wallpaper_image,
             wallpaper_library::set_wallpaper_favorite,
             wallpaper_library::remove_library_wallpaper,
-            wallpaper_library::open_wallpaper_source
+            wallpaper_library::open_wallpaper_source,
+            windows_wallpaper::list_wallpaper_monitors,
+            windows_wallpaper::get_wallpaper_activity,
+            windows_wallpaper::apply_library_wallpaper
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");

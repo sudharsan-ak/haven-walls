@@ -6,6 +6,10 @@ import {
   type LibraryWallpaper,
 } from "../lib/wallpaperLibrary";
 import { formattedBytes } from "../lib/configuration";
+import {
+  getWallpaperActivity, type WallpaperActivity,
+} from "../lib/windowsWallpaper";
+import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import "./LibraryPage.css";
 
 type Filter = "all" | "favorites" | "4k" | "portrait";
@@ -25,6 +29,9 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
+  const [applyItem, setApplyItem] = useState<LibraryWallpaper | null>(null);
+  const [activity, setActivity] = useState<WallpaperActivity | null>(null);
+  const [activityError, setActivityError] = useState("");
   const [openedOriginal, setOpenedOriginal] = useState("");
   const [originalError, setOriginalError] = useState("");
   const [sourceError, setSourceError] = useState("");
@@ -88,6 +95,26 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [revision]);
+
+  useEffect(() => {
+    let active = true;
+    void getWallpaperActivity().then((result) => {
+      if (active) setActivity(result);
+    }).catch((error: unknown) => {
+      if (active) setActivityError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { active = false; };
+  }, [revision]);
+
+  async function afterApply() {
+    setNotice("Windows desktop wallpaper changed. The active working copy is protected.");
+    try {
+      setActivity(await getWallpaperActivity());
+      setActivityError("");
+    } catch (problem) {
+      setActivityError(problem instanceof Error ? problem.message : String(problem));
+    }
+  }
 
   const visible = useMemo(() => items.filter((item) => {
     const phrase = search.trim().toLowerCase();
@@ -196,6 +223,19 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
           <button type="button" className="hwl-primary" onClick={onDiscover}>Discover wallpapers</button>
         </div>
       </div>
+      {activity && activity.current.length > 0 && (
+        <section className="hwl-current" aria-label="Currently applied wallpapers">
+          <strong>Last applied by Haven Walls</strong>
+          <div>
+            {activity.current.map((active) => (
+              <span key={active.targetId} title={active.appliedAt}>
+                {active.targetId === "all" ? "All displays" :
+                  "Selected display"}: {active.title}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="hwl-controls">
         <input type="search" value={search}
           placeholder="Search title, provider, or photographer…"
@@ -250,6 +290,9 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
                     {item.favorite ? "♥ Favorite" : "♡ Favorite"}
                   </button>
                   <button type="button" onClick={() => void open(item)}>Inspect</button>
+                  <button type="button" onClick={() => setApplyItem(item)}>
+                    Set Now
+                  </button>
                 </div>
               </div>
             </article>
@@ -258,10 +301,27 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
       )}
 
       <p className="hwl-footer">
-        Applying an image to Windows, per-monitor controls and caption/credit rendering
-        are coming in PR #3 Commit 3. Favorites and managed copies are not
-        removed by temporary cache cleanup.
+        Wallpapers are applied only when you click Set Now or Apply to Windows.
+        Automatic rotation and background downloading are not enabled.
+        Active working copies stay separate from saved Library originals.
       </p>
+      {activity && activity.history.length > 0 && (
+        <section className="hwl-history" aria-label="Recent wallpaper activity">
+          <h2>Recent wallpaper history</h2>
+          <div className="hwl-history-list">
+            {activity.history.slice(0, 12).map((event, index) => (
+              <div key={event.appliedAt + event.targetId + index}>
+                <strong>{event.title}</strong>
+                <span>{event.targetId === "all" ? "All displays" : "Specific display"}
+                  {" · "}{event.fit}{" · "}{event.appliedAt} UTC</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {activityError && <p className="hwl-error" role="alert">
+        Windows wallpaper history is unavailable: {activityError}
+      </p>}
 
       {selected && (
         <div className="hwl-overlay" onMouseDown={(event) => {
@@ -324,13 +384,20 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
               <button type="button" className="hwl-secondary hwl-danger"
                 disabled={Boolean(busyId)}
                 onClick={() => void remove(selected)}>Remove from Library</button>
-              <button type="button" className="hwl-primary" disabled
-                title="Windows wallpaper application arrives in Commit 3">
-                Set as wallpaper · Commit 3
+              <button type="button" className="hwl-primary"
+                disabled={Boolean(busyId)}
+                onClick={() => setApplyItem(selected)}>
+                Set as Windows wallpaper
               </button>
             </div>
           </section>
         </div>
+      )}
+      {applyItem && (
+        <ApplyWallpaperDialog image={applyItem}
+          imageDataUrl={selected?.id === applyItem.id ? openedOriginal : undefined}
+          onClose={() => setApplyItem(null)}
+          onApplied={() => void afterApply()} />
       )}
     </section>
   );
