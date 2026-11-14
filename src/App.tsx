@@ -112,8 +112,6 @@ export default function App() {
               googleSearchSeed={googleSearchSeed}
               onSearchWeb={searchWebForWallpaper}
               onSaveToLibrary={setImportCandidates}
-              // Native Google WebView2 is a child window: hide it for every
-              // app-level dialog, including Save -> Set Now transitions.
               blockingDialogOpen={importCandidates !== null || applyCandidate !== null}
             />
           ) : page === "sources" ? (

@@ -550,8 +550,6 @@ export default function GoogleWorkspace({
                   </div>
                 </div>
                 <InlineGoogleBrowser query={browserQuery} searchRevision={browserRevision}
-                  // Hide native WebView2 whenever a React modal is active.
-                  // CSS z-index cannot reliably cover a native child WebView.
                   obscured={preview !== null || blockingDialogOpen} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
