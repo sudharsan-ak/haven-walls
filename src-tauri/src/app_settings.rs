@@ -14,6 +14,9 @@ pub struct AppSettings {
     pub prefer_4k: bool,
     pub show_photo_credit: bool,
     pub show_caption: bool,
+    /// When enabled, a user-driven Add to Library begins without another
+    /// rights checkbox. This is NOT a claim of a verified image license.
+    pub skip_import_confirmation: bool,
     pub cache_limit_mb: u32,
     pub duplicate_sensitivity: u8,
     pub allowed_image_types: Vec<String>,
@@ -29,6 +32,7 @@ impl Default for AppSettings {
             prefer_4k: true,
             show_photo_credit: true,
             show_caption: false,
+            skip_import_confirmation: true,
             cache_limit_mb: 2048,
             duplicate_sensitivity: 70,
             allowed_image_types: vec!["jpg".into(), "png".into(), "webp".into()],

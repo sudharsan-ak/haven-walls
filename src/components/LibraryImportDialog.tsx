@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getConfiguration } from "../lib/configuration";
 import type { CatalogImage } from "../lib/native";
 import { imageCandidates } from "../lib/imageResolution";
 import {
@@ -26,6 +27,10 @@ export default function LibraryImportDialog({
   images, onClose, onImported, onOpenLibrary,
 }: Props) {
   const [confirmed, setConfirmed] = useState(false);
+  const [quickMode, setQuickMode] = useState<boolean | null>(null);
+  const [manualRetry, setManualRetry] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+  const autoStarted = useRef(false);
   const [allowSmaller, setAllowSmaller] = useState(false);
   const [allowSimilar, setAllowSimilar] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -54,8 +59,30 @@ export default function LibraryImportDialog({
     return () => window.removeEventListener("keydown", keyHandler);
   }, [busy, onClose]);
 
-  async function save() {
-    if (!confirmed || busy || distinct.length === 0) return;
+  // A user click on Add to Library is the only action that opens this dialog.
+  // In Quick Save mode, start the import once as soon as the preference loads.
+  useEffect(() => {
+    let active = true;
+    void getConfiguration().then((result) => {
+      if (active) setQuickMode(result.settings.skipImportConfirmation);
+    }).catch((problem) => {
+      if (!active) return;
+      const message = problem instanceof Error ? problem.message : String(problem);
+      setSettingsError("Could not load Quick Save preference: " + message);
+      // Failure to read settings must not silently bypass confirmation.
+      setQuickMode(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (quickMode !== true || manualRetry || autoStarted.current) return;
+    autoStarted.current = true;
+    void save(true);
+  }, [quickMode]);
+
+  async function save(withQuickSave: boolean) {
+    if ((!withQuickSave && !confirmed) || busy || distinct.length === 0) return;
     setBusy(true);
     setComplete(false);
     setLogs([]);
@@ -70,7 +97,9 @@ export default function LibraryImportDialog({
         originalUrl: image.originalUrl || image.previewUrl,
         credit: distinct.length === 1 ? credit : image.credit,
         rightsNote: rightsNote.trim() || image.rights,
-        rightsConfirmed: true,
+        // Quick Save means no per-image attestation was made. The backend
+        // enforces the saved preference and records that rights are unverified.
+        rightsConfirmed: !withQuickSave && confirmed,
         allowBelowMinimum: allowSmaller,
         allowSimilar,
       };
@@ -150,46 +179,65 @@ export default function LibraryImportDialog({
             {distinct.length > 7 && <span>+{distinct.length - 7}</span>}
           </div>
 
-          {distinct.length === 1 && (
-            <label className="lidi-field">
-              <strong>Photo credit / source</strong>
-              <input type="text" value={credit} maxLength={240}
-                onChange={(event) => setCredit(event.target.value)}
-                placeholder="Photographer or original source, if known" />
-            </label>
+          {quickMode === null && (
+            <p className="lidi-status" role="status">Loading your Library import preference…</p>
           )}
-          <label className="lidi-field">
-            <strong>Rights or permission note (optional)</strong>
-            <textarea rows={2} maxLength={900} value={rightsNote}
-              onChange={(event) => setRightsNote(event.target.value)}
-              placeholder="For example: my own photograph, licensed from provider, permission from creator" />
-          </label>
+          {settingsError && <p className="lidi-error" role="alert">{settingsError}</p>}
+          {quickMode === true && !manualRetry && (
+            <p className="lidi-status" role="status">
+              Quick Save is enabled in Settings. Your selected images are being
+              saved without another confirmation. This does not verify or grant
+              image usage rights.
+            </p>
+          )}
 
-          <label className="lidi-check">
-            <input type="checkbox" checked={confirmed} disabled={busy || complete}
-              onChange={(event) => setConfirmed(event.target.checked)}/>
-            <span>
-              <strong>I reviewed the original source and have permission for my intended use.</strong>
-              <small>
-                Discovery results are not automatically licensed. Please follow image copyright,
-                photographer credit, and provider restrictions.
-              </small>
-            </span>
-          </label>
-          <label className="lidi-check">
-            <input type="checkbox" checked={allowSmaller} disabled={busy || complete}
-              onChange={(event) => setAllowSmaller(event.target.checked)}/>
-            <span><strong>Allow images below my minimum resolution</strong>
-              <small>Still validates actual pixels and supported file format.</small>
-            </span>
-          </label>
-          <label className="lidi-check">
-            <input type="checkbox" checked={allowSimilar} disabled={busy || complete}
-              onChange={(event) => setAllowSimilar(event.target.checked)}/>
-            <span><strong>Allow visually similar images</strong>
-              <small>Exact duplicates remain blocked, even when this is enabled.</small>
-            </span>
-          </label>
+          {(quickMode === false || manualRetry) && (
+            <>
+              {distinct.length === 1 && (
+                <label className="lidi-field">
+                  <strong>Photo credit / source</strong>
+                  <input type="text" value={credit} maxLength={240}
+                    onChange={(event) => setCredit(event.target.value)}
+                    placeholder="Photographer or original source, if known" />
+                </label>
+              )}
+              <label className="lidi-field">
+                <strong>Rights or permission note (optional)</strong>
+                <textarea rows={2} maxLength={900} value={rightsNote}
+                  onChange={(event) => setRightsNote(event.target.value)}
+                  placeholder="My own image, licensed source, or permission details" />
+              </label>
+
+              {quickMode === false && (
+                <label className="lidi-check">
+                  <input type="checkbox" checked={confirmed} disabled={busy}
+                    onChange={(event) => setConfirmed(event.target.checked)}/>
+                  <span>
+                    <strong>I reviewed the source and have permission for my intended use.</strong>
+                    <small>
+                      Images found by search are not automatically licensed. Follow the
+                      original provider's usage conditions and attribution requirements.
+                      You can enable Quick Save under Settings to skip this repeated prompt.
+                    </small>
+                  </span>
+                </label>
+              )}
+              <label className="lidi-check">
+                <input type="checkbox" checked={allowSmaller} disabled={busy}
+                  onChange={(event) => setAllowSmaller(event.target.checked)}/>
+                <span><strong>Allow images below my minimum resolution</strong>
+                  <small>Still validates actual pixels and supported file format.</small>
+                </span>
+              </label>
+              <label className="lidi-check">
+                <input type="checkbox" checked={allowSimilar} disabled={busy}
+                  onChange={(event) => setAllowSimilar(event.target.checked)}/>
+                <span><strong>Allow visually similar images</strong>
+                  <small>Exact duplicates remain blocked, even when this is enabled.</small>
+                </span>
+              </label>
+            </>
+          )}
 
           {busy && <p className="lidi-status" role="status">
             Processing image {index} of {distinct.length}…
@@ -205,8 +253,18 @@ export default function LibraryImportDialog({
             </div>
           )}
           {complete && <p className="lidi-status" role="status">
-            Finished reviewing {distinct.length} images. Check individual results above.
+            Finished processing {distinct.length} images. Check individual results above.
           </p>}
+          {complete && quickMode === true && !manualRetry &&
+            logs.some((entry) => entry.status === "error") && (
+              <button type="button" className="online-secondary"
+                onClick={() => {
+                  setManualRetry(true);
+                  setComplete(false);
+                }}>
+                Adjust quality or duplicate options and retry
+              </button>
+            )}
         </div>
 
         <div className="lidi-actions">
@@ -217,10 +275,14 @@ export default function LibraryImportDialog({
             <button type="button" className="online-primary" onClick={onOpenLibrary}>
               Open Library
             </button>
+          ) : quickMode === null || (quickMode === true && !manualRetry) ? (
+            <button type="button" className="online-primary" disabled>
+              {busy ? "Saving automatically…" : "Preparing Quick Save…"}
+            </button>
           ) : (
             <button type="button" className="online-primary"
-              disabled={!confirmed || busy || distinct.length === 0}
-              onClick={() => void save()}>
+              disabled={(!confirmed && quickMode !== true) || busy || distinct.length === 0}
+              onClick={() => void save(quickMode === true)}>
               {busy ? "Saving…" : "Save to Library"}
             </button>
           )}

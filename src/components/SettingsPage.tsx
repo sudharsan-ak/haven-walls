@@ -263,6 +263,30 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <section className="hws-settings-panel" aria-labelledby="hws-import">
+        <div className="hws-settings-section-header">
+          <div>
+            <h2 id="hws-import">Library & importing</h2>
+            <p>Choose how user-initiated wallpaper imports behave.</p>
+          </div>
+          <span className="hws-settings-live">Available now</span>
+        </div>
+        <label className="hws-settings-toggle">
+          <div>
+            <strong>Quick Save to Library</strong>
+            <small>Skip the repeated confirmation dialog and begin saving when you click Add to Library. Enabled by default.</small>
+          </div>
+          <input type="checkbox" checked={form.skipImportConfirmation}
+            onChange={(event) => field("skipImportConfirmation", event.target.checked)} />
+        </label>
+        <p className="hws-settings-note">
+          Quick Save is a convenience setting. It does not verify or grant image
+          usage rights. You are still responsible for following each image
+          source's license and attribution requirements. Turn this off to
+          require the individual confirmation before saving.
+        </p>
+      </section>
+
       <section className="hws-settings-panel" aria-labelledby="hws-quality">
         <div className="hws-settings-section-header">
           <div><h2 id="hws-quality">Image quality & duplicate detection</h2>

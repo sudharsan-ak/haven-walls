@@ -11,6 +11,8 @@ export interface AppSettings {
   prefer4k: boolean;
   showPhotoCredit: boolean;
   showCaption: boolean;
+  /** Start a user-initiated Library save without repeating confirmation. */
+  skipImportConfirmation: boolean;
   cacheLimitMb: number;
   duplicateSensitivity: number;
   allowedImageTypes: string[];

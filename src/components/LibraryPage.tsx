@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { CatalogImage } from "../lib/native";
 import {
   getLibraryWallpaperImage, listLibraryWallpapers,
-  removeLibraryWallpaper, setWallpaperFavorite,
+  removeLibraryWallpaper, setWallpaperFavorite, openWallpaperSource,
   type LibraryWallpaper,
 } from "../lib/wallpaperLibrary";
 import { formattedBytes } from "../lib/configuration";
@@ -27,6 +27,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
   const [openedOriginal, setOpenedOriginal] = useState("");
   const [originalError, setOriginalError] = useState("");
+  const [sourceError, setSourceError] = useState("");
   const objectUrls = useRef(new Set<string>());
   const selectedId = useRef<string | null>(null);
   useEffect(() => () => {
@@ -139,6 +140,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
     setSelected(image);
     setOpenedOriginal("");
     setOriginalError("");
+    setSourceError("");
     try {
       const data = await getLibraryWallpaperImage(image.id);
       // A rapid click on another entry may return out of order; the active
@@ -148,6 +150,26 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
       if (selectedId.current === image.id) {
         setOriginalError(problem instanceof Error ? problem.message : String(problem));
       }
+    }
+  }
+
+  async function openOnlineLink(url: string, label: string) {
+    setSourceError("");
+    try {
+      await openWallpaperSource(url);
+    } catch (problem) {
+      const message = problem instanceof Error ? problem.message : String(problem);
+      setSourceError("Could not open " + label + ": " + message);
+    }
+  }
+
+  function validHttpsSource(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "https:" && Boolean(parsed.hostname) &&
+        !parsed.username && !parsed.password;
+    } catch {
+      return false;
     }
   }
 
@@ -265,24 +287,47 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
               <p>{selected.width} × {selected.height} · {selected.format.toUpperCase()} · {formattedBytes(selected.bytes)}</p>
               <p><strong>Source:</strong> {selected.source}</p>
               <p><strong>Photo credit:</strong> {selected.credit || "Not provided"}</p>
-              <p><strong>Rights note:</strong> {selected.rightsNote || "Unverified"}</p>
-              {selected.sourcePage && (
-                <a href={selected.sourcePage} target="_blank" rel="noreferrer">Original source page</a>
-              )}
-              <div className="hwl-detail-actions">
-                <button type="button" className="hwl-secondary"
-                  disabled={Boolean(busyId)}
-                  onClick={() => void toggleFavorite(selected)}>
-                  {selected.favorite ? "♥ Remove favorite" : "♡ Favorite"}
-                </button>
-                <button type="button" className="hwl-secondary hwl-danger"
-                  disabled={Boolean(busyId)}
-                  onClick={() => void remove(selected)}>Remove from Library</button>
-                <button type="button" className="hwl-primary" disabled
-                  title="Windows wallpaper application arrives in Commit 3">
-                  Set as wallpaper · Commit 3
-                </button>
+              <p><strong>Rights note:</strong> {selected.rightsNote || "Not verified"}</p>
+              <div className="hwl-source-section">
+                <strong>Original online sources</strong>
+                <div className="hwl-source-links">
+                  <button type="button" className="hwl-secondary"
+                    disabled={!validHttpsSource(selected.sourcePage)}
+                    title={selected.sourcePage || "No source website was recorded"}
+                    onClick={() => void openOnlineLink(selected.sourcePage, "source page")}>
+                    Open source page ↗
+                  </button>
+                  <button type="button" className="hwl-secondary"
+                    disabled={!validHttpsSource(selected.originalUrl)}
+                    title={selected.originalUrl || "No original online image link was recorded"}
+                    onClick={() => void openOnlineLink(selected.originalUrl, "original image")}>
+                    Open original image ↗
+                  </button>
+                </div>
+                {!validHttpsSource(selected.sourcePage) &&
+                  <small>No source page was saved for this image. Local imports may not have an online source.</small>}
+                {!validHttpsSource(selected.originalUrl) &&
+                  <small>No original online image URL is available. The saved Library copy is still fully available offline.</small>}
+                <small>
+                  These buttons open recorded online addresses. Some providers
+                  may only expose a preview image rather than a full-resolution original.
+                </small>
+                {sourceError && <p role="alert" className="hwl-source-error">{sourceError}</p>}
               </div>
+            </div>
+            <div className="hwl-detail-actions">
+              <button type="button" className="hwl-secondary"
+                disabled={Boolean(busyId)}
+                onClick={() => void toggleFavorite(selected)}>
+                {selected.favorite ? "♥ Remove favorite" : "♡ Favorite"}
+              </button>
+              <button type="button" className="hwl-secondary hwl-danger"
+                disabled={Boolean(busyId)}
+                onClick={() => void remove(selected)}>Remove from Library</button>
+              <button type="button" className="hwl-primary" disabled
+                title="Windows wallpaper application arrives in Commit 3">
+                Set as wallpaper · Commit 3
+              </button>
             </div>
           </section>
         </div>

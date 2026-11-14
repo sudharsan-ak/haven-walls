@@ -41,9 +41,6 @@ pub struct ImportMetadata {
 
 impl ImportMetadata {
     fn clean(&mut self) -> Result<(), String> {
-        if !self.rights_confirmed {
-            return Err("Confirm that you have reviewed the source and have permission for your intended use.".into());
-        }
         for (value, limit, label) in [
             (&mut self.title, 180, "Title"),
             (&mut self.source, 120, "Source"),
@@ -63,7 +60,7 @@ impl ImportMetadata {
         if self.title.is_empty() { self.title = "Untitled wallpaper".into(); }
         if self.source.is_empty() { self.source = "Local import".into(); }
         if self.rights_note.is_empty() {
-            self.rights_note = "User reviewed intended-use rights; license not independently verified".into();
+            self.rights_note = "Image usage rights are not independently verified by Haven Walls".into();
         }
         Ok(())
     }
@@ -281,6 +278,14 @@ fn import_bytes(
     }
     let _guard = storage_guard(state)?;
     let (paths, mut conn, settings) = connected(app)?;
+    if !metadata.rights_confirmed && !settings.skip_import_confirmation {
+        return Err("Review the image's usage rights or enable Quick Save to Library in Settings.".into());
+    }
+    if !metadata.rights_confirmed {
+        // A saved Quick Save preference removes repetitive UI only. Do not
+        // record a false claim that the user verified this image's license.
+        metadata.rights_note.push_str(" · Quick Save: usage permission not confirmed for this image.");
+    }
     if is_remote { validate_source_exclusions(&metadata, &settings)?; }
 
     let (image, format) = image_format(&bytes)?;
@@ -612,4 +617,28 @@ pub fn remove_library_wallpaper(
         .map_err(|e| format!("Wallpaper removed from Library but its old file could not be deleted: {e}"))?;
     let _ = fs::remove_file(thumbnail);
     Ok(())
+}
+
+
+/// Open a recorded *online* source in the system default web browser.
+/// Native host action: Google Images' remote child webview has no permission
+/// to invoke this. Never open local paths or untrusted URL schemes.
+#[tauri::command]
+pub fn open_wallpaper_source(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    if url.len() > 4096 { return Err("Source URL is too long.".into()); }
+    let parsed = reqwest::Url::parse(url.trim())
+        .map_err(|_| "This entry has no valid online source URL.".to_string())?;
+    let host = parsed.host_str()
+        .ok_or_else(|| "This entry has no usable source hostname.".to_string())?;
+    if parsed.scheme() != "https" || parsed.username() != "" ||
+        parsed.password().is_some() || !host.contains('.') ||
+        host.parse::<IpAddr>().is_ok() ||
+        host == "localhost" || host.ends_with(".localhost") ||
+        host.ends_with(".local") || host.ends_with(".internal")
+    {
+        return Err("Only public HTTPS source pages and images can be opened.".into());
+    }
+    app.opener().open_url(parsed.to_string(), None::<&str>)
+        .map_err(|error| format!("Windows could not open the source in your default browser: {error}"))
 }

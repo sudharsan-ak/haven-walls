@@ -98,3 +98,25 @@ Start-Process .\src-tauri\target\release\haven-walls.exe
 11. **Boundary:** The Library's Set as wallpaper action remains disabled. Actual Windows desktop application, monitors, credits/captions and history are part of Commit 3.
 
 **Limitations:** The Library currently loads up to 500 items without pagination; provider image hotlink restrictions and licensing may prevent downloading; automatic original-image licensing checks do not exist. Pixel dimensions do not prove a photograph is sharp or free of upscaling. No background downloads, telemetry or wallpaper rotation are enabled.
+
+
+## Commit 2 follow-up: saved source links, preview layout, Quick Save
+
+### User-facing changes
+- **Library preview:** The full-size saved image remains contained within the dialog. The source information scrolls in its own middle region, and the favorite/remove/Set as wallpaper buttons remain visible in a separate bottom footer. Test landscape and tall portrait photos on a maximized window and a smaller window.
+- **Open source page** opens the original page URL in the system's default browser. **Open original image** opens the original *online* image URL. These buttons are disabled and explain why when a saved Library record has no URL, especially for a local import. Opening the saved full-quality Library copy still works offline.
+- Source opening is a validated host-level command. It only accepts HTTPS URLs and uses the Tauri opener Rust plugin, not target=_blank navigation inside WebView2. Any failure should be displayed inside the Library preview.
+- **Settings → Library & importing → Quick Save to Library** is **enabled by default**. It is persisted in SQLite, including for users with an existing DB thanks to serde defaults. Clicking Add to Library opens a brief progress dialog and begins the user-requested import without a second confirmation click.
+- Turn Quick Save **off** to restore the old per-image rights confirmation and manual metadata controls.
+- If a Quick Save import fails because of minimum resolution or similarity policy, choose **Adjust quality or duplicate options and retry** inside the result dialog. Exact-duplicate and image validation rules continue to apply.
+- Quick Save does **not** represent a verified license or authorization. The Rust backend checks the saved preference and records that no per-image rights attestation was made. Attribution and source restrictions still apply.
+
+### Acceptance checks (user runs local build)
+1. Open an existing saved landscape image in Library; the full image and source metadata must be visible, with action buttons along the bottom. Resize the app smaller and verify the source details can scroll without cutting off the actions. Repeat with a portrait image.
+2. For an online image saved with URLs, click **Open source page** and **Open original image** separately. They must open in your normal default browser. If source links are missing, buttons are disabled and an explanation is visible.
+3. Check Settings → Library & importing. **Quick Save to Library** should be checked by default. Click Add to Library on a new image, and verify the import begins on its own, with a result and **Open Library** button. Restart the app to confirm the preference persists.
+4. Turn Quick Save off and save. Try another import; the original rights confirmation checkbox and optional metadata/quality controls should return.
+5. With Quick Save on, try importing a low-resolution or similar image. The normal validation must still reject it. Use the retry options to deliberately override only a minimum-resolution or similarity warning.
+6. Make sure the offline managed Library image still opens after disconnecting the internet. Opening an *online* source naturally requires network access.
+
+This follow-up adds the Rust Tauri opener plugin. A local Cargo build may update src-tauri/Cargo.lock; review and commit the expected lockfile changes to the same PR #3 branch. Do not run CI or merge without local validation.

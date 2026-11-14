@@ -95,3 +95,12 @@ export async function fileBlobToBase64(url: string): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+
+/** Open the saved online source in the operating system's default browser.
+ * Unlike an ordinary target=_blank anchor, this works in Tauri WebView2.
+ */
+export async function openWallpaperSource(url: string): Promise<void> {
+  requireHost();
+  await invoke<void>("open_wallpaper_source", { url });
+}

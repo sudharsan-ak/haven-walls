@@ -30,6 +30,7 @@ fn get_host_info() -> HostInfo {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(local_storage::StorageLock::default())
         .setup(|app| {
             configuration::initialize(app.handle()).map_err(std::io::Error::other)?;
@@ -53,7 +54,8 @@ pub fn run() {
             wallpaper_library::list_library_wallpapers,
             wallpaper_library::get_library_wallpaper_image,
             wallpaper_library::set_wallpaper_favorite,
-            wallpaper_library::remove_library_wallpaper
+            wallpaper_library::remove_library_wallpaper,
+            wallpaper_library::open_wallpaper_source
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");
