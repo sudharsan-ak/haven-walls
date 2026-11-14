@@ -182,3 +182,10 @@
   border-radius: 8px; font: inherit; font-size: 12px; margin-bottom: 10px;
 }
 .hwl-better-source button { display: block; margin: 0 0 8px; }
+
+/* Free, user-initiated fallback searches for existing Library photos. */
+.hwl-search-fallback { margin-top: 15px; padding-top: 13px; border-top: 1px solid #dbe7ef; }
+.hwl-search-fallback > strong { display: block; font-size: 12px; margin-bottom: 8px; color: #26445f; }
+.hwl-search-fallback .hwl-source-links { flex-wrap: wrap; }
+.hwl-search-fallback small { display: block; margin-top: 8px; line-height: 1.55; color: #678197; }
+.hwl-search-note { background: #e8f4fd; color: #24587e !important; padding: 10px 12px; border-radius: 8px; }

@@ -19,10 +19,11 @@ type Filter = "all" | "favorites" | "4k" | "portrait";
 interface Props {
   revision: number;
   onDiscover: () => void;
+  onSearchWeb: (query: string) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
 }
 
-export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: Props) {
+export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveToLibrary }: Props) {
   const [items, setItems] = useState<LibraryWallpaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,6 +40,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
   const [openedOriginal, setOpenedOriginal] = useState("");
   const [originalError, setOriginalError] = useState("");
   const [sourceError, setSourceError] = useState("");
+  const [visualSearchNote, setVisualSearchNote] = useState("");
   const [betterSourceUrl, setBetterSourceUrl] = useState("");
   const objectUrls = useRef(new Set<string>());
   const selectedId = useRef<string | null>(null);
@@ -171,6 +173,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
     setOpenedOriginal("");
     setOriginalError("");
     setSourceError("");
+    setVisualSearchNote("");
     setBetterSourceUrl(image.sourcePage || "");
     try {
       const data = await getLibraryWallpaperImage(image.id);
@@ -205,11 +208,20 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
   }
 
   function findBetterImage(image: LibraryWallpaper) {
+    setSourceError("");
+    setVisualSearchNote("");
     const direct = validHttpsSource(image.originalUrl) ? image.originalUrl : "";
     const manual = betterSourceUrl.trim();
-    const chosenPage = validHttpsSource(manual) ? manual : image.sourcePage;
-    if (!direct && !validHttpsSource(manual)) {
-      setSourceError("No usable online URL is available. Open the original website and paste its full-size image URL here.");
+    const manualValid = validHttpsSource(manual);
+    // A publisher page is metadata, not a direct image. Keep the saved image
+    // as the similarity anchor and let Rust inspect explicit download links.
+    const directDownload = manualValid &&
+      (/\\.(?:jpe?g|png|webp|avif)$/i.test(new URL(manual).pathname) ||
+        new URL(manual).pathname.includes("/download/"));
+    const original = directDownload ? manual : direct;
+    const page = manualValid && !directDownload ? manual : image.sourcePage;
+    if (!original) {
+      setSourceError("A direct image link is needed to identify the photograph. Use the free visual search below to find one.");
       return;
     }
     const candidate: CatalogImage = {
@@ -217,10 +229,11 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
       kind: "image",
       source: image.source,
       title: image.title,
-      previewUrl: image.thumbnailDataUrl || direct || manual,
-      originalUrl: direct || manual,
-      candidateUrls: manual && validHttpsSource(manual) && manual !== direct ? [manual] : [],
-      pageUrl: chosenPage,
+      previewUrl: image.thumbnailDataUrl || original,
+      originalUrl: original,
+      candidateUrls: direct && original !== direct ? [direct] : [],
+      pageUrl: validHttpsSource(page) ? page : "",
+      upgradeFromId: image.id,
       credit: image.credit,
       rights: image.rightsNote,
       width: image.width,
@@ -229,6 +242,44 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
     selectedId.current = null;
     setSelected(null);
     onSaveToLibrary([candidate]);
+  }
+
+  function searchImagesFor(image: LibraryWallpaper) {
+    const sourcePath = validHttpsSource(image.sourcePage)
+      ? new URL(image.sourcePage).pathname.split("/").pop() || "" : "";
+    const originalPath = validHttpsSource(image.originalUrl)
+      ? new URL(image.originalUrl).pathname.split("/").pop() || "" : "";
+    const descriptive = [sourcePath, originalPath, image.title]
+      .map((value) => value.replace(/\\.(html?|jpe?g|png|webp|avif)$/i, "")
+        .replace(/[-_]+/g, " ").replace(/\\b\\d{3,5}x\\d{3,5}\\b/gi, "").trim())
+      .find((value) => value.length > 10) || image.title;
+    selectedId.current = null;
+    setSelected(null);
+    // Explicit user search opens our existing free embedded Google Images tab.
+    onSearchWeb((descriptive + " 4K wallpaper").slice(0, 100));
+  }
+
+  async function openFreeVisualSearch(image: LibraryWallpaper) {
+    setSourceError("");
+    setVisualSearchNote("");
+    let copied = false;
+    // The user explicitly opts in. Nothing is uploaded to a search provider
+    // automatically; a public image URL is copied only if supported.
+    if (validHttpsSource(image.originalUrl)) {
+      try {
+        await navigator.clipboard.writeText(image.originalUrl);
+        copied = true;
+      } catch { /* Clipboard may be disabled; manual paste still works. */ }
+    }
+    try {
+      await openWallpaperSource("https://www.bing.com/visualsearch");
+      setVisualSearchNote(copied
+        ? "Bing Visual Search opened. Paste the copied image URL into its visual search box, choose a matching result, then paste the higher-resolution link above."
+        : "Bing Visual Search opened. Upload an image you choose or paste its image URL. No Library file is uploaded automatically.");
+    } catch (problem) {
+      setSourceError("Could not open visual search: " +
+        (problem instanceof Error ? problem.message : String(problem)));
+    }
   }
 
   const totalBytes = items.reduce((sum, image) => sum + image.bytes, 0);
@@ -426,7 +477,22 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
                     disabled={!validHttpsSource(selected.originalUrl) && !validHttpsSource(betterSourceUrl)}>
                     Find higher-quality version
                   </button>
-                  <small>A successful larger original is added as a separate Library image; the old copy is preserved.</small>
+                  <small>Only verified higher-resolution matches are saved separately. The current image stays untouched.</small>
+                  <div className="hwl-search-fallback">
+                    <strong>Need more sources? Free search options</strong>
+                    <div className="hwl-source-links">
+                      <button type="button" className="hwl-secondary"
+                        onClick={() => searchImagesFor(selected)}>
+                        Search Google Images in Haven Walls
+                      </button>
+                      <button type="button" className="hwl-secondary"
+                        onClick={() => void openFreeVisualSearch(selected)}>
+                        Reverse image search with Bing ↗
+                      </button>
+                    </div>
+                    <small>Google search uses the photo's available title/filename. Bing searches visually after you paste an image link or choose a file. Inspect results before importing; no paid API or background upload.</small>
+                    {visualSearchNote && <p role="status" className="hwl-search-note">{visualSearchNote}</p>}
+                  </div>
                 </div>
                 {sourceError && <p role="alert" className="hwl-source-error">{sourceError}</p>}
               </div>

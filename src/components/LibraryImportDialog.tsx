@@ -116,6 +116,7 @@ export default function LibraryImportDialog({
         rightsConfirmed: !withQuickSave && confirmed,
         allowBelowMinimum: allowSmaller,
         allowSimilar,
+        upgradeFrom: image.upgradeFromId || null,
       };
       try {
         const blob = fileCandidate(image);
@@ -251,13 +252,15 @@ export default function LibraryImportDialog({
                   <small>Still validates actual pixels and supported file format.</small>
                 </span>
               </label>
-              <label className="lidi-check">
-                <input type="checkbox" checked={allowSimilar} disabled={busy}
-                  onChange={(event) => setAllowSimilar(event.target.checked)}/>
-                <span><strong>Allow visually similar images</strong>
-                  <small>Exact duplicates remain blocked, even when this is enabled.</small>
-                </span>
-              </label>
+              {!distinct.some((item) => item.upgradeFromId) && (
+                <label className="lidi-check">
+                  <input type="checkbox" checked={allowSimilar} disabled={busy}
+                    onChange={(event) => setAllowSimilar(event.target.checked)}/>
+                  <span><strong>Allow visually similar images</strong>
+                    <small>Exact duplicates remain blocked, even when this is enabled.</small>
+                  </span>
+                </label>
+              )}
             </>
           )}
 
@@ -277,6 +280,14 @@ export default function LibraryImportDialog({
           {complete && <p className="lidi-status" role="status">
             Finished processing {distinct.length} images. Check individual results above.
           </p>}
+          {complete && distinct.some((item) => item.upgradeFromId) &&
+            logs.some((entry) => entry.status === "error") && (
+              <p className="lidi-status" role="status">
+                No suitable upgrade from these links? Return to the Library photo and try
+                its free Google Images search or Bing reverse-image search. Only a
+                higher-resolution visual match can be saved as an upgrade.
+              </p>
+            )}
           {complete && quickMode === true && !manualRetry &&
             logs.some((entry) => entry.status === "error") && (
               <button type="button" className="online-secondary"

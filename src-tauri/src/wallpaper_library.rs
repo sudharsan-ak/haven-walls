@@ -37,6 +37,9 @@ pub struct ImportMetadata {
     rights_confirmed: bool,
     allow_below_minimum: bool,
     allow_similar: bool,
+    /// Only supplied for a user-initiated upgrade of this saved Library image.
+    #[serde(default)]
+    upgrade_from: Option<String>,
 }
 
 impl ImportMetadata {
@@ -52,6 +55,11 @@ impl ImportMetadata {
             *value = value.trim().to_string();
             if value.len() > limit || value.contains('\0') {
                 return Err(format!("{label} is too long or contains invalid characters."));
+            }
+        }
+        if let Some(id) = &self.upgrade_from {
+            if id.len() != 64 || !id.bytes().all(|ch| ch.is_ascii_hexdigit()) {
+                return Err("Invalid original Library image for resolution upgrade.".into());
             }
         }
         if !self.source_page.is_empty() && !self.source_page.starts_with("https://") {
@@ -306,6 +314,35 @@ fn import_bytes(
         ));
     }
 
+    // An upgrade is not an ordinary import. Verify both larger decoded pixels
+    // and the saved original's visual fingerprint before permitting a similar
+    // picture alongside the old one. Never overwrite or delete the old file.
+    let mut verified_upgrade = false;
+    if let Some(ref original_id) = metadata.upgrade_from {
+        let (filename, _) = file_record(&conn, &paths, original_id)?
+            .ok_or_else(|| "The original wallpaper is no longer in the Library.".to_string())?;
+        let original_bytes = fs::read(paths.library().join(filename))
+            .map_err(|e| format!("Could not read the original wallpaper for comparison: {e}"))?;
+        let (original, _) = image_format(&original_bytes)?;
+        let (old_width, old_height) = original.dimensions();
+        if width <= old_width || height <= old_height {
+            return Err(format!(
+                "No higher-resolution version found. Saved: {old_width} × {old_height}; \
+                 best accessible: {width} × {height}. Nothing was changed."
+            ));
+        }
+        let old_ratio = old_width as f64 / old_height.max(1) as f64;
+        let new_ratio = width as f64 / height.max(1) as f64;
+        let distance = (perceptual_hash(&original) ^ perceptual_hash(&image)).count_ones();
+        if new_ratio / old_ratio < 0.72 ||
+            new_ratio / old_ratio > 1.38 || distance > 17 {
+            return Err(
+                "A larger file was found, but it did not match the saved photograph closely enough. Nothing was changed.".into()
+            );
+        }
+        verified_upgrade = true;
+    }
+
     let digest = format!("{:x}", Sha256::digest(&bytes));
     let existing: Option<String> = conn.query_row(
         "SELECT id FROM wallpapers WHERE checksum_sha256=?1 LIMIT 1",
@@ -319,12 +356,16 @@ fn import_bytes(
         return Ok(ImportOutcome {
             wallpaper: entry,
             already_saved: true,
-            note: "Exact duplicate already exists in your managed Library. No new file was written.".into(),
+            note: if verified_upgrade {
+                "This matching higher-resolution file is already in your Library. No new file was written.".into()
+            } else {
+                "Exact duplicate already exists in your managed Library. No new file was written.".into()
+            },
         });
     }
 
     let signature = perceptual_hash(&image);
-    if !metadata.allow_similar && settings.duplicate_sensitivity > 0 {
+    if !verified_upgrade && !metadata.allow_similar && settings.duplicate_sensitivity > 0 {
         let mut stmt = conn.prepare(
             "SELECT dhash FROM wallpaper_fingerprints LIMIT 5000"
         ).map_err(|e| format!("Could not inspect similar images: {e}"))?;
@@ -408,10 +449,17 @@ fn import_bytes(
     Ok(ImportOutcome {
         wallpaper: item,
         already_saved: false,
-        note: format!(
-            "Saved verified {width} × {height} {format} file in the managed Library. \
-             Original local files and active Windows wallpapers remain unchanged."
-        ),
+        note: if verified_upgrade {
+            format!(
+                "Saved a verified matching {width} × {height} {format} upgrade separately. \
+                 The previous Library image, favorites and active Windows wallpapers are unchanged."
+            )
+        } else {
+            format!(
+                "Saved verified {width} × {height} {format} file in the managed Library. \
+                 Original local files and active Windows wallpapers remain unchanged."
+            )
+        },
     })
 }
 

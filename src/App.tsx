@@ -99,6 +99,7 @@ export default function App() {
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               onDiscover={() => openGallery("bing")}
+              onSearchWeb={searchWebForWallpaper}
               onSaveToLibrary={setImportCandidates} />
           ) : page === "gallery" ? (
             <OnlineGallery

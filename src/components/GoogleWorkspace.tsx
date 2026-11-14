@@ -197,6 +197,10 @@ export default function GoogleWorkspace({
     if (!googleSearchSeed) return;
     setBrowserQuery(googleSearchSeed);
     setApiQuery(googleSearchSeed);
+    // Searches opened by an explicit action in Sports/Library must actually run,
+    // not merely populate the input of the embedded browser.
+    setMode("browser");
+    setBrowserRevision((value) => value + 1);
   }, [googleSearchSeed]);
 
   useEffect(() => () => {

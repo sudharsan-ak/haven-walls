@@ -23,6 +23,8 @@ export interface CatalogImage {
   originalUrl?: string | null;
   /** Alternative directly linked source URLs, tried when inspecting image quality. */
   candidateUrls?: string[];
+  /** The saved Library image this user-initiated higher-resolution lookup must match. */
+  upgradeFromId?: string;
   pageUrl: string;
   credit: string;
   rights: string;

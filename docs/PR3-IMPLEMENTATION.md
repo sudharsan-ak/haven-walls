@@ -273,3 +273,56 @@ subject to the publisher's terms.
 **Dependency policy:** This commit adds no new Rust dependencies and leaves
 src-tauri/Cargo.lock unchanged. No assistant builds, tests, CI workflows or
 merges were run. The user owns Windows validation.
+
+## Existing-image quality upgrade and free visual-search fallback
+
+An existing Library photo's **Find higher-quality version** is now an **upgrade**
+operation, not an ordinary duplicate-prone import. It checks the original image
+URL and the publisher page (including explicit resolution download links).
+A URL pasted into the Library field may be a publisher page or a direct image.
+An explicit direct image URL takes priority; it must still be validated.
+
+- Backend checks actual decoded pixels against the saved original: both width
+  and height must increase. Equal/smaller results display **No higher-resolution
+  version found**, without writing a file.
+- A larger candidate must match the saved image's perceptual fingerprint and
+  aspect ratio. Unrelated photos and crops that fail the check are rejected.
+- Once a matching upgrade is verified, normal near-duplicate screening may be
+  bypassed for this *specific* upgrade, but exact duplicates remain protected.
+- A successful higher-resolution version is a separate managed Library item.
+  The saved original, favorites, active working copies and wallpaper history are
+  unchanged. No silent replacement or upscaling.
+- If the source does not offer anything better, the Library detail now offers:
+  1. **Search Google Images in Haven Walls**: an actual keyword/filename-based
+     Browser Search, free without an API key, initiated by user click. Select
+     and verify a promising result manually.
+  2. **Reverse image search with Bing**: opens the documented, free Bing Visual
+     Search interface in the user's browser. When available, copies the public
+     saved image URL to clipboard for manual paste. Users can also select a
+     file themselves. No Library file is uploaded automatically.
+- Free public services do not provide an approved, stable, no-key API for
+  programmatic reverse-image search results; this is a **manual visual-search
+  fallback**, not an automated cross-web image matcher. Source rights still apply.
+- Existing Gallery/Sports launch-to-Google flows now run the selected Browser
+  Search query instead of only filling its input.
+
+### Windows acceptance (user only)
+
+1. On a saved 1920 × 1080 image, retry the *same* 1920 × 1080 URL. Expect
+   **No higher-resolution version found**, no duplicate-success state.
+2. Retry with an accessible matching 3840 × 2160 URL. Expect a distinct
+   managed 4K Library entry while the 1080p item remains, even with strict
+   near-duplicate screening. Do not replace the active desktop wallpaper.
+3. Supply an unrelated 4K URL. Expect a visual-match failure and no new file.
+4. Supply a publisher page that offers downloadable full-size versions.
+   Confirm the best matching source is verified from decoded pixels.
+5. Click **Search Google Images in Haven Walls**. Check that the embedded
+   browser actually starts the prepared search, without a SerpApi key.
+6. Click **Reverse image search with Bing**. Confirm it opens the normal browser;
+   paste the copied URL if offered, or upload a file manually. Select any result
+   yourself; no upload occurs merely by opening the Library.
+7. Check ordinary imports, favorites, active-copy protection, Windows Set Now
+   and Google Images source selection for regressions.
+
+No Rust crate was added or upgraded; Cargo.lock is unchanged. Windows app
+build and live-provider behavior must be tested by the user before merging.
