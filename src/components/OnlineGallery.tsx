@@ -18,12 +18,6 @@ type Status = "idle" | "loading" | "success" | "error";
 type Props = {
   source: CatalogSourceId;
   onSourceChange: (value: CatalogSourceId) => void;
-  tmdbToken: string;
-  onTmdbTokenChange: (value: string) => void;
-  serpapiKey: string;
-  onSerpapiKeyChange: (value: string) => void;
-  unsplashKey: string;
-  onUnsplashKeyChange: (value: string) => void;
   googleSearchSeed: string;
   lensRequest: { imageId: string; requestId: number } | null;
   onSearchWeb: (query: string) => void;
@@ -65,10 +59,6 @@ function CatalogThumbnail({ image }: { image: CatalogImage }) {
 function SourceGallery({
   source,
   onSourceChange,
-  tmdbToken,
-  onTmdbTokenChange,
-  serpapiKey,
-  onSerpapiKeyChange,
   googleSearchSeed,
   onSearchWeb,
   onSaveToLibrary,
@@ -84,7 +74,6 @@ function SourceGallery({
   const [selectedShow, setSelectedShow] = useState<CatalogImage | null>(null);
   const [shows, setShows] = useState<CatalogImage[]>([]);
   const [showSearchNote, setShowSearchNote] = useState("");
-  const [revealed, setRevealed] = useState(false);
   const [minimumSize, setMinimumSize] = useState<"1080p" | "1440p" | "4K">("1080p");
   const requestId = useRef(0);
 
@@ -111,16 +100,6 @@ function SourceGallery({
       setStatus("error");
       return;
     }
-    if (source === "tmdb" && !tmdbToken.trim()) {
-      setError("Enter your TMDB API Read Access Token before searching TV shows.");
-      setStatus("error");
-      return;
-    }
-    if (source === "google" && !serpapiKey.trim()) {
-      setError("Enter your personal SerpApi key to retrieve Google Images results inside the app.");
-      setStatus("error");
-      return;
-    }
     const request = ++requestId.current;
     setSubmitted(clean);
     setResults([]);
@@ -134,12 +113,8 @@ function SourceGallery({
       const resolution = minimumSize === "4K" ? [3840, 2160]
         : minimumSize === "1440p" ? [2560, 1440] : [1920, 1080];
       const data = source === "google"
-        ? await browseGoogleImages(clean, serpapiKey.trim(), resolution[0], resolution[1])
-        : await browseWallpaperSource(
-            source,
-            clean,
-            source === "tmdb" ? tmdbToken.trim() : undefined,
-          );
+        ? await browseGoogleImages(clean, resolution[0], resolution[1])
+        : await browseWallpaperSource(source, clean);
       if (request !== requestId.current) return;
       setResults(data.items);
       setNote(data.note);
@@ -156,7 +131,7 @@ function SourceGallery({
   }
 
   async function openShow(show: CatalogImage) {
-    if (source !== "tmdb" || !tmdbToken.trim()) return;
+    if (source !== "tmdb") return;
     const id = Number(show.id);
     if (!Number.isSafeInteger(id) || id <= 0) {
       setError("This show has an invalid provider ID.");
@@ -171,7 +146,7 @@ function SourceGallery({
     setNote("");
 
     try {
-      const data = await browseTMDBBackdrops(id, tmdbToken.trim());
+      const data = await browseTMDBBackdrops(id);
       if (request !== requestId.current) return;
       setResults(data.items);
       setNote(data.note);
@@ -251,27 +226,7 @@ function SourceGallery({
 
           {source === "google" && (
             <div className="online-token-field">
-              <label htmlFor="serpapi-key">SerpApi key for Google Images</label>
-              <div className="online-input-row">
-                <input
-                  id="serpapi-key"
-                  type={revealed ? "text" : "password"}
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={serpapiKey}
-                  onChange={(event) => onSerpapiKeyChange(event.target.value)}
-                  placeholder="Paste your SerpApi API key"
-                />
-                <button type="button" className="online-secondary"
-                  onClick={() => setRevealed(!revealed)}>
-                  {revealed ? "Hide" : "Show"}
-                </button>
-              </div>
-              <small>
-                SerpApi offers a limited free plan. The key stays in app memory and is sent
-                directly to SerpApi when you search. It is not saved in Haven Walls.
-                This is not an official Google API.
-              </small>
+              <small>The saved SerpApi key from Settings → API credentials is used automatically.</small>
               <div className="online-filter-row">
                 <label htmlFor="google-min-resolution">Minimum reported image resolution</label>
                 <select
@@ -286,33 +241,9 @@ function SourceGallery({
               </div>
             </div>
           )}
-
-          {config.requiresToken && source === "tmdb" && (
+          {source === "tmdb" && (
             <div className="online-token-field">
-              <label htmlFor="tmdb-token">TMDB API Read Access Token</label>
-              <div className="online-input-row">
-                <input
-                  id="tmdb-token"
-                  type={revealed ? "text" : "password"}
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={tmdbToken}
-                  onChange={(event) => onTmdbTokenChange(event.target.value)}
-                  placeholder="Paste your own TMDB read token"
-                />
-                <button
-                  type="button"
-                  className="online-secondary"
-                  onClick={() => setRevealed(!revealed)}
-                  aria-label={revealed ? "Hide API token" : "Show API token"}
-                >
-                  {revealed ? "Hide" : "Show"}
-                </button>
-              </div>
-              <small>
-                Create a token in your TMDB account settings. Haven Walls only holds it in
-                memory while the app is open. It is not saved to disk.
-              </small>
+              <small>Your TMDB token is managed in Settings → API credentials and used automatically.</small>
             </div>
           )}
 
@@ -491,15 +422,12 @@ export default function OnlineGallery(props: Props) {
   if (props.source === "discover") {
     return <CategoryDiscovery onSourceChange={props.onSourceChange}
       onSaveToLibrary={props.onSaveToLibrary}
-      serpapiKey={props.serpapiKey} onSerpapiKeyChange={props.onSerpapiKeyChange}
-      unsplashKey={props.unsplashKey} onUnsplashKeyChange={props.onUnsplashKeyChange} />;
+/>;
   }
   if (props.source === "google") {
     return (
       <GoogleWorkspace
         onSourceChange={props.onSourceChange}
-        serpapiKey={props.serpapiKey}
-        onSerpapiKeyChange={props.onSerpapiKeyChange}
         googleSearchSeed={props.googleSearchSeed}
         lensRequest={props.lensRequest}
         onSaveToLibrary={props.onSaveToLibrary}
