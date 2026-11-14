@@ -63,6 +63,13 @@ export default function LibraryImportDialog({
   const applyingUpgrade = distinct.some((item) =>
     Boolean(item.upgradeFromId &&
       (!item.reverseSearchMatch || lensSaveMode === "upgrade")));
+  // Backend emits a specific resolution failure; expose a direct override
+  // instead of hiding the checkbox behind Quick Save's advanced retry form.
+  // Limit the inline retry to a single image so an already-saved batch isn't
+  // accidentally imported again when only one item was too small.
+  const minimumResolutionRejected = complete && distinct.length === 1 &&
+    logs.some((entry) => entry.status === "error" &&
+      /below your (?:\d{3,4}p )?minimum\b|allow smaller images/i.test(entry.message));
 
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
@@ -285,13 +292,15 @@ export default function LibraryImportDialog({
                   </span>
                 </label>
               )}
-              <label className="lidi-check">
-                <input type="checkbox" checked={allowSmaller} disabled={busy}
-                  onChange={(event) => setAllowSmaller(event.target.checked)}/>
-                <span><strong>Allow images below my minimum resolution</strong>
-                  <small>Still validates actual pixels and supported file format.</small>
-                </span>
-              </label>
+              {!minimumResolutionRejected && (
+                <label className="lidi-check">
+                  <input type="checkbox" checked={allowSmaller} disabled={busy}
+                    onChange={(event) => setAllowSmaller(event.target.checked)}/>
+                  <span><strong>Allow images below my minimum resolution</strong>
+                    <small>Still validates actual pixels and supported file format.</small>
+                  </span>
+                </label>
+              )}
               {!applyingUpgrade && (
                 <label className="lidi-check">
                   <input type="checkbox" checked={allowSimilar} disabled={busy}
@@ -320,6 +329,25 @@ export default function LibraryImportDialog({
           {complete && <p className="lidi-status" role="status">
             Finished processing {distinct.length} images. Check individual results above.
           </p>}
+          {minimumResolutionRejected && (
+            <div className="lidi-minimum-retry" role="group"
+              aria-label="Retry image below minimum resolution">
+              <label className="lidi-check">
+                <input type="checkbox" checked={allowSmaller} disabled={busy}
+                  onChange={(event) => setAllowSmaller(event.target.checked)} />
+                <span>
+                  <strong>Allow images below my minimum resolution</strong>
+                  <small>This affects this import only. The image may appear blurry
+                    on a desktop, but file-format and duplicate checks still apply.</small>
+                </span>
+              </label>
+              <button type="button" className="online-primary"
+                disabled={!allowSmaller || busy}
+                onClick={() => void save(quickMode === true)}>
+                Retry saving this image
+              </button>
+            </div>
+          )}
           {complete && applyingUpgrade &&
             logs.some((entry) => entry.status === "error") && (
               <p className="lidi-status" role="status">
@@ -335,7 +363,9 @@ export default function LibraryImportDialog({
                   setManualRetry(true);
                   setComplete(false);
                 }}>
-                Check original website or adjust quality and retry
+                {minimumResolutionRejected
+                  ? "Try a different source or advanced options"
+                  : "Check original website or adjust quality and retry"}
               </button>
             )}
         </div>

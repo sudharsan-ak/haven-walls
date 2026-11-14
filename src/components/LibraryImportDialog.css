@@ -43,3 +43,9 @@
 .lidi-save-mode > label strong { font-size: 12px; display: block; color: #274560; }
 .lidi-save-mode > label small { display: block; font-size: 10px; line-height: 1.6; margin-top: 4px; color: #658198; }
 .lidi-mode-note { display: block; color: #738da2; font-size: 10px; margin: 8px 3px 0; }
+
+/* Direct one-image retry when the saved resolution is below the minimum. */
+.lidi-minimum-retry { margin: 12px 0; padding: 12px 14px; border: 1px solid #c9dfef; border-radius: 9px; background: #f2f9ff; }
+.lidi-minimum-retry .lidi-check { border-top: 0; padding: 3px 0 12px; }
+.lidi-minimum-retry > button { font: inherit; font-size: 11px; font-weight: 700; border-radius: 8px; padding: 10px 14px; border: 1px solid #1674b9; color: white; background: #1674b9; cursor: pointer; }
+.lidi-minimum-retry > button:disabled { opacity: .5; cursor: not-allowed; }

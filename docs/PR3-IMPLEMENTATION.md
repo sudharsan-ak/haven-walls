@@ -654,3 +654,24 @@ Windows acceptance:
    full filenames remain available by hovering, and Set as wallpaper stays
    visible in the footer.
 5. Verify Fit/Fill, source errors, favorites, removal and Apply to Windows.
+
+## Quick Save: inline smaller-image retry
+
+When a **single image** is rejected specifically for falling below the configured
+minimum resolution, the completed import dialog now shows **Allow images below
+my minimum resolution** directly alongside the failure, with **Retry saving
+this image**. This works even with Quick Save enabled, without opening the
+advanced settings first. Retry is disabled until the user explicitly enables
+the override, which applies only to that import attempt and does not change
+global settings. The existing source-change/advanced retry remains available.
+
+Ordinary imports still enforce minimum resolution unless the user selects the
+exception. Supported-image decoding and duplicate detection remain unchanged.
+Multi-image batches retain their existing advanced retry flow to avoid
+silently re-importing other successfully saved items.
+
+Windows acceptance: with Quick Save enabled, import a valid 1600 × 900 image
+under a 1080p minimum and confirm the checkbox appears under the error. Click
+Retry before checking it (must be disabled), then enable it and retry. Verify
+the image saves only if it passes remaining checks, while normal 1080p/4K
+imports and other error types do not show the inline override.
