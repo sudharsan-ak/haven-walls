@@ -588,3 +588,33 @@ verify the chosen publisher metadata image is a real decoded photograph,
 inspect the preview to confirm identity and pixels, then save as new wallpaper.
 Also test a publisher with unrelated `og:image` and reject it if it does not
 match the selected photo. Test invalid/blocked URLs and normal source imports.
+
+
+## Approved interactive prototype: image-first Library viewer
+
+The old vertically stacked Library details modal has been replaced with the
+approved Haven Walls viewer concept:
+
+- Large, full-height stage on the left and a compact, independently scrollable
+  details panel on the right (responsive stacked layout on narrow displays).
+- Fit / Fill controls affect preview presentation only; never transform or
+  overwrite the saved image or its Windows working copy.
+- Previous / Next chevrons, left/right keyboard navigation and a five-item
+  thumbnail filmstrip following the current Library search/filter, with a
+  visible selected-position counter. Navigation wraps within that filtered set.
+- Closing via Escape, Close or backdrop. Keyboard navigation is ignored inside
+  inputs/textarea/select and while Apply or Remove confirmation is active.
+- Image metadata, source links and explicit reverse-search tools remain in the
+  right panel; custom links, Bing fallback, rights and extended details are
+  collapsed until requested.
+- Favorite, Remove and Set as wallpaper actions stay fixed and visible at the
+  bottom of the details panel. Existing Library originals, active wallpaper
+  protections, Favorites, safe removal, source URLs and Windows apply actions
+  remain backed by the original commands.
+
+Windows acceptance: open the viewer, use chevrons/keyboard/filmstrip in All,
+Favorites and 4K+ filters; verify counter and image, including fast navigation.
+Check Fit/Fill with portrait and landscape photos, close/backdrop, favorite,
+source buttons, original-source search, Lens, Bing, Remove, Set as wallpaper,
+and short-height/narrow-window responsive behavior. No HTML prototype assets
+were copied into application storage; real Library thumbnails are used.

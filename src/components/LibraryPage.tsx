@@ -133,6 +133,47 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     return true;
   }), [items, filter, search]);
 
+  // The viewer follows the active Library search/filter, so Favorites and 4K+
+  // navigation never jump to hidden entries. A small filmstrip is windowed
+  // around the selected item rather than rendering every saved thumbnail.
+  const selectedIndex = selected ? visible.findIndex((item) => item.id === selected.id) : -1;
+  const filmstripStart = Math.min(Math.max(0, selectedIndex - 2), Math.max(0, visible.length - 5));
+  const filmstripItems = visible.slice(filmstripStart, filmstripStart + 5);
+  const [viewerMode, setViewerMode] = useState<"fit" | "fill">("fit");
+
+  function closeViewer() {
+    selectedId.current = null;
+    setSelected(null);
+    setOpenedOriginal("");
+    setOriginalError("");
+  }
+
+  function navigateViewer(step: number) {
+    if (selectedIndex < 0 || visible.length < 2 || busyId || applyItem || pendingRemoval) return;
+    const next = visible[(selectedIndex + step + visible.length) % visible.length];
+    if (next) void open(next);
+  }
+
+  useEffect(() => {
+    if (!selected || applyItem || pendingRemoval) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeViewer();
+        return;
+      }
+      const target = event.target;
+      if (target instanceof HTMLElement &&
+          target.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        navigateViewer(event.key === "ArrowLeft" ? -1 : 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, selectedIndex, visible, busyId, applyItem, pendingRemoval]);
+
   async function toggleFavorite(image: LibraryWallpaper) {
     if (busyId) return;
     setBusyId(image.id);
@@ -382,110 +423,170 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
 
       {selected && (
         <div className="hwl-overlay" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) {
-            selectedId.current = null;
-            setSelected(null);
-          }
+          if (event.target === event.currentTarget) closeViewer();
         }}>
-          <section className="hwl-detail" role="dialog" aria-modal="true"
+          <section className="hwl-detail hwl-viewer" role="dialog" aria-modal="true"
             aria-label={"Saved wallpaper: " + selected.title}>
-            <div className="hwl-detail-image">
-              {openedOriginal
-                ? <img src={openedOriginal} alt={selected.title} />
-                : <div role="status">{originalError || "Loading saved original image…"}</div>}
-              <button type="button" aria-label="Close wallpaper detail"
-                className="hwl-close" onClick={() => {
-                  selectedId.current = null;
-                  setSelected(null);
-                }}>×</button>
-            </div>
-            <div className="hwl-detail-text">
-              <h2>{selected.title}</h2>
-              <p>{selected.width} × {selected.height} · {selected.format.toUpperCase()} · {formattedBytes(selected.bytes)} · <strong>{qualityTier(selected.width, selected.height)}</strong></p>
-              {qualityTier(selected.width, selected.height) === "Below 1080p" && (
-                <p className="hwl-low-quality" role="status">
-                  This is a small image and may look very blurry on a Windows desktop.
-                  Try finding a higher-resolution original from its source.
-                </p>
+            <div className={"hwl-viewer-stage" + (viewerMode === "fill" ? " is-fill" : "")}>
+              {openedOriginal ? (
+                <img className="hwl-viewer-art" src={openedOriginal}
+                  alt={selected.title} />
+              ) : (
+                <div className="hwl-viewer-loading" role="status">
+                  {originalError || "Loading saved original image…"}
+                </div>
               )}
-              <p><strong>Source:</strong> {selected.source}</p>
-              <p><strong>Photo credit:</strong> {selected.credit || "Not provided"}</p>
-              <p><strong>Rights note:</strong> {selected.rightsNote || "Not verified"}</p>
-              <div className="hwl-source-section">
-                <strong>Original online sources</strong>
-                <div className="hwl-source-links">
+              <div className="hwl-viewer-stage-badges">
+                <span>Saved original</span>
+                <span>{qualityTier(selected.width, selected.height)}</span>
+              </div>
+              <div className="hwl-viewer-fit" role="group" aria-label="Image display mode">
+                <button type="button" aria-pressed={viewerMode === "fit"}
+                  className={viewerMode === "fit" ? "active" : ""}
+                  onClick={() => setViewerMode("fit")}>Fit</button>
+                <button type="button" aria-pressed={viewerMode === "fill"}
+                  className={viewerMode === "fill" ? "active" : ""}
+                  onClick={() => setViewerMode("fill")}>Fill</button>
+              </div>
+              <button type="button" className="hwl-viewer-arrow prev"
+                disabled={visible.length < 2 || Boolean(busyId)}
+                aria-label="Previous wallpaper" title="Previous wallpaper (←)"
+                onClick={() => navigateViewer(-1)}>‹</button>
+              <button type="button" className="hwl-viewer-arrow next"
+                disabled={visible.length < 2 || Boolean(busyId)}
+                aria-label="Next wallpaper" title="Next wallpaper (→)"
+                onClick={() => navigateViewer(1)}>›</button>
+              <div className="hwl-viewer-film">
+                <div className="hwl-viewer-film-heading">
+                  <strong title={selected.title}>{selected.title}</strong>
+                  <span>{selectedIndex + 1} / {visible.length}</span>
+                </div>
+                <div className="hwl-viewer-filmstrip" aria-label="Browse saved wallpapers">
+                  {filmstripItems.map((image) => (
+                    <button type="button" key={image.id}
+                      className={"hwl-viewer-thumb" + (image.id === selected.id ? " active" : "")}
+                      aria-label={"View " + image.title}
+                      aria-current={image.id === selected.id ? "true" : undefined}
+                      title={image.title}
+                      onClick={() => void open(image)}>
+                      {image.thumbnailDataUrl ? (
+                        <img src={image.thumbnailDataUrl} alt="" />
+                      ) : <span>Image</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="hwl-viewer-info">
+              <header className="hwl-viewer-header">
+                <div><small>Haven Walls / Library</small><strong>Wallpaper details</strong></div>
+                <button type="button" className="hwl-viewer-close"
+                  onClick={closeViewer} aria-label="Close wallpaper viewer"
+                  title="Close (Esc)">×</button>
+              </header>
+              <div className="hwl-viewer-content">
+                <h2>{selected.title}</h2>
+                <div className="hwl-viewer-pills">
+                  <span className="quality">{qualityTier(selected.width, selected.height)}</span>
+                  <span>{selected.width} × {selected.height}</span>
+                  <span>{selected.format.toUpperCase()}</span>
+                </div>
+                {qualityTier(selected.width, selected.height) === "Below 1080p" && (
+                  <p className="hwl-source-error" role="status">
+                    This image may look blurry on a desktop. Try finding a higher-resolution original.
+                  </p>
+                )}
+                <div className="hwl-viewer-section-title">Image information</div>
+                <dl className="hwl-viewer-facts">
+                  <div><dt>File size</dt><dd>{formattedBytes(selected.bytes)}</dd></div>
+                  <div><dt>Saved from</dt><dd title={selected.source}>{selected.source}</dd></div>
+                  <div><dt>Photographer</dt><dd title={selected.credit || "Unknown"}>
+                    {selected.credit || "Not provided"}</dd></div>
+                </dl>
+                <div className="hwl-viewer-section-title">Original source</div>
+                <p className="hwl-viewer-source-desc">
+                  Original source links are stored with your wallpaper. The saved Library copy works offline.
+                </p>
+                <div className="hwl-viewer-links">
                   <button type="button" className="hwl-secondary"
                     disabled={!validHttpsSource(selected.sourcePage)}
-                    title={selected.sourcePage || "No source website was recorded"}
+                    title={selected.sourcePage || "No source website recorded"}
                     onClick={() => void openOnlineLink(selected.sourcePage, "source page")}>
-                    Open source page ↗
+                    ↗ Source page
                   </button>
                   <button type="button" className="hwl-secondary"
                     disabled={!validHttpsSource(selected.originalUrl)}
-                    title={selected.originalUrl || "No original online image link was recorded"}
+                    title={selected.originalUrl || "No original image URL recorded"}
                     onClick={() => void openOnlineLink(selected.originalUrl, "original image")}>
-                    Open original image ↗
+                    ↗ Original image
                   </button>
                 </div>
-                {!validHttpsSource(selected.sourcePage) &&
-                  <small>No source page was saved for this image. Local imports may not have an online source.</small>}
-                {!validHttpsSource(selected.originalUrl) &&
-                  <small>No original online image URL is available. The saved Library copy is still fully available offline.</small>}
-                <small>
-                  These buttons open recorded online addresses. Some providers
-                  may only expose a preview image rather than a full-resolution original.
-                </small>
-                <div className="hwl-better-source">
-                  <label htmlFor="hwl-better-source-url">
-                    Try to find a higher-quality version
-                  </label>
-                  <p>Haven Walls checks the saved image link and standard image metadata on its original website. If the recorded source is wrong or incomplete, paste the original image or webpage URL below.</p>
-                  <input id="hwl-better-source-url" type="url"
-                    value={betterSourceUrl} maxLength={2048}
-                    placeholder="https://source-website.example/photo"
-                    onChange={(event) => setBetterSourceUrl(event.target.value)} />
+                <div className="hwl-viewer-quality-box">
+                  <div className="hwl-viewer-quality-heading">
+                    <span aria-hidden="true">⌕</span>
+                    <strong>Find higher-quality version</strong>
+                  </div>
+                  <p>Check the original publisher or reverse-search this photograph for larger versions.</p>
                   <button type="button" className="hwl-secondary"
                     onClick={() => findBetterImage(selected)}
-                    disabled={!validHttpsSource(selected.originalUrl) && !validHttpsSource(betterSourceUrl)}>
-                    Find higher-quality version
+                    disabled={!validHttpsSource(selected.originalUrl) &&
+                      !validHttpsSource(betterSourceUrl)}>
+                    ↗ Check original source
                   </button>
-                  <small>Only verified higher-resolution matches are saved separately. The current image stays untouched.</small>
-                  <div className="hwl-search-fallback">
-                    <strong>Need more sources? Free search options</strong>
-                    <div className="hwl-source-links">
-                      <button type="button" className="hwl-secondary"
-                        onClick={() => onReverseSearch(selected)}>
-                        Reverse search this image in Google Lens
-                      </button>
-                      <button type="button" className="hwl-secondary"
-                        onClick={() => void openFreeVisualSearch(selected)}>
-                        Reverse image search with Bing ↗
-                      </button>
-                    </div>
-                    <small>Clicking Google Lens sends the actual saved wallpaper to Google for visual matching, not its title or filename. If Google's automatic upload fails, you can choose the saved file manually. No paid key required.</small>
-                    {visualSearchNote && <p role="status" className="hwl-search-note">{visualSearchNote}</p>}
-                  </div>
+                  <button type="button" className="hwl-secondary"
+                    onClick={() => onReverseSearch(selected)}>
+                    ◎ Reverse search with Google Lens
+                  </button>
+                  <details key={selected.id + "-source"} className="hwl-viewer-extra">
+                    <summary>Custom image link and Bing search</summary>
+                    <label htmlFor="hwl-better-source-url">Original image or source URL</label>
+                    <input id="hwl-better-source-url" type="url"
+                      value={betterSourceUrl} maxLength={2048}
+                      placeholder="https://publisher.example/photo"
+                      onChange={(event) => setBetterSourceUrl(event.target.value)} />
+                    <button type="button" className="hwl-secondary"
+                      onClick={() => findBetterImage(selected)}
+                      disabled={!validHttpsSource(selected.originalUrl) &&
+                        !validHttpsSource(betterSourceUrl)}>
+                      Check supplied source
+                    </button>
+                    <button type="button" className="hwl-secondary"
+                      onClick={() => void openFreeVisualSearch(selected)}>
+                      Bing visual search ↗
+                    </button>
+                    {visualSearchNote && <p role="status">{visualSearchNote}</p>}
+                  </details>
                 </div>
                 {sourceError && <p role="alert" className="hwl-source-error">{sourceError}</p>}
+                <details key={selected.id + "-rights"} className="hwl-viewer-rights">
+                  <summary>Usage rights &amp; more details</summary>
+                  <p><strong>Usage rights:</strong> {selected.rightsNote || "Not verified"}</p>
+                  <p><strong>Saved source:</strong> {selected.sourcePage || "Not available"}</p>
+                  <p><strong>Original URL:</strong> {selected.originalUrl || "Not available"}</p>
+                  <p>Image source and photo credit are not proof of permission for a particular use.</p>
+                </details>
               </div>
-            </div>
-            <div className="hwl-detail-actions">
-              <button type="button" className="hwl-secondary"
-                disabled={Boolean(busyId)}
-                onClick={() => void toggleFavorite(selected)}>
-                {selected.favorite ? "♥ Remove favorite" : "♡ Favorite"}
-              </button>
-              <button type="button" className="hwl-secondary hwl-danger"
-                disabled={Boolean(busyId)}
-                onClick={() => {
-                  setRemovalError("");
-                  setPendingRemoval(selected);
-                }}>Remove from Library</button>
-              <button type="button" className="hwl-primary"
-                disabled={Boolean(busyId)}
-                onClick={() => setApplyItem(selected)}>
-                Set as Windows wallpaper
-              </button>
+              <footer className="hwl-viewer-actions">
+                <button type="button" className={"hwl-secondary hwl-viewer-favorite" +
+                  (selected.favorite ? " is-favorite" : "")}
+                  title={selected.favorite ? "Remove favorite" : "Add to favorites"}
+                  aria-label={selected.favorite ? "Remove favorite" : "Add to favorites"}
+                  disabled={Boolean(busyId)}
+                  onClick={() => void toggleFavorite(selected)}>
+                  {selected.favorite ? "♥" : "♡"}
+                </button>
+                <button type="button" className="hwl-secondary hwl-danger"
+                  disabled={Boolean(busyId)}
+                  onClick={() => {
+                    setRemovalError("");
+                    setPendingRemoval(selected);
+                  }}>Remove</button>
+                <button type="button" className="hwl-primary"
+                  disabled={Boolean(busyId)}
+                  onClick={() => setApplyItem(selected)}>
+                  Set as wallpaper
+                </button>
+              </footer>
             </div>
           </section>
         </div>
