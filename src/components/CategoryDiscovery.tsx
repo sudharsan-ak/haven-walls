@@ -11,7 +11,16 @@ type Category = {
   topics: string[]; custom?: boolean;
 };
 type SourceChoice = "all" | CategoryProvider | "google";
+type Provider = Exclude<SourceChoice, "all">;
 type Quality = "all" | "1080p" | "4k";
+type SearchSession = {
+  query: string;
+  providers: Provider[];
+  nextPage: Partial<Record<Provider, number>>;
+  more: Partial<Record<Provider, boolean>>;
+  cursor: number;
+  keys: { serpapiKey: string; unsplashKey: string };
+};
 type Result = { photo: CatalogImage; key: string };
 
 const CUSTOM_KEY = "haven-walls.discover.categories.v1";
@@ -59,7 +68,16 @@ function passesQuality(photo: CatalogImage, quality: Quality) {
   return photo.width >= 1920 && photo.height >= 1080;
 }
 function imageKey(photo: CatalogImage): string {
-  return photo.originalUrl || photo.previewUrl || photo.id;
+  // Stable IDs keep duplicate pages and changing thumbnail URLs from repeating.
+  if (/^(?:commons|nasa|unsplash)-/.test(photo.id)) return photo.id;
+  const raw = photo.originalUrl || photo.previewUrl;
+  if (raw) {
+    try {
+      const url = new URL(raw);
+      return url.origin.toLowerCase() + url.pathname;
+    } catch { /* Fall back to the provider ID. */ }
+  }
+  return photo.source + ":" + photo.id;
 }
 interface Props {
   onSourceChange: (source: CatalogSourceId) => void;
@@ -83,12 +101,15 @@ export default function CategoryDiscovery({
   const [review, setReview] = useState<CatalogImage[]>([]);
   const [inspected, setInspected] = useState<CatalogImage | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [canLoadMore, setCanLoadMore] = useState(false);
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newKeywords, setNewKeywords] = useState("");
   const requestId = useRef(0);
+  const searchSession = useRef<SearchSession | null>(null);
   const categories = [...PRIMARY, ...custom];
   const selected = categories.find((item) => item.id === categoryId) || PRIMARY[0];
 
@@ -106,63 +127,130 @@ export default function CategoryDiscovery({
     });
   }
 
+  function fetchProviderPage(
+    provider: Provider, query: string, page: number, keys: SearchSession["keys"],
+  ): Promise<CatalogResponse> {
+    if (provider === "google") {
+      if (!keys.serpapiKey.trim()) {
+        return Promise.reject(new Error("Google Images needs a SerpApi key. Browser Search still works without one."));
+      }
+      return browseGoogleImages(query, keys.serpapiKey, 1920, 1080, page);
+    }
+    if (provider === "unsplash" && !keys.unsplashKey.trim()) {
+      return Promise.reject(new Error("Enter an Unsplash access key to search this source."));
+    }
+    return browseCategoryImages(provider, query, keys.unsplashKey, page);
+  }
+
   async function load(nextCategory: Category, nextTopic: string, selectedSource: SourceChoice = source,
     searchText: string = keywords) {
     const request = ++requestId.current;
+    searchSession.current = null;
     setLoading(true);
+    setLoadingMore(false);
+    setCanLoadMore(false);
     setErrors([]);
     setNote("");
     setResults([]);
     const query = [nextCategory.prompt, nextTopic === "All" ? "" : nextTopic, searchText.trim()]
       .filter(Boolean).join(" ").slice(0, 100);
-    const providers: SourceChoice[] = selectedSource === "all"
+    const keys = { serpapiKey, unsplashKey };
+    const providers: Provider[] = selectedSource === "all"
       ? ["commons", ...(nextCategory.id === "space" || nextCategory.id === "earth" ? ["nasa" as const] : []),
-          ...(unsplashKey.trim() ? ["unsplash" as const] : []),
-          ...(serpapiKey.trim() ? ["google" as const] : [])]
+          ...(keys.unsplashKey.trim() ? ["unsplash" as const] : []),
+          ...(keys.serpapiKey.trim() ? ["google" as const] : [])]
       : [selectedSource];
-    const requests = providers.map((provider): Promise<CatalogResponse> => {
-      if (provider === "google") {
-        if (!serpapiKey.trim()) return Promise.reject(new Error("Google Images requires a SerpApi key. Or open the existing Google browser, which needs no key."));
-        return browseGoogleImages(query, serpapiKey, 1920, 1080);
-      }
-      if (provider === "unsplash" && !unsplashKey.trim()) {
-        return Promise.reject(new Error("Enter your Unsplash access key before using this source."));
-      }
-      if (provider === "commons" || provider === "nasa" || provider === "unsplash") {
-        return browseCategoryImages(provider, query, unsplashKey);
-      }
-      return Promise.reject(new Error("Unsupported image source."));
-    });
-    const completed = await Promise.allSettled(requests);
+    const completed = await Promise.allSettled(
+      providers.map((provider) => fetchProviderPage(provider, query, 1, keys))
+    );
     if (requestId.current !== request) return;
+
     const found: Result[] = [];
     const failures: string[] = [];
     const notes: string[] = [];
     const seen = new Set<string>();
+    const nextPage: SearchSession["nextPage"] = {};
+    const more: SearchSession["more"] = {};
     for (let i = 0; i < completed.length; i++) {
+      const provider = providers[i];
       const outcome = completed[i];
+      nextPage[provider] = 2;
       if (outcome.status === "rejected") {
-        failures.push(SOURCE_OPTIONS.find((opt) => opt.id === providers[i])?.label + ": " +
-          (outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)));
+        more[provider] = false;
+        failures.push((SOURCE_OPTIONS.find((option) => option.id === provider)?.label || provider) +
+          ": " + (outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)));
         continue;
       }
+      more[provider] = Boolean(outcome.value.hasMore);
       notes.push(outcome.value.note);
       for (const photo of outcome.value.items) {
         const key = imageKey(photo);
-        if (!key.startsWith("https://") || seen.has(key)) continue;
+        if (seen.has(key)) continue;
         seen.add(key);
         found.push({ key, photo });
       }
     }
-    found.sort((a, b) => {
-      const pixelsA = a.photo.width * a.photo.height;
-      const pixelsB = b.photo.width * b.photo.height;
-      return pixelsB - pixelsA;
-    });
+    found.sort((a, b) =>
+      b.photo.width * b.photo.height - a.photo.width * a.photo.height
+    );
+    searchSession.current = { query, providers, nextPage, more, cursor: 0, keys };
     setResults(found);
     setErrors(failures);
     setNote(notes.join(" · "));
+    setCanLoadMore(providers.some((provider) => Boolean(more[provider])));
     setLoading(false);
+  }
+
+  async function loadMore() {
+    const session = searchSession.current;
+    if (!session || loading || loadingMore) return;
+    let provider: Provider | null = null;
+    for (let offset = 0; offset < session.providers.length; offset++) {
+      const idx = (session.cursor + offset) % session.providers.length;
+      const current = session.providers[idx];
+      if (!session.more[current]) continue;
+      provider = current;
+      session.cursor = (idx + 1) % session.providers.length;
+      break;
+    }
+    if (provider === null) {
+      setCanLoadMore(false);
+      return;
+    }
+    const page = session.nextPage[provider] ?? 2;
+    const request = ++requestId.current;
+    setLoadingMore(true);
+    setErrors([]);
+    try {
+      const response = await fetchProviderPage(provider, session.query, page, session.keys);
+      if (requestId.current !== request || searchSession.current !== session) return;
+      session.nextPage[provider] = page + 1;
+      session.more[provider] = Boolean(response.hasMore) && page < 100;
+      setResults((existing) => {
+        const seen = new Set(existing.map((item) => item.key));
+        const appended: Result[] = [];
+        for (const photo of response.items) {
+          const key = imageKey(photo);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          appended.push({ key, photo });
+        }
+        return [...existing, ...appended];
+      });
+      const label = SOURCE_OPTIONS.find((option) => option.id === provider)?.label || provider;
+      setNote(response.note + " · Additional " + label + " images appended below.");
+      setCanLoadMore(session.providers.some((item) => Boolean(session.more[item])));
+    } catch (problem) {
+      if (requestId.current !== request || searchSession.current !== session) return;
+      // A broken provider cannot trap Load more in a repeated failing request.
+      session.more[provider] = false;
+      const label = SOURCE_OPTIONS.find((option) => option.id === provider)?.label || provider;
+      setErrors([label + ": " + (problem instanceof Error ? problem.message : String(problem)) +
+        ". Use Search / refresh to retry this provider."]);
+      setCanLoadMore(session.providers.some((item) => Boolean(session.more[item])));
+    } finally {
+      if (requestId.current === request) setLoadingMore(false);
+    }
   }
 
   // Opening Discover is an intentional browsing action. No search occurs in
@@ -277,7 +365,7 @@ export default function CategoryDiscovery({
             {SOURCE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
-        <button type="submit" className="cdy-primary" disabled={loading}>
+        <button type="submit" className="cdy-primary" disabled={loading || loadingMore}>
           {loading ? "Searching…" : "Search / refresh"}
         </button>
       </form>
@@ -335,6 +423,20 @@ export default function CategoryDiscovery({
                 ))}
               </div>
             )}
+          {!loading && results.length > 0 && (
+            <div className="cdy-load-more" aria-live="polite">
+              {canLoadMore ? (
+                <button type="button" className="cdy-primary" disabled={loadingMore}
+                  onClick={() => void loadMore()}>
+                  {loadingMore ? "Loading more wallpapers…" : "Load more wallpapers"}
+                </button>
+              ) : (
+                <strong>You've reached the end of available results for this search.</strong>
+              )}
+              <small>{results.length} unique images loaded · Each click fetches one source's next page.
+                Existing results and Review selection stay in place.</small>
+            </div>
+          )}
         </section>
         <aside className="cdy-review" aria-label="Review selection">
           <div className="cdy-review-heading"><strong>Review selection</strong><span>{review.length} / 30</span></div>
