@@ -11,6 +11,8 @@ use crate::local_storage::DataPaths;
 pub struct AppSettings {
     pub wallpaper_fit: String,
     pub minimum_resolution: String,
+    /// Persistent import policy, independent of the Quick Save confirmation setting.
+    pub allow_below_minimum: bool,
     pub prefer_4k: bool,
     pub show_photo_credit: bool,
     pub show_caption: bool,
@@ -29,6 +31,7 @@ impl Default for AppSettings {
         Self {
             wallpaper_fit: "smartFit".into(),
             minimum_resolution: "1080p".into(),
+            allow_below_minimum: false,
             prefer_4k: true,
             show_photo_credit: true,
             show_caption: false,

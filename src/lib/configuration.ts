@@ -8,6 +8,8 @@ export type MinimumResolution = "1080p" | "1440p" | "4K";
 export interface AppSettings {
   wallpaperFit: WallpaperFit;
   minimumResolution: MinimumResolution;
+  /** Saved default for permitting sub-minimum Library imports (independent of Quick Save). */
+  allowBelowMinimum: boolean;
   prefer4k: boolean;
   showPhotoCredit: boolean;
   showCaption: boolean;

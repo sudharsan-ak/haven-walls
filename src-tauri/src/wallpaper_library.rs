@@ -35,7 +35,10 @@ pub struct ImportMetadata {
     rights_note: String,
     /// Explicit confirmation: user has checked image use/terms themselves.
     rights_confirmed: bool,
-    allow_below_minimum: bool,
+    /// None means use the saved Settings preference. Some(true/false) is
+    /// an explicit per-import override and does not alter persistent settings.
+    #[serde(default)]
+    allow_below_minimum: Option<bool>,
     allow_similar: bool,
     /// Only supplied for a user-initiated upgrade of this saved Library image.
     #[serde(default)]
@@ -305,11 +308,14 @@ fn import_bytes(
     // Resolution checks are orientation-aware: a 1080 × 1920 portrait image
     // is eligible at the 1080p tier just like a 1920 × 1080 landscape.
     let (image_long, image_short) = (width.max(height), width.min(height));
-    if !metadata.allow_below_minimum &&
+    let allow_below_minimum = metadata.allow_below_minimum
+        .unwrap_or(settings.allow_below_minimum);
+    if !allow_below_minimum &&
         (image_long < minimum_width || image_short < minimum_height) {
         return Err(format!(
             "Loaded image is {width} × {height}, below your {} minimum. \
-             Check 'Allow smaller images' to import it anyway.",
+             Enable 'Allow smaller images' for this import or turn on \
+             'Allow images below minimum resolution' in Settings.",
             settings.minimum_resolution
         ));
     }

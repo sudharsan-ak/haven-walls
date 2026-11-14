@@ -84,7 +84,9 @@ export default function LibraryImportDialog({
   useEffect(() => {
     let active = true;
     void getConfiguration().then((result) => {
-      if (active) setQuickMode(result.settings.skipImportConfirmation);
+      if (!active) return;
+      setAllowSmaller(result.settings.allowBelowMinimum);
+      setQuickMode(result.settings.skipImportConfirmation);
     }).catch((problem) => {
       if (!active) return;
       const message = problem instanceof Error ? problem.message : String(problem);
@@ -297,7 +299,7 @@ export default function LibraryImportDialog({
                   <input type="checkbox" checked={allowSmaller} disabled={busy}
                     onChange={(event) => setAllowSmaller(event.target.checked)}/>
                   <span><strong>Allow images below my minimum resolution</strong>
-                    <small>Still validates actual pixels and supported file format.</small>
+                    <small>Starts from your saved Settings preference. Changes here apply only to this import; image format and duplicate checks remain active.</small>
                   </span>
                 </label>
               )}
@@ -337,8 +339,8 @@ export default function LibraryImportDialog({
                   onChange={(event) => setAllowSmaller(event.target.checked)} />
                 <span>
                   <strong>Allow images below my minimum resolution</strong>
-                  <small>This affects this import only. The image may appear blurry
-                    on a desktop, but file-format and duplicate checks still apply.</small>
+                  <small>This overrides your saved Settings preference only for this import.
+                    The image may look blurry; file-format and duplicate checks still apply.</small>
                 </span>
               </label>
               <button type="button" className="online-primary"

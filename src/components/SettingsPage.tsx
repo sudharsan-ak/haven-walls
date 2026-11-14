@@ -283,6 +283,14 @@ export default function SettingsPage() {
             <p>Validated during every managed Library import. Exact duplicates always remain blocked.</p></div>
           <span className="hws-settings-live">Available now</span>
         </div>
+        <label className="hws-settings-toggle">
+          <div>
+            <strong>Allow images below minimum resolution</strong>
+            <small>Off by default. When enabled, smaller images can be saved to the Library with or without Quick Save. You can still override this choice for an individual import.</small>
+          </div>
+          <input type="checkbox" checked={form.allowBelowMinimum}
+            onChange={(event) => field("allowBelowMinimum", event.target.checked)} />
+        </label>
         <label className="hws-settings-field">
           <strong>Allowed image types</strong>
           <div className="hws-image-types">

@@ -675,3 +675,38 @@ under a 1080p minimum and confirm the checkbox appears under the error. Click
 Retry before checking it (must be disabled), then enable it and retry. Verify
 the image saves only if it passes remaining checks, while normal 1080p/4K
 imports and other error types do not show the inline override.
+
+
+## Persisted smaller-image import policy (independent of Quick Save)
+
+- New toggle under **Settings -> Image quality & duplicate detection**:
+  **Allow images below minimum resolution**. It is stored with all other
+  settings in SQLite. It defaults to off, including for existing settings
+  records, and applies to both Quick Save and confirmation-based imports.
+- The import dialog reads the saved preference before its Quick Save effect
+  can start. Its one-image checkbox starts in the same state as Settings,
+  and changes in the dialog apply only to that import. They are not written
+  back to SQLite.
+- Native `ImportMetadata.allow_below_minimum` is optional. When omitted,
+  the Rust import validates against the persisted setting; an explicitly
+  supplied true/false uses that one-import choice. This protects callers
+  beyond the currently mounted React dialog and permits a one-time stricter
+  choice even when the global preference is enabled.
+- All image decoding, allowed-format validation, exact duplicate screening,
+  and explicit higher-resolution visual-match checks remain unchanged.
+  The persisted toggle does not upscale images or bypass those protections.
+
+Windows acceptance:
+1. Keep Quick Save on, set 1080p minimum, enable the new toggle in Settings
+   and Save settings. Import a valid 1600 x 900 image. It should save without
+   the below-minimum error.
+2. Disable Quick Save without changing the new toggle. Confirm the checkbox
+   is still checked in the manual import dialog and a sub-1080p image is
+   allowed after the normal rights confirmation.
+3. Disable the new toggle in Settings, leave Quick Save on, and attempt
+   another 1600 x 900 import. Confirm rejection, then use the inline
+   Allow smaller images + Retry workflow to override that one import.
+4. Reopen Settings and restart the app: the toggle should retain its saved
+   value. Changing it in an individual import must not change Settings.
+5. With the setting enabled, make sure unsupported formats, exact duplicates,
+   and mismatching resolution upgrades are still rejected normally.

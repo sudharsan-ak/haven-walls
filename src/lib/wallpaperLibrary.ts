@@ -25,7 +25,8 @@ export interface ImportMetadata {
   credit: string;
   rightsNote: string;
   rightsConfirmed: boolean;
-  allowBelowMinimum: boolean;
+  /** Omit to use the saved Settings preference; true/false explicitly overrides it. */
+  allowBelowMinimum?: boolean;
   allowSimilar: boolean;
 }
 export interface ImportOutcome {
