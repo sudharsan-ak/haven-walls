@@ -53,17 +53,23 @@ async fn read_json(response: reqwest::Response) -> Result<Value, String> {
     if bytes.len() > MAX_RESPONSE { return Err("Image catalog exceeded its size limit.".into()); }
     serde_json::from_slice(&bytes).map_err(|_| "Image source returned invalid catalog data.".into())
 }
-async fn commons(client: &Client, query: &str) -> Result<CatalogResponse, String> {
+async fn commons(client: &Client, query: &str, page: u32) -> Result<CatalogResponse, String> {
     let search = format!("{query} filetype:bitmap");
+    let offset = ((page - 1) * 32).to_string();
     let response = client.get("https://commons.wikimedia.org/w/api.php")
         .query(&[
             ("action", "query"), ("generator", "search"), ("gsrsearch", search.as_str()),
-            ("gsrnamespace", "6"), ("gsrlimit", "32"), ("prop", "imageinfo"),
+            ("gsrnamespace", "6"), ("gsrlimit", "32"), ("gsroffset", offset.as_str()),
+            ("prop", "imageinfo"),
             ("iiprop", "url|size|extmetadata"), ("iiurlwidth", "640"),
             ("format", "json"), ("formatversion", "2"),
         ])
         .send().await.map_err(|_| "Wikimedia Commons could not be reached.".to_string())?;
     let data = read_json(response).await?;
+    let raw_count = data.pointer("/query/pages").and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    // MediaWiki supplies gsroffset for the next search-results batch.
+    let has_more = data.pointer("/continue/gsroffset").is_some() || raw_count == 32;
     let mut items = Vec::new();
     if let Some(pages) = data.pointer("/query/pages").and_then(Value::as_array) {
         for page in pages {
@@ -90,6 +96,7 @@ async fn commons(client: &Client, query: &str) -> Result<CatalogResponse, String
     }
     Ok(CatalogResponse {
         note: format!("{} Wikimedia Commons images. File sizes are provider-reported until verified.", items.len()),
+        has_more: Some(has_more),
         items,
     })
 }
@@ -115,11 +122,17 @@ async fn nasa_original(client: Client, id: String) -> Option<String> {
     }
     best.map(|(_, url)| url)
 }
-async fn nasa(client: &Client, query: &str) -> Result<CatalogResponse, String> {
+async fn nasa(client: &Client, query: &str, page: u32) -> Result<CatalogResponse, String> {
+    let page_param = page.to_string();
     let response = client.get("https://images-api.nasa.gov/search")
-        .query(&[("q", query), ("media_type", "image"), ("page_size", "18")])
+        .query(&[("q", query), ("media_type", "image"), ("page_size", "18"),
+            ("page", page_param.as_str())])
         .send().await.map_err(|_| "NASA Image Library could not be reached.".to_string())?;
     let data = read_json(response).await?;
+    let raw_count = data.pointer("/collection/items").and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let total = data.pointer("/collection/metadata/total_hits").and_then(Value::as_u64);
+    let has_more = total.map_or(raw_count == 18, |hits| u64::from(page) * 18 < hits);
     let mut images: Vec<(CatalogImage, String)> = Vec::new();
     if let Some(results) = data.pointer("/collection/items").and_then(Value::as_array) {
         for entry in results.iter().take(18) {
@@ -153,22 +166,27 @@ async fn nasa(client: &Client, query: &str) -> Result<CatalogResponse, String> {
     let items: Vec<CatalogImage> = images.into_iter().map(|(item, _)| item).collect();
     Ok(CatalogResponse {
         note: format!("{} NASA images. Original links are resolved from NASA asset manifests.", items.len()),
+        has_more: Some(has_more),
         items,
     })
 }
-async fn unsplash(client: &Client, query: &str, api_key: &str) -> Result<CatalogResponse, String> {
+async fn unsplash(client: &Client, query: &str, api_key: &str, page: u32) -> Result<CatalogResponse, String> {
     let key = api_key.trim();
     if key.is_empty() { return Err("Enter an Unsplash access key to enable this source.".into()); }
     if key.len() > 256 || key.chars().any(char::is_whitespace) {
         return Err("Invalid Unsplash access key.".into());
     }
+    let page_param = page.to_string();
     let response = client.get("https://api.unsplash.com/search/photos")
         .header("Authorization", format!("Client-ID {key}"))
         .header("Accept-Version", "v1")
-        .query(&[("query", query), ("per_page", "24"),
+        .query(&[("query", query), ("per_page", "24"), ("page", page_param.as_str()),
             ("orientation", "landscape"), ("content_filter", "high")])
         .send().await.map_err(|_| "Unsplash search could not be reached.".to_string())?;
     let data = read_json(response).await?;
+    let raw_count = data.get("results").and_then(Value::as_array).map_or(0, Vec::len);
+    let has_more = data.get("total_pages").and_then(Value::as_u64)
+        .map_or(raw_count == 24, |total| u64::from(page) < total);
     let mut items = Vec::new();
     if let Some(results) = data.get("results").and_then(Value::as_array) {
         for entry in results {
@@ -194,6 +212,7 @@ async fn unsplash(client: &Client, query: &str, api_key: &str) -> Result<Catalog
     }
     Ok(CatalogResponse {
         note: format!("{} Unsplash photographs. API use requires an authorized key and compliance with provider terms.", items.len()),
+        has_more: Some(has_more),
         items,
     })
 }
@@ -201,17 +220,21 @@ async fn unsplash(client: &Client, query: &str, api_key: &str) -> Result<Catalog
 /// This command is only called after a user selects a topic or presses Refresh.
 #[tauri::command]
 pub async fn browse_category_images(
-    provider: String, query: String, unsplash_key: String,
+    provider: String, query: String, unsplash_key: String, page: Option<u32>,
 ) -> Result<CatalogResponse, String> {
+    let page = page.unwrap_or(1);
+    if !(1..=100).contains(&page) {
+        return Err("Only pages 1 through 100 are supported.".into());
+    }
     let query = query.trim();
     if !(2..=100).contains(&query.chars().count()) || query.chars().any(|ch| ch.is_control()) {
         return Err("Enter a category query between 2 and 100 ordinary characters.".into());
     }
     let client = client()?;
     match provider.as_str() {
-        "commons" => commons(&client, query).await,
-        "nasa" => nasa(&client, query).await,
-        "unsplash" => unsplash(&client, query, &unsplash_key).await,
+        "commons" => commons(&client, query, page).await,
+        "nasa" => nasa(&client, query, page).await,
+        "unsplash" => unsplash(&client, query, &unsplash_key, page).await,
         _ => Err("Unsupported category source.".into()),
     }
 }

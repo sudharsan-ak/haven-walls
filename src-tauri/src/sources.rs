@@ -34,6 +34,9 @@ pub struct CatalogImage {
 pub struct CatalogResponse {
     pub items: Vec<CatalogImage>,
     pub note: String,
+    /// Optional because existing Bing, Sports, and TMDB sources are not paginated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
 }
 
 fn client() -> Result<Client, String> {
@@ -109,6 +112,7 @@ fn bing_from_json(data: &Value) -> CatalogResponse {
     }
     CatalogResponse {
         items,
+        has_more: None,
         note: "Recent Bing homepage photos. This is a daily feed, not a keyword search. Bing's feed is undocumented and can change.".into(),
     }
 }
@@ -171,6 +175,7 @@ fn earth_from_json(data: &Value, query: &str) -> CatalogResponse {
         .collect();
     CatalogResponse {
         items,
+        has_more: None,
         note: "Archived Earth View image index, provided by a community mirror. Availability and usage rights are not guaranteed.".into(),
     }
 }
@@ -226,6 +231,7 @@ fn sports_from_json(data: &Value) -> CatalogResponse {
     }
     CatalogResponse {
         items,
+        has_more: None,
         note: "Team artwork and badges from TheSportsDB. These previews are not guaranteed to be 1080p or licensed for wallpaper use.".into(),
     }
 }
@@ -277,6 +283,7 @@ fn tmdb_shows_from_json(data: &Value) -> CatalogResponse {
     }
     CatalogResponse {
         items,
+        has_more: None,
         note: "Select the exact TV show before browsing its backdrops. TMDB attribution and image rights apply.".into(),
     }
 }
@@ -313,6 +320,7 @@ fn tmdb_backdrops_from_json(id: u64, data: &Value) -> CatalogResponse {
     items.truncate(24);
     CatalogResponse {
         items,
+        has_more: None,
         note: "TMDB show backdrops. Image metadata is provided for preview only, not cleared for wallpaper use.".into(),
     }
 }
