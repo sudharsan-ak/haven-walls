@@ -1,3 +1,9 @@
+mod sources;
+mod google_images;
+mod google_browser;
+#[cfg(windows)]
+mod google_context_menu;
+
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -20,7 +26,16 @@ fn get_host_info() -> HostInfo {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_host_info])
+        .invoke_handler(tauri::generate_handler![
+            get_host_info,
+            sources::browse_wallpaper_source,
+            sources::browse_tmdb_backdrops,
+            google_images::browse_google_images,
+            google_browser::open_google_images_inline,
+            google_browser::layout_google_images_inline,
+            google_browser::set_google_images_inline_zoom,
+            google_browser::close_google_images_inline
+        ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");
 }

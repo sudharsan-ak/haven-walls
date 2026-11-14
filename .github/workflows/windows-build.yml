@@ -1,8 +1,7 @@
 name: Windows Build
 
 on:
-  pull_request:
-    branches: [main]
+  # Run manually only. Pushing code to a PR must never start a build.
   workflow_dispatch:
 
 permissions:
@@ -33,6 +32,10 @@ jobs:
       - name: Check Rust formatting
         working-directory: src-tauri
         run: cargo fmt --all -- --check
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test
 
       - name: Build Windows EXE and NSIS installer
         run: npm run tauri build -- --bundles nsis
