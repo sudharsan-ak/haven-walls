@@ -205,3 +205,71 @@ This follow-up addresses two issues seen in Windows screenshots:
 7. Verify Gallery, Quick Save, favorites, library removal protection, manual Set Now, wallpaper fit, captions, and source links still work.
 
 Only the user builds and tests on Windows. No assistant CI, builds or merges.
+
+## Source-resolution downloads: explicit publisher links
+
+**Problem reproduced:** The publisher's Switzerland page offers a 3840x2160 file,
+but the embedded Google Images thumbnail loaded at only 800x450. A Google
+search title mentioning 4K or 8K is not proof of the downloaded file's quality.
+
+**Publisher example:**
+- Web page:
+  https://wallpapershome.com/nature/meadows/switzerland-5k-4k-wallpaper-8k-hd-mountains-sunset-hills-5303.html
+- Explicit 4K image linked by that page:
+  https://wallpapershome.com/images/wallpapers/switzerland-wallpaper-3840x2160-8k-nature-5303.jpg
+
+**Resolver changes:**
+- On **user-initiated** inspect/import only, fetch the recorded original publisher webpage
+  over a validated public HTTPS connection with bounded HTML.
+- Parse same-site image/download links that advertise a real resolution such as
+  3840x2160, 2560x1440, 1920x1080 or "Download original". Rank advertised
+  resolution for **probe order only**, never as verified pixels.
+- WallpapersHome's download paths are additionally constrained to match the
+  numeric wallpaper ID from the original page (5303 in both filenames). This
+  protects against selecting unrelated images and allows a site-identified
+  4K original to replace a differently compressed preview.
+- For other supported original websites, retain visual-similarity verification
+  against the selected preview, restricting download links to the publisher's
+  website and its subdomains.
+- Attempt full-resolution download links before ordinary social/OG preview
+  candidates, then actually decode downloaded images and compare their pixels.
+  Store only the best valid candidate and continue to enforce user Settings.
+- Supply a normal same-host Referer header when requesting an original image
+  from the publisher's own website. Never leak a source-page URL across domains
+  or disable the existing DNS/redirect/size protections.
+- If Google couldn't capture the publisher's URL, **Save to Library / retry**
+  now accepts an original source webpage or direct full-resolution image URL.
+  Never save a Google search-results page as the image's original website.
+- The Library and source images are not silently replaced, and automatic
+  discovery/rotation remain out of scope.
+
+**Copyright:** Publishers may restrict images to personal use, or require
+attribution. Haven Walls does not grant any usage rights; imports remain
+subject to the publisher's terms.
+
+### User-owned Windows acceptance
+
+1. Pull this PR branch, build locally. In Google Images Browser Search, add
+   the Switzerland result called 5303.jpg to Review selection.
+2. If the original publisher page was captured, inspect/save again. Expect
+   publisher 4K download links to be probed, and if the direct link is
+   accessible, a **decoded 3840x2160 image**, not the 800x450 preview.
+3. If the initial save still fails at 800x450, choose
+   **Check original website or adjust quality and retry**. Paste the
+   WallpapersHome 5303 webpage URL above, then retry. Verify actual pixels
+   and that the saved image appears in Library.
+4. Retry by pasting the **direct 3840x2160 JPG URL** instead of its webpage
+   if the website blocks HTML or download-link discovery. It must still be
+   validated as an image and meet the configured resolution minimum.
+5. Try a different publisher with explicit resolution-labeled image links.
+   It should select the largest verified *matching* image, not an unrelated
+   wallpaper or thumbnail.
+6. Verify no automatic image searches or downloads run without explicit
+   user action. Recheck Google Images, Bing, Library, Favorites, Set Now,
+   captions, Quick Save and storage safety.
+7. Check original source metadata and respect usage rights. If a site blocks
+   automated fetching, import an authorized locally downloaded full-size file.
+
+**Dependency policy:** This commit adds no new Rust dependencies and leaves
+src-tauri/Cargo.lock unchanged. No assistant builds, tests, CI workflows or
+merges were run. The user owns Windows validation.

@@ -227,7 +227,14 @@ export default function GoogleWorkspace({
         filename = rawPath.slice(0, 140) || filename;
       }
 
-      const page = resolved.sourcePage || directHttpsImageAddress(event.payload.pageUrl) || "";
+      // Google itself is the embedded browser page, not the publisher.
+      // Never save google.com/search as the image's original website.
+      // An imgres imgrefurl or a publisher link supplies the real source.
+      const browserPage = directHttpsImageAddress(event.payload.pageUrl);
+      const actualBrowserPage = browserPage &&
+        !["google.com", "www.google.com", "images.google.com"].includes(new URL(browserPage).hostname)
+        ? browserPage : "";
+      const page = resolved.sourcePage || actualBrowserPage;
       const candidate = makeManualImage(directUrl, filename, false, resolved.preview, page);
       if (resolved.original !== resolved.preview) {
         candidate.candidateUrls = [resolved.preview];

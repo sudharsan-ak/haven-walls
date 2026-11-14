@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getConfiguration } from "../lib/configuration";
 import type { CatalogImage } from "../lib/native";
-import { imageCandidates } from "../lib/imageResolution";
+import { imageCandidates, validRemoteUrl } from "../lib/imageResolution";
 import {
   fileBlobToBase64, importWallpaperData, importBestWallpaperUrls, type ImportOutcome,
   type LibraryWallpaper,
@@ -41,6 +41,9 @@ export default function LibraryImportDialog({
   const [complete, setComplete] = useState(false);
   const [credit, setCredit] = useState(images.length === 1 ? images[0].credit : "");
   const [rightsNote, setRightsNote] = useState("");
+  const [sourcePageOverride, setSourcePageOverride] = useState(
+    images.length === 1 ? images[0].pageUrl || "" : "",
+  );
   const [lastSaved, setLastSaved] = useState<LibraryWallpaper | null>(null);
 
   const distinct = useMemo(() => {
@@ -93,10 +96,18 @@ export default function LibraryImportDialog({
     for (let i = 0; i < distinct.length; i++) {
       const image = distinct[i];
       setIndex(i + 1);
+      const suppliedUrl = distinct.length === 1
+        ? validRemoteUrl(sourcePageOverride) : null;
+      const sourceIsDirectImage = Boolean(suppliedUrl && (() => {
+        const path = new URL(suppliedUrl).pathname;
+        return /\.(jpe?g|png|webp|avif)$/i.test(path) ||
+          path.includes("/download/");
+      })());
       const metadata = {
         title: image.title,
         source: image.source,
-        sourcePage: image.pageUrl,
+        sourcePage: suppliedUrl && !sourceIsDirectImage
+          ? suppliedUrl : image.pageUrl,
         originalUrl: image.originalUrl || image.previewUrl,
         credit: distinct.length === 1 ? credit : image.credit,
         rightsNote: rightsNote.trim() || image.rights,
@@ -116,7 +127,10 @@ export default function LibraryImportDialog({
           // image metadata from the selected source page. Rust downloads and
           // decodes candidates before writing only the best valid image.
           // A small preview must never win merely because it loads first.
-          const candidates = imageCandidates(image).filter((url) => url.startsWith("https://"));
+          const candidates = [
+            ...(sourceIsDirectImage && suppliedUrl ? [suppliedUrl] : []),
+            ...imageCandidates(image).filter((url) => url.startsWith("https://")),
+          ].filter((url, position, entries) => entries.indexOf(url) === position).slice(0, 12);
           if (candidates.length === 0) {
             throw new Error("No usable HTTPS original image URL. Open the source website and copy its full-size image address.");
           }
@@ -187,6 +201,20 @@ export default function LibraryImportDialog({
 
           {(quickMode === false || manualRetry) && (
             <>
+              {distinct.length === 1 && !fileCandidate(distinct[0]) && (
+                <label className="lidi-field">
+                  <strong>Original image website (optional)</strong>
+                  <input type="url" value={sourcePageOverride} maxLength={2048}
+                    onChange={(event) => setSourcePageOverride(event.target.value)}
+                    placeholder="https://wallpaper-website.example/photo-or-full-size-image.jpg" />
+                  <small>
+                    If Google only supplied a thumbnail, paste the original wallpaper
+                    page or a direct full-resolution image link. Haven Walls will
+                    inspect the available 4K/1440p download versions.
+                    We never treat Google's search page as the original source.
+                  </small>
+                </label>
+              )}
               {distinct.length === 1 && (
                 <label className="lidi-field">
                   <strong>Photo credit / source</strong>
@@ -256,7 +284,7 @@ export default function LibraryImportDialog({
                   setManualRetry(true);
                   setComplete(false);
                 }}>
-                Adjust quality or duplicate options and retry
+                Check original website or adjust quality and retry
               </button>
             )}
         </div>

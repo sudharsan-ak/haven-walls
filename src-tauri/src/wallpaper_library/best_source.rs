@@ -22,6 +22,7 @@ async fn fetch_public_bytes(
     url_str: &str,
     max_bytes: usize,
     expect_html: bool,
+    publisher_page: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let mut current = url_str.to_string();
     // Redirects are handled manually; every hop gets new SSRF/DNS validation.
@@ -35,7 +36,19 @@ async fn fetch_public_bytes(
             .timeout(Duration::from_secs(11))
             .user_agent("HavenWalls/0.1 (user-approved original image lookup)")
             .build().map_err(|e| format!("Could not prepare HTTPS request: {e}"))?;
-        let mut response = client.get(url.clone()).send().await
+        let mut request = client.get(url.clone());
+        // Some public wallpaper CDNs expect a normal same-site page referrer.
+        // Never leak a publisher's page URL to another host after redirect.
+        if let Some(page) = publisher_page {
+            if let Ok(referer) = reqwest::Url::parse(page) {
+                if referer.scheme() == "https" &&
+                    referer.host_str().map(|host| host.trim_start_matches("www.")) ==
+                    url.host_str().map(|host| host.trim_start_matches("www.")) {
+                    request = request.header(reqwest::header::REFERER, referer.as_str());
+                }
+            }
+        }
+        let mut response = request.send().await
             .map_err(|e| format!("Source request failed: {e}"))?;
         if response.status().is_redirection() {
             if redirect == 2 { return Err("Image source redirected too many times.".into()); }
@@ -215,6 +228,154 @@ fn image_metadata_links(page_url: &str, html: &[u8]) -> Vec<String> {
     results
 }
 
+// Explicit download links on an image's original webpage are different from
+// social-media/OG preview images. Prefer the site's actual resolution options.
+// Only visible hrefs with image/download semantics are considered; no scripts,
+// search-result scraping, arbitrary crawling or page navigation is performed.
+const MAX_DOWNLOAD_LINKS: usize = 7;
+
+#[derive(Clone)]
+struct DownloadLink {
+    url: String,
+    advertised_pixels: u64,
+    landscape: bool,
+    verified_same_wallpaper: bool,
+}
+
+fn page_image_id(url: &reqwest::Url) -> Option<&str> {
+    let file = url.path().rsplit('/').next()?;
+    let stem = file.rsplit_once('.').map(|(name, _)| name).unwrap_or(file);
+    let id = stem.rsplit('-').next()?;
+    if (3..=9).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit()) {
+        Some(id)
+    } else {
+        None
+    }
+}
+
+fn wallpapershome(url: &reqwest::Url) -> bool {
+    matches!(url.host_str(), Some("wallpapershome.com" | "www.wallpapershome.com"))
+}
+
+fn advertised_dimensions(text: &str) -> Option<(u64, bool)> {
+    // Bounded ASCII resolution scan: WIDTHxHEIGHT, e.g. 3840x2160.
+    // These values are only hints for probe ordering. Every file is decoded.
+    let bytes = text.as_bytes();
+    let mut largest = None;
+    for i in 0..bytes.len() {
+        if !bytes[i].is_ascii_digit() || (i > 0 && bytes[i - 1].is_ascii_digit()) {
+            continue;
+        }
+        let mut mid = i;
+        while mid < bytes.len() && bytes[mid].is_ascii_digit() && mid - i < 6 {
+            mid += 1;
+        }
+        if mid == i || mid >= bytes.len() || !matches!(bytes[mid], b'x' | b'X') {
+            continue;
+        }
+        let mut end = mid + 1;
+        while end < bytes.len() && bytes[end].is_ascii_digit() && end - mid <= 6 {
+            end += 1;
+        }
+        let Ok(width) = text[i..mid].parse::<u32>() else { continue };
+        let Ok(height) = text[mid + 1..end].parse::<u32>() else { continue };
+        if !(700..=12000).contains(&width) || !(450..=12000).contains(&height) {
+            continue;
+        }
+        let pixels = u64::from(width) * u64::from(height);
+        let landscape = width >= height;
+        if largest.as_ref().is_none_or(|(prior, prior_landscape): &(u64, bool)|
+            pixels > *prior || (pixels == *prior && landscape && !*prior_landscape)) {
+            largest = Some((pixels, landscape));
+        }
+    }
+    largest
+}
+
+fn original_download_links(page_url: &str, html: &[u8]) -> Vec<DownloadLink> {
+    let Ok(base) = reqwest::Url::parse(page_url) else { return Vec::new() };
+    let page_host = base.host_str().unwrap_or("").trim_start_matches("www.");
+    let wallpaper_id = if wallpapershome(&base) { page_image_id(&base) } else { None };
+    let text = String::from_utf8_lossy(html);
+    let lower = text.to_ascii_lowercase();
+    let mut offset = 0usize;
+    let mut scanned = 0usize;
+    let mut downloads: Vec<DownloadLink> = Vec::new();
+
+    while offset < lower.len() && scanned < 450 {
+        let Some(relative) = lower[offset..].find("<a") else { break };
+        let start = offset + relative;
+        let after_a = lower.as_bytes().get(start + 2).copied().unwrap_or(b' ');
+        if !after_a.is_ascii_whitespace() && after_a != b'>' { offset = start + 2; continue; }
+        let Some(open_end) = lower[start..].find('>') else { break };
+        let open_end = start + open_end + 1;
+        if open_end - start > 3072 { offset = open_end; continue; }
+        let Some(close_at) = lower[open_end..].find("</a>") else { break };
+        let close = open_end + close_at;
+        offset = close + 4;
+        scanned += 1;
+        if close - open_end > 1536 { continue; }
+        let tag = &text[start..open_end];
+        let Some(href) = tag_attribute(tag, "href") else { continue };
+        let raw = html_entities(&href);
+        if raw.len() > 4096 { continue; }
+        let Ok(url) = base.join(&raw) else { continue };
+        if url.scheme() != "https" || !url.username().is_empty() ||
+            url.password().is_some() || url.as_str().len() > 4096 {
+            continue;
+        }
+        let host = url.host_str().unwrap_or("").trim_start_matches("www.");
+        // Only the publisher's own image/download endpoint, not advertisements
+        // or arbitrary external links embedded on a page.
+        if host != page_host && !host.ends_with(&format!(".{page_host}")) {
+            continue;
+        }
+        let path = url.path().to_ascii_lowercase();
+        let direct_image = [".jpg", ".jpeg", ".png", ".webp", ".avif"]
+            .iter().any(|ext| path.ends_with(ext));
+        let download_path = path.contains("/download/") || path.contains("/wallpaper/download");
+        if !direct_image && !download_path { continue; }
+        let label = lower[open_end..close].trim();
+        let title = tag_attribute(tag, "title")
+            .unwrap_or_default().to_ascii_lowercase();
+        let advertised = advertised_dimensions(url.as_str())
+            .or_else(|| advertised_dimensions(label))
+            .or_else(|| advertised_dimensions(&title));
+        let indicates_download = label.contains("download") ||
+            label.contains("4k") || label.contains("original") ||
+            title.contains("download") || title.contains("original") ||
+            tag_attribute(tag, "download").is_some() || download_path;
+        if advertised.is_none() && !indicates_download { continue; }
+
+        // WallpapersHome uses a stable numeric wallpaper ID in BOTH its
+        // preview page (..-5303.html) and download files (..-5303.jpg).
+        // This is stronger than relying only on a similarity fingerprint.
+        let same_wallpaper = wallpaper_id.is_some_and(|id| {
+            wallpapershome(&url) && path.contains("/images/wallpapers/") &&
+                page_image_id(&url) == Some(id)
+        });
+        if wallpaper_id.is_some() && !same_wallpaper { continue; }
+        let (advertised_pixels, landscape) = advertised.unwrap_or_else(|| {
+            if label.contains("8k") || title.contains("8k") { (7680 * 4320, true) }
+            else if label.contains("4k") || title.contains("4k") { (3840 * 2160, true) }
+            else { (0, true) }
+        });
+        if downloads.iter().any(|link| link.url == url.as_str()) { continue; }
+        downloads.push(DownloadLink {
+            url: url.to_string(), advertised_pixels, landscape,
+            verified_same_wallpaper: same_wallpaper,
+        });
+    }
+
+    // For equal pixel counts, prefer desktop/landscape versions over mobile
+    // portrait crops of the same wallpaper.
+    downloads.sort_by(|a, b|
+        b.advertised_pixels.cmp(&a.advertised_pixels)
+            .then_with(|| b.landscape.cmp(&a.landscape)));
+    downloads.truncate(MAX_DOWNLOAD_LINKS);
+    downloads
+}
+
 fn is_google_search_page(url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else { return false };
     let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
@@ -222,8 +383,8 @@ fn is_google_search_page(url: &str) -> bool {
         host.ends_with(".gstatic.com") || host.ends_with(".googleusercontent.com")
 }
 
-async fn probe(url: String) -> Result<Probe, String> {
-    let bytes = fetch_public_bytes(&url, MAX_IMAGE_BYTES, false).await?;
+async fn probe(url: String, publisher_page: Option<&str>) -> Result<Probe, String> {
+    let bytes = fetch_public_bytes(&url, MAX_IMAGE_BYTES, false, publisher_page).await?;
     // Image decoding can be expensive and must not block async IO threads.
     tauri::async_runtime::spawn_blocking(move || {
         let (image, _) = image_format(&bytes)?;
@@ -260,9 +421,11 @@ async fn find_best_source(
     // supplied with this specific user-selected image. Never scrape Google.
     let page = source_page.trim().to_string();
     let mut site_candidates = Vec::new();
+    let mut resolution_downloads = Vec::new();
     if !page.is_empty() && !is_google_search_page(&page) &&
         secure_url(&page).is_ok() {
-        if let Ok(html) = fetch_public_bytes(&page, MAX_HTML_BYTES, true).await {
+        if let Ok(html) = fetch_public_bytes(&page, MAX_HTML_BYTES, true, None).await {
+            resolution_downloads = original_download_links(&page, &html);
             site_candidates = image_metadata_links(&page, &html);
         }
     }
@@ -271,17 +434,40 @@ async fn find_best_source(
     let mut reference_hash: Option<(u64, f64)> = None;
     let mut tried = 0usize;
     let mut last_error = String::new();
-    for (url, from_page) in urls.into_iter().map(|u| (u, false))
-        .chain(site_candidates.into_iter().map(|u| (u, true))) {
+    // The selected image URL anchors visual identity first. Then prefer
+    // publisher-provided resolution downloads over social preview metadata,
+    // rather than exhausting the time budget on thumbnails first.
+    let mut selected = urls.into_iter();
+    let first = selected.next();
+    let remaining = selected;
+    let order = first.into_iter().map(|url| (url, false, false, 0u64))
+        .chain(resolution_downloads.into_iter()
+            .map(|link| (link.url, true, link.verified_same_wallpaper, link.advertised_pixels)))
+        .chain(remaining.map(|url| (url, false, false, 0u64)))
+        .chain(site_candidates.into_iter().map(|url| (url, true, false, 0u64)));
+    for (url, from_page, same_wallpaper_id, advertised_pixels) in order {
         if tried >= MAX_CANDIDATES || start.elapsed() >= TOTAL_PROBE_TIME { break; }
-        if from_page && best.is_none() { continue; }
+        // Once a verified 4K file is found, no need to download the site's
+        // advertised smaller 1080p/1440p variants of that very same picture.
+        if advertised_pixels > 0 && best.as_ref().is_some_and(|existing|
+            u64::from(existing.width) * u64::from(existing.height) >= advertised_pixels
+        ) { continue; }
+        if from_page && best.is_none() && !same_wallpaper_id { continue; }
         if from_page && secure_url(&url).is_err() { continue; }
         tried += 1;
-        match probe(url).await {
+        match probe(url, if page.is_empty() { None } else { Some(&page) }).await {
             Ok(candidate) => {
                 if from_page {
                     if let Some(ref baseline) = best {
-                        if !related_picture(&candidate, baseline) {
+                        // A publisher may offer different crops under the same
+                        // wallpaper ID. Don't substitute a mobile portrait crop
+                        // for a landscape wallpaper selected from Google.
+                        if same_wallpaper_id &&
+                            (candidate.width >= candidate.height) !=
+                            (baseline.width >= baseline.height) {
+                            continue;
+                        }
+                        if !same_wallpaper_id && !related_picture(&candidate, baseline) {
                             continue;
                         }
                     }
