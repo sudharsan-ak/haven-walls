@@ -57,6 +57,7 @@ pub fn run() {
             wallpaper_library::import_wallpaper_url,
             wallpaper_library::best_source::import_best_wallpaper_urls,
             wallpaper_library::best_source::inspect_best_wallpaper_urls,
+            wallpaper_library::best_source::resolve_lens_publisher_preview,
             wallpaper_library::list_library_wallpapers,
             wallpaper_library::get_library_wallpaper_image,
             wallpaper_library::show_library_wallpaper_for_lens,

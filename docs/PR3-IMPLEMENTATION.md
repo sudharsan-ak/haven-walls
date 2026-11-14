@@ -473,3 +473,43 @@ Test on Windows: reverse-search a saved image; ensure the actual image and
 visual matches load, not just a blank results page. If Google rejects the
 submission, use Manual upload instead. Confirm repeated searches, keywords,
 Review selection, Save to Library and Set Now are unchanged.
+
+
+## Google Lens right-click fallback + remembered browser zoom
+
+- Remember Google embedded browser zoom (70–150%) in local WebView2
+  localStorage, retaining the last chosen value across Gallery switches and
+  app restarts. No network setting sync or telemetry. The browser toolbar
+  stays visible when the host scrolling panel moves; the native child WebView2
+  is clipped below the sticky toolbar to avoid another z-order overlap.
+- A Google Lens result may present a blob/data thumbnail, meaning WebView2
+  does not expose an HTTPS image SourceUri. The native context-menu action
+  now forwards the selected result's publisher LinkUri when available instead
+  of failing before the frontend can inspect it.
+- If no direct image URL exists, the frontend first checks for a direct HTTPS
+  image in that link. Otherwise a new Rust command inspects only standard
+  og:image, twitter:image and image_src publisher metadata (not Google's
+  page), with bounded download size, redirects, safe public HTTPS/DNS checks
+  and decoded image verification. It returns a candidate for the user's
+  Review queue; metadata is **not** considered proof of an exact visual match
+  or genuine 4K. Existing inspection and Library upgrade validation apply.
+- If Lens supplies no publisher link, metadata is absent, the publisher
+  blocks requests, or the selected result cannot be verified, show a clear
+  fallback message; manual Copy image link still works.
+- No new dependency crates, and no main-branch changes.
+
+### Windows acceptance
+
+1. Change zoom to 70% or 120%, switch Gallery/Library, relaunch Haven Walls,
+   and confirm the selected level is restored. Scroll the app with Lens
+   results visible; the zoom buttons should stay accessible and must not
+   be covered by the native browser.
+2. Lens -> Visual matches -> right-click a thumbnail -> Add to Haven Walls
+   review. Confirm it works for a result with a direct image URL, and for a
+   publisher result with an advertised og:image.
+3. Inspect a publisher-derived candidate for image correctness before saving.
+   No source page may be silently treated as a decoded image.
+4. Confirm a Lens thumbnail that exposes no usable URL or publisher metadata
+   produces an actionable fallback, without a broken or unrelated import.
+5. Confirm normal Google Images right-click, copied-link fallback, Quick Save,
+   upgrade similarity checks, and Set Now all still work.

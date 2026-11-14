@@ -38,7 +38,13 @@
   border: 1px solid #d9e5ed; border-radius: 13px; background: white;
   overflow: hidden; min-width: 0;
 }
-.gws-browser-toolbar { height: 47px; background: #f9fbfd; border-bottom: 1px solid #e2ecf4; display: flex; align-items: center; gap: 12px; padding: 0 12px; }
+.gws-browser-frame { overflow: visible; }
+.gws-browser-toolbar {
+  position: sticky; top: 0; z-index: 5; height: 47px;
+  background: #f9fbfd; border-bottom: 1px solid #e2ecf4;
+  border-radius: 12px 12px 0 0;
+  display: flex; align-items: center; gap: 12px; padding: 0 12px;
+}
 .gws-browser-dots { color: #bcd2e4; font-size: 10px; white-space: nowrap; }
 .gws-address {
   border: 1px solid #e1eaf3; background: white; color: #64829e; border-radius: 20px;

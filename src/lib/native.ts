@@ -133,6 +133,14 @@ export async function showLibraryWallpaperForLens(id: string): Promise<void> {
   await invoke<void>("show_library_wallpaper_for_lens", { id });
 }
 
+/** Look up image metadata from a user-selected Lens publisher link only.
+ * Rust enforces bounded HTML/image fetches and public HTTPS host checks.
+ */
+export async function resolveLensPublisherPreview(sourcePage: string): Promise<string> {
+  if (!isTauri()) throw new Error("Publisher image lookup requires the Windows app.");
+  return invoke<string>("resolve_lens_publisher_preview", { sourcePage });
+}
+
 /** Moves, resizes, or hides the Google Images child WebView2. */
 export async function layoutGoogleImagesInline(
   bounds: GoogleInlineBounds | null,

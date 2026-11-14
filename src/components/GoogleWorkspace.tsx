@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { listen } from "@tauri-apps/api/event";
 import {
   browseGoogleImages,
+  resolveLensPublisherPreview,
   showLibraryWallpaperForLens,
   type CatalogImage,
   type CatalogSourceId,
@@ -33,6 +34,38 @@ interface GoogleImagePicked {
 }
 
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+const ZOOM_STORAGE_KEY = "haven-walls.google-browser-zoom.v1";
+
+function savedGoogleZoom(): number {
+  // Only this non-sensitive UI preference is stored in WebView2 localStorage.
+  try {
+    const saved = window.localStorage.getItem(ZOOM_STORAGE_KEY);
+    if (saved === null) return 100;
+    const value = Number(saved);
+    return Number.isFinite(value) ? Math.max(70, Math.min(150, value)) : 100;
+  } catch {
+    return 100;
+  }
+}
+
+function publisherLinkFromLens(value: string | undefined): string | null {
+  const candidate = value ? unwrapKnownImageLink(value) : null;
+  const valid = validRemoteUrl(candidate);
+  if (!valid) return null;
+  const host = new URL(valid).hostname.toLowerCase();
+  if (host === "google.com" || host.endsWith(".google.com") ||
+      host.endsWith(".gstatic.com") || host.endsWith(".googleusercontent.com")) {
+    return null;
+  }
+  return valid;
+}
+
+function looksLikeDirectImage(url: string): boolean {
+  const parsed = new URL(url);
+  return /\.(?:jpe?g|png|webp)(?:$|\/)/i.test(parsed.pathname) ||
+    ["images.unsplash.com", "images.pexels.com", "image.tmdb.org",
+      "images.wallpaperscraft.com"].includes(parsed.hostname);
+}
 const DEFAULT_QUERY = getCatalogSource("google").defaultQuery;
 
 function imageKey(item: CatalogImage): string {
@@ -182,7 +215,7 @@ export default function GoogleWorkspace({
   >(null);
   const [lensStatus, setLensStatus] = useState<{ kind: "uploading" | "results" | "manual"; message: string } | null>(null);
   const [lensFallbackNote, setLensFallbackNote] = useState("");
-  const [browserZoom, setBrowserZoom] = useState(100);
+  const [browserZoom, setBrowserZoom] = useState(savedGoogleZoom);
   const [browserHeight, setBrowserHeight] = useState(490);
   const [browserError, setBrowserError] = useState("");
   const [nativeMenuStatus, setNativeMenuStatus] = useState("Native image menu: not connected yet");
@@ -201,6 +234,12 @@ export default function GoogleWorkspace({
   const [apiError, setApiError] = useState("");
   const requestNumber = useRef(0);
   const blobUrls = useRef(new Set<string>());
+  const selectionAttempt = useRef(0);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(ZOOM_STORAGE_KEY, String(browserZoom)); }
+    catch { /* Browser storage unavailable; zoom still works this session. */ }
+  }, [browserZoom]);
   // Context survives the native Google Lens navigation so selected results
   // are checked against the exact original Library image on import.
   const lensUpgradeId = useRef<string | null>(null);
@@ -269,13 +308,44 @@ export default function GoogleWorkspace({
     let mounted = true;
     const unsubscribers: Array<() => void> = [];
 
-    void listen<GoogleImagePicked>("google-image-picked", (event) => {
+    void listen<GoogleImagePicked>("google-image-picked", async (event) => {
+      const attempt = ++selectionAttempt.current;
       const suppliedUrl = directHttpsImageAddress(event.payload.imageUrl);
-      if (!suppliedUrl) {
-        setSelectionError("Google did not provide a usable HTTPS image link. Try Copy image link or open the original source.");
+      const linked = publisherLinkFromLens(event.payload.linkUrl);
+      const fallbackPage = linked || publisherLinkFromLens(event.payload.pageUrl);
+      let chosen = suppliedUrl;
+      let resolvedFromPublisher = false;
+
+      // Google Lens can render result cards using blob:/data: thumbnails.
+      // A right-click then has no native SourceUri, but its publisher LinkUri
+      // may still expose metadata for that *selected* result. Never scrape
+      // Google HTML or add a publisher page as if it were an image.
+      if (!chosen && fallbackPage) {
+        if (looksLikeDirectImage(fallbackPage)) {
+          chosen = fallbackPage;
+        } else {
+          setSelectionError("");
+          setBrowserNote("Checking the selected Lens result's publisher for its image…");
+          try {
+            chosen = await resolveLensPublisherPreview(fallbackPage);
+            resolvedFromPublisher = true;
+          } catch (cause) {
+            if (attempt !== selectionAttempt.current) return;
+            setBrowserNote("");
+            setSelectionError("This Lens result did not expose a verifiable image URL. " +
+              (cause instanceof Error ? cause.message : String(cause)) +
+              " Try Copy image link on the image or visit its publisher.");
+            return;
+          }
+        }
+      }
+      if (attempt !== selectionAttempt.current) return;
+      if (!chosen) {
+        setBrowserNote("");
+        setSelectionError("Google Lens did not provide a direct image URL or usable publisher link for this selection. Try Copy image link.");
         return;
       }
-      const resolved = chooseOriginalFromLink(suppliedUrl, event.payload.linkUrl);
+      const resolved = chooseOriginalFromLink(chosen, event.payload.linkUrl);
       const directUrl = resolved.original;
       const rawPath = new URL(directUrl).pathname.split("/").pop() || "Google image";
       let filename = "Google image";
@@ -285,21 +355,14 @@ export default function GoogleWorkspace({
         filename = rawPath.slice(0, 140) || filename;
       }
 
-      // Google itself is the embedded browser page, not the publisher.
-      // Never save google.com/search as the image's original website.
-      // An imgres imgrefurl or a publisher link supplies the real source.
-      const browserPage = directHttpsImageAddress(event.payload.pageUrl);
-      const actualBrowserPage = browserPage &&
-        !["google.com", "www.google.com", "images.google.com", "lens.google.com",
-          "consent.google.com", "accounts.google.com"].includes(new URL(browserPage).hostname)
-        ? browserPage : "";
-      const page = resolved.sourcePage || actualBrowserPage;
-      const candidate = makeManualImage(directUrl, filename, false, resolved.preview, page);
+      // Google results pages are not publisher sites.
+      const browserPage = publisherLinkFromLens(event.payload.pageUrl);
+      const page = resolved.sourcePage || fallbackPage || browserPage || "";
+      const candidate = makeManualImage(directUrl, filename, false, directUrl, page);
       if (lensUpgradeId.current) candidate.upgradeFromId = lensUpgradeId.current;
-      if (resolved.original !== resolved.preview) {
+      if (!resolvedFromPublisher && resolved.original !== resolved.preview) {
         candidate.candidateUrls = [resolved.preview];
       }
-
       setQueue((items) => {
         if (items.length >= 30 ||
           items.some((existing) => imageKey(existing) === imageKey(candidate))) {
@@ -308,7 +371,9 @@ export default function GoogleWorkspace({
         return [...items, candidate];
       });
       setSelectionError("");
-      setBrowserNote("Image added to Review selection. Inspect it for the actual resolution. Duplicates are ignored.");
+      setBrowserNote(resolvedFromPublisher
+        ? "Publisher preview added to Review selection. Confirm it matches the photo and inspect its actual resolution before saving."
+        : "Image added to Review selection. Inspect its actual resolution before saving. Duplicates are ignored.");
     })
       .then((unlisten) => {
         if (mounted) unsubscribers.push(unlisten);

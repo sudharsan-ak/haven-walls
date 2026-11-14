@@ -578,3 +578,33 @@ pub async fn inspect_best_wallpaper_urls(
         preview_width, preview_height, tried,
     })
 }
+
+
+/// Resolve only standard image metadata from the publisher URL selected in
+/// Google Lens. Never scrape Lens/Google, crawl websites or treat a webpage
+/// URL as an image. All redirects and DNS/IP destinations are SSRF-checked.
+#[tauri::command]
+pub async fn resolve_lens_publisher_preview(source_page: String) -> Result<String, String> {
+    let page = source_page.trim();
+    if page.len() > 2048 || is_google_search_page(page) {
+        return Err("Open a publisher's HTTPS result, not a Google search page.".into());
+    }
+    secure_url(page)?;
+    let html = fetch_public_bytes(page, MAX_HTML_BYTES, true, None).await
+        .map_err(|_| "The publisher page could not be inspected for image metadata.".to_string())?;
+    let candidates = image_metadata_links(page, &html);
+    if candidates.is_empty() {
+        return Err("The publisher did not advertise a usable image preview.".into());
+    }
+    // The user still reviews the candidate. Metadata is not proof that it
+    // matches the selected thumbnail or that it is a 4K original.
+    for url in candidates.into_iter().take(3) {
+        if secure_url(&url).is_err() { continue; }
+        if let Ok(picture) = probe(url, Some(page)).await {
+            if picture.width >= 400 && picture.height >= 200 {
+                return Ok(picture.url);
+            }
+        }
+    }
+    Err("The publisher's advertised images were unavailable or too small.".into())
+}

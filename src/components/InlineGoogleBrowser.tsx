@@ -44,7 +44,12 @@ export default function InlineGoogleBrowser({
     const box = slot.getBoundingClientRect();
     const viewport = content.getBoundingClientRect();
     const x = Math.max(0, box.left, viewport.left);
-    const y = Math.max(0, box.top, viewport.top);
+    // When the toolbar sticks to the scrolling window, the native child
+    // must remain BELOW it (CSS cannot cover a native WebView2 surface).
+    const toolbar = slot.closest(".gws-browser-frame")
+      ?.querySelector(".gws-browser-toolbar");
+    const toolbarBottom = toolbar?.getBoundingClientRect().bottom ?? 0;
+    const y = Math.max(0, box.top, viewport.top, toolbarBottom);
     const right = Math.min(window.innerWidth, box.right, viewport.right);
     const bottom = Math.min(window.innerHeight, box.bottom, viewport.bottom);
     const width = Math.floor(right - x);
