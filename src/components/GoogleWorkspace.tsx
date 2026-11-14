@@ -16,6 +16,8 @@ interface Props {
   serpapiKey: string;
   onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
+  onSaveToLibrary: (images: CatalogImage[]) => void;
+  libraryDialogOpen: boolean;
 }
 
 type SearchMode = "browser" | "api";
@@ -65,12 +67,13 @@ function makeManualImage(
 }
 
 function ReviewQueue({
-  items, onRemove, onClear, onInspect,
+  items, onRemove, onClear, onInspect, onSave,
 }: {
   items: CatalogImage[];
   onRemove: (item: CatalogImage) => void;
   onClear: () => void;
   onInspect: (item: CatalogImage) => void;
+  onSave: (items: CatalogImage[]) => void;
 }) {
   return (
     <aside className="gws-review" aria-label="Shared Google Images review selection">
@@ -113,8 +116,9 @@ function ReviewQueue({
           onClick={onClear}>
           Clear selection ({items.length})
         </button>
-        <button className="online-secondary" type="button" disabled>
-          Add to library · PR #3
+        <button className="online-primary" type="button" disabled={items.length === 0}
+          onClick={() => onSave(items)}>
+          Save selected to Library
         </button>
       </div>
       <p className="gws-review-footnote">
@@ -163,6 +167,7 @@ function ApiResultCard({
 
 export default function GoogleWorkspace({
   onSourceChange, serpapiKey, onSerpapiKeyChange, googleSearchSeed,
+  onSaveToLibrary, libraryDialogOpen,
 }: Props) {
   const [mode, setMode] = useState<SearchMode>("browser");
   const [browserQuery, setBrowserQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
@@ -534,7 +539,7 @@ export default function GoogleWorkspace({
                   </div>
                 </div>
                 <InlineGoogleBrowser query={browserQuery} searchRevision={browserRevision}
-                  obscured={preview !== null} zoom={browserZoom / 100}
+                  obscured={preview !== null || libraryDialogOpen} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
                   <span>Right-click a Google image. Use Add to Haven Walls review, or Copy image link as fallback.</span>
@@ -586,7 +591,7 @@ export default function GoogleWorkspace({
               </div>
             </div>
             <ReviewQueue items={queue} onRemove={removeFromQueue} onClear={clearQueue}
-              onInspect={setPreview} />
+              onInspect={setPreview} onSave={onSaveToLibrary} />
           </div>
         </section>
       ) : (
@@ -671,19 +676,23 @@ export default function GoogleWorkspace({
               {apiNote && <div className="gws-api-note">{apiNote}</div>}
             </div>
             <ReviewQueue items={queue} onRemove={removeFromQueue} onClear={clearQueue}
-              onInspect={setPreview} />
+              onInspect={setPreview} onSave={onSaveToLibrary} />
           </div>
         </section>
       )}
 
       <p className="gws-disclaimer">
         Image search is discovery, not licensing. Original sites may block full-size
-        images. Nothing is saved, approved for reuse, or added to rotation in PR #2.
+        images. Only user-approved images are saved locally; applying and rotation arrive later.
       </p>
 
       {preview && (
         <FullResolutionPreview key={imageKey(preview)} image={preview}
-          onClose={() => setPreview(null)} />
+          onClose={() => setPreview(null)}
+          onAddToLibrary={(image) => {
+            setPreview(null);
+            onSaveToLibrary([image]);
+          }} />
       )}
     </div>
   );

@@ -4,6 +4,9 @@ import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
 import SettingsPage from "./components/SettingsPage";
+import LibraryPage from "./components/LibraryPage";
+import LibraryImportDialog from "./components/LibraryImportDialog";
+import type { CatalogImage } from "./lib/native";
 import "./App.css";
 
 type HostState =
@@ -14,17 +17,19 @@ type HostState =
 
 const upcoming = [
   { title: "Online gallery", detail: "Explore photography, TV backdrops and team artwork", icon: "▧" },
-  { title: "Set wallpaper", detail: "Apply selected images through Windows", icon: "▣" },
+  { title: "Wallpaper Library", detail: "Save, favorite and organize images offline", icon: "▣" },
   { title: "Rotation", detail: "Schedules and category preferences", icon: "↻" },
 ];
 
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
-  const [page, setPage] = useState<"dashboard" | "gallery" | "sources" | "settings">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "library" | "sources" | "settings">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("bing");
   const [tmdbToken, setTmdbToken] = useState("");
   const [serpapiKey, setSerpapiKey] = useState("");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
+  const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
+  const [libraryRevision, setLibraryRevision] = useState(0);
 
   function openGallery(source: CatalogSourceId) {
     setGallerySource(source);
@@ -71,6 +76,9 @@ export default function App() {
             <button type="button" onClick={() => setPage("gallery")}
               className={"nav-item " + (page === "gallery" ? "current" : "")}
               aria-current={page === "gallery" ? "page" : undefined}>▧ <span>Gallery</span></button>
+            <button type="button" onClick={() => setPage("library")}
+              className={"nav-item " + (page === "library" ? "current" : "")}
+              aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
             <button type="button" onClick={() => setPage("sources")}
               className={"nav-item " + (page === "sources" ? "current" : "")}
               aria-current={page === "sources" ? "page" : undefined}>✧ <span>Sources</span></button>
@@ -84,6 +92,10 @@ export default function App() {
         <main className="content">
           {page === "settings" ? (
             <SettingsPage />
+          ) : page === "library" ? (
+            <LibraryPage revision={libraryRevision}
+              onDiscover={() => openGallery("bing")}
+              onSaveToLibrary={setImportCandidates} />
           ) : page === "gallery" ? (
             <OnlineGallery
               source={gallerySource}
@@ -94,6 +106,8 @@ export default function App() {
               onSerpapiKeyChange={setSerpapiKey}
               googleSearchSeed={googleSearchSeed}
               onSearchWeb={searchWebForWallpaper}
+              onSaveToLibrary={setImportCandidates}
+              libraryDialogOpen={importCandidates !== null}
             />
           ) : page === "sources" ? (
             <section className="sources-page">
@@ -143,16 +157,16 @@ export default function App() {
           <h1>Welcome to Haven Walls</h1>
           <p className="subheading">
             A better way to discover and manage desktop wallpapers.
-            Online wallpaper discovery is our first priority.
+            Saved wallpapers now have a local Library. Windows wallpaper application comes next.
           </p>
 
           <section className="hero" aria-labelledby="foundation-title">
             <div className="hero-content">
-              <span className="hero-kicker">Milestone 1 · PR #2</span>
+              <span className="hero-kicker">Milestone 2 · PR #3</span>
               <h2 id="foundation-title">Find your next desktop background.</h2>
               <p>
                 Browse recent Bing photography, Earth View landscapes, sports team artwork,
-                and TV show backdrops. Applying images as wallpaper is a later milestone.
+                and TV show backdrops. Save approved images to your offline Library.
               </p>
               <div className="host-pill" role="status">
                 <span
@@ -174,7 +188,7 @@ export default function App() {
 
           <div className="section-heading">
             <h2>Coming up</h2>
-            <span>Browse sources now. Applying wallpapers is coming later.</span>
+            <span>Browse and save wallpapers now. Applying them to Windows comes next.</span>
           </div>
           <section className="preview-grid" aria-label="Upcoming features">
             {upcoming.map((item) => (
@@ -184,6 +198,9 @@ export default function App() {
                 <p>{item.detail}</p>
                 {item.title === "Online gallery" ? (
                   <button type="button" className="gallery-open-link" onClick={() => openGallery("bing")}>Open gallery</button>
+                ) : item.title === "Wallpaper Library" ? (
+                  <button type="button" className="gallery-open-link"
+                    onClick={() => setPage("library")}>Open Library</button>
                 ) : <span className="coming-soon">Planned</span>}
               </article>
             ))}
@@ -192,6 +209,17 @@ export default function App() {
           )}
         </main>
       </div>
+      {importCandidates && (
+        <LibraryImportDialog
+          images={importCandidates}
+          onClose={() => setImportCandidates(null)}
+          onImported={() => setLibraryRevision((count) => count + 1)}
+          onOpenLibrary={() => {
+            setImportCandidates(null);
+            setPage("library");
+          }}
+        />
+      )}
     </div>
   );
 }

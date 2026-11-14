@@ -230,7 +230,7 @@ export default function SettingsPage() {
             <strong>Temporary cache limit (MB)</strong>
             <input type="number" min={128} max={20480} step={128} value={form.cacheLimitMb}
               onChange={(event) => field("cacheLimitMb", Number(event.target.value))}/>
-            <small>Default 2048 MB (2 GB). Automatic limit enforcement arrives with the download/cache service.</small>
+            <small>Default 2048 MB (2 GB). Reserved for disposable discovery previews. Managed wallpapers, favorites and active copies are never auto-evicted.</small>
           </label>
           <div className="hws-settings-field">
             <strong>Disposable discovery cache</strong>
@@ -266,8 +266,8 @@ export default function SettingsPage() {
       <section className="hws-settings-panel" aria-labelledby="hws-quality">
         <div className="hws-settings-section-header">
           <div><h2 id="hws-quality">Image quality & duplicate detection</h2>
-            <p>Configured now; validation and similarity matching are added with library imports.</p></div>
-          <span className="hws-settings-phase">Used in next commit</span>
+            <p>Validated during every managed Library import. Exact duplicates always remain blocked.</p></div>
+          <span className="hws-settings-live">Available now</span>
         </div>
         <label className="hws-settings-field">
           <strong>Allowed image types</strong>
@@ -293,8 +293,8 @@ export default function SettingsPage() {
       <section className="hws-settings-panel" aria-labelledby="hws-exclusions">
         <div className="hws-settings-section-header">
           <div><h2 id="hws-exclusions">Source & keyword exclusions</h2>
-            <p>Global exclusions for future eligible downloads. Current manual Google results are not filtered yet.</p></div>
-          <span className="hws-settings-phase">Prepared for library</span>
+            <p>Applied when saving online discoveries to the Library. Search results themselves remain visible.</p></div>
+          <span className="hws-settings-live">Available now</span>
         </div>
         <div className="hws-settings-fields two">
           <label className="hws-settings-field">

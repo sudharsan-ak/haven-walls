@@ -6,6 +6,7 @@ import { resolveBestAvailableImage, type ResolvedImage } from "../lib/imageResol
 interface Props {
   image: CatalogImage;
   onClose: () => void;
+  onAddToLibrary?: (image: CatalogImage) => void;
 }
 
 function isRemote(url: string): boolean {
@@ -17,7 +18,7 @@ function isRemote(url: string): boolean {
  * low-resolution search thumbnail. Actual pixels are read from the displayed
  * HTMLImageElement; we never claim provider metadata is a verified 4K image.
  */
-export default function FullResolutionPreview({ image, onClose }: Props) {
+export default function FullResolutionPreview({ image, onClose, onAddToLibrary }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedImage | null>(null);
   const [resolving, setResolving] = useState(true);
@@ -169,6 +170,18 @@ export default function FullResolutionPreview({ image, onClose }: Props) {
             <p>{image.rights}</p>
           </div>
           <div className="online-hires-actions">
+            {onAddToLibrary && !failed && src && (
+              <button type="button" className="online-primary"
+                onClick={() => onAddToLibrary({
+                  ...image,
+                  originalUrl: src.startsWith("https://") || src.startsWith("blob:")
+                    ? src : image.originalUrl,
+                  candidateUrls: [...new Set([...(image.candidateUrls || []),
+                    image.originalUrl || "", image.previewUrl].filter(Boolean))],
+                })}>
+                Add to Library
+              </button>
+            )}
             {canCopyImage && (
               <button className="online-secondary" type="button"
                 onClick={() => { if (src) void copyUrl("image", src); }}>

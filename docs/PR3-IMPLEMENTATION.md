@@ -19,12 +19,17 @@
 
 **Not active yet:** downloads/imports, file decoding, duplicate detection, automatic cache eviction, Windows wallpaper setting, history recording and rotation. The Settings screen marks those choices as stored defaults for subsequent commits.
 
-### Commit 2: Image importing, downloads, library and cache
-- Connect Gallery/review selection to user-approved imports.
-- Local-file/URL import, bounded downloads with permission/rights review and actual decoded image checks.
-- Protected managed library, favorites and exact-duplicate detection.
-- Library UI with previews, search/metadata, delete and source links.
-- Cache-size limits and safe cleanup that never removes active/managed files.
+### Commit 2: Image importing, downloads, library and caching (pushed)
+
+- New Library sidebar page with offline originals, saved thumbnails, Favorites, search and 4K/portrait filters.
+- Import local JPG/PNG/WebP images up to 32 MB from Library or Google Browser Search; originals on your computer remain untouched.
+- Add to Library in Gallery image inspection and Save selected to Library in Google Images' shared Review selection.
+- Explicit image-rights confirmation, custom source/credit note, optional quality and similarity overrides.
+- Bounded HTTPS-only Rust downloads with public DNS pinning, no proxies/redirects, 32 MB/22-second limits, actual image decoding and format/dimension verification. Some image hosts block direct downloads, so a user-downloaded local image is the supported fallback.
+- SHA-256 exact duplicates, configurable perceptual dHash similarity detection, favorites and manually confirmed removal of managed copies.
+- Settings quality, image type, and exclusion preferences now apply when importing into the Library.
+- Managed library files and offline thumbnails are not disposable discovery cache. Cache cleanup leaves managed files and favorites untouched.
+- **Later:** automatic discovery-cache eviction, Windows wallpaper apply, applied-image protection and history belong in Commit 3. The 2 GB cache preference is for disposable discovery previews, not the managed Library.
 
 ### Commit 3: Windows wallpaper application and final integration
 - Apply approved wallpapers to Windows desktop using documented native APIs, default fit and supported monitor targets.
@@ -66,3 +71,30 @@ The new rusqlite dependency bundles SQLite. Cargo may update src-tauri/Cargo.loc
 - A settings value being stored does not mean an unfinished feature has been activated.
 - The application has no telemetry and no cloud account requirement.
 - The user handles all builds, testing and merging. Feedback after each combined commit stays in this PR.
+
+
+## Commit 2: Local Windows acceptance checks (USER ONLY)
+
+~~~powershell
+git switch feature/wallpaper-library-settings
+git pull --ff-only origin feature/wallpaper-library-settings
+npm ci
+npm run tauri build -- --bundles nsis
+Start-Process .\src-tauri\target\release\haven-walls.exe
+~~~
+
+**Cargo.lock:** This commit adds new Rust image, hashing and base64 dependencies. The first local Cargo build may update src-tauri/Cargo.lock. Review its changes and commit the updated lockfile only on this feature branch. Never merge without successful user-owned Windows testing.
+
+1. **Library:** New sidebar entry and initially empty Library with Discover Wallpapers and Import local images controls.
+2. **Local import:** Select one or several JPEG/PNG/WebP photos in Library. Confirm you reviewed their source permissions, then Save to Library. Open the Library and confirm thumbnail, title, true dimensions, source and file size.
+3. **Persistence:** Relaunch Haven Walls. Verify saved images, Favorites and original previews are still accessible without network access.
+4. **Online source:** In Gallery → Bing Daily or Google Earth View, inspect a photo and select Add to Library. Confirm rights. Original image downloads only work if the host permits it. If blocked, use an authorized downloaded local file.
+5. **Google Images:** Browser Search → add photos to Review selection and use Save selected to Library. Repeat with API Search. Confirm individual success/errors for a batch and duplicate prevention.
+6. **Quality:** In Settings set 4K minimum, then attempt to save a smaller image. It must reject it unless you explicitly allow smaller images in the import dialog. Disable an image format to ensure it is rejected too.
+7. **Duplicates:** Reimport the same file twice. It must not create two Library items. With similar photos, review the similarity warning and optional manual override.
+8. **Favorites:** Mark an image favorite, filter favorites, search by title/credit/provider, restart and confirm the favorite persists.
+9. **Deletion:** Open a saved image and select Remove from Library. Cancel first; nothing should change. Confirm to remove only the managed file and thumbnail. Your original file in Downloads or Pictures must remain intact.
+10. **Cache:** In Settings verify managed library usage grows after imports, while Clear temporary cache does not touch Library or Favorites.
+11. **Boundary:** The Library's Set as wallpaper action remains disabled. Actual Windows desktop application, monitors, credits/captions and history are part of Commit 3.
+
+**Limitations:** The Library currently loads up to 500 items without pagination; provider image hotlink restrictions and licensing may prevent downloading; automatic original-image licensing checks do not exist. Pixel dimensions do not prove a photograph is sharp or free of upscaling. No background downloads, telemetry or wallpaper rotation are enabled.

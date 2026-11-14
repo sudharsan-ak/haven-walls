@@ -2,6 +2,7 @@ mod sources;
 mod local_storage;
 mod app_settings;
 mod configuration;
+mod wallpaper_library;
 mod google_images;
 mod google_browser;
 #[cfg(windows)]
@@ -46,7 +47,13 @@ pub fn run() {
             configuration::get_configuration,
             configuration::save_configuration,
             configuration::change_storage_mode,
-            configuration::clear_temporary_cache
+            configuration::clear_temporary_cache,
+            wallpaper_library::import_wallpaper_data,
+            wallpaper_library::import_wallpaper_url,
+            wallpaper_library::list_library_wallpapers,
+            wallpaper_library::get_library_wallpaper_image,
+            wallpaper_library::set_wallpaper_favorite,
+            wallpaper_library::remove_library_wallpaper
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");

@@ -1,0 +1,31 @@
+.lidi-overlay { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 25px; background: #11243bcc; }
+.lidi-panel { display: flex; flex-direction: column; width: min(660px, 94vw); max-height: min(90vh, 850px); background: white; border-radius: 15px; box-shadow: 0 24px 70px #09192d50; overflow: hidden; }
+.lidi-header { padding: 19px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e6eef4; }
+.lidi-header span { display: block; color: #7a93a8; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; }
+.lidi-header h2 { font-size: 20px; margin: 5px 0 0; }
+.lidi-close { width: 34px; height: 34px; font-size: 23px; border: 1px solid #d9e4ef; border-radius: 9px; background: #f6f9fc; color: #486780; cursor: pointer; }
+.lidi-scroll { padding: 19px 24px; overflow-y: auto; }
+.lidi-description { margin: 0 0 15px; font-size: 12px; color: #687f94; line-height: 1.65; }
+.lidi-preview-strip { display: flex; gap: 8px; margin-bottom: 17px; overflow: hidden; align-items: center; }
+.lidi-preview-strip > div { width: 69px; height: 62px; border-radius: 7px; overflow: hidden; background: #ebf2f9; flex: none; }
+.lidi-preview-strip img { height: 100%; width: 100%; object-fit: cover; }
+.lidi-preview-strip > span { color: #7e91a4; font-size: 11px; }
+.lidi-field { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 15px; font-size: 11px; }
+.lidi-field strong { font-size: 11px; }
+.lidi-field input,.lidi-field textarea { width: 100%; border: 1px solid #d4e1eb; border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 12px; color: #233c56; resize: vertical; }
+.lidi-check { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-top: 1px solid #edf2f5; cursor: pointer; }
+.lidi-check input { accent-color: #1674b9; margin-top: 3px; flex: none; width: 17px; height: 17px; }
+.lidi-check strong { display: block; font-size: 12px; }
+.lidi-check small { display: block; font-size: 10px; color: #7c93a6; line-height: 1.55; margin-top: 5px; }
+.lidi-status { color: #397398; background: #eaf4fc; border-radius: 8px; padding: 10px; font-size: 11px; }
+.lidi-log { margin: 12px 0; max-height: 170px; overflow: auto; border: 1px solid #e1eaf3; border-radius: 9px; }
+.lidi-log > div { padding: 10px 12px; border-bottom: 1px solid #e9f0f5; font-size: 11px; }
+.lidi-log > div:last-child { border-bottom: 0; }
+.lidi-log > div strong { display: block; overflow-wrap: anywhere; }
+.lidi-log p { margin: 5px 0 0; color: #6c8195; line-height: 1.55; }
+.lidi-log-error { background: #fff6f3; }
+.lidi-log-error p { color: #ae4d45; }
+.lidi-log-duplicate { background: #f9fafc; }
+.lidi-log-saved { background: #f2fbf7; }
+.lidi-actions { padding: 15px 24px; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid #e4ecf3; }
+.lidi-panel button:focus-visible,.lidi-panel input:focus-visible,.lidi-panel textarea:focus-visible { outline: 2px solid #1681d0; outline-offset: 2px; }
