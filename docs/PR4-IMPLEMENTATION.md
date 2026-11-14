@@ -96,3 +96,40 @@ Test on Windows:
    stays intact.
 4. Verify NASA and SerpApi also advance to their respective next pages.
 5. Test all sources exhausted, offline errors, and source key failures.
+
+## Persistent, encrypted API credentials
+
+- One **Settings → API credentials** section stores the optional SerpApi,
+  Unsplash and TMDB credentials. Save, replace and remove them independently
+  of wallpaper preference settings. After save, only a configured flag is
+  displayed; the plaintext value is never returned to the React UI.
+- SQLite has an idempotently created `api_credentials` table containing
+  Windows DPAPI (CurrentUser) ciphertext, not plaintext values.
+  All native API requests read/decrypt the saved value themselves. Browser
+  Search continues to work without a key; Wikimedia Commons and NASA need
+  no keys.
+- Normal source builds, Git pulls, Tauri installer updates and additional
+  feature PRs must not delete or replace the Haven Walls AppData database.
+  The existing `open_database` initialization uses
+  `CREATE TABLE IF NOT EXISTS`, preserving existing credentials and
+  wallpaper rows. Changing storage mode migrates the existing database;
+  the old location remains as a recovery copy.
+- Windows user context matters: DPAPI protected secrets cannot be restored
+  on a different Windows account/machine merely by copying the DB. Users
+  can remove and re-enter a credential when moving systems.
+- **Never** store API keys in Tauri resources, .env, localStorage, Rust source,
+  GitHub branches, test logs, screenshots, or build output.
+
+Windows acceptance:
+1. Set all three keys under Settings and save each separately.
+2. Restart Haven Walls, rebuild/reinstall the EXE, and reopen Settings:
+   all three must still show Configured without displaying the actual key.
+3. Visit Gallery → Discover, Google Images → API Search and TMDB Backdrops.
+   Requests must use the saved credentials automatically; no key entry
+   fields in Gallery or API Search.
+4. Test Load More with Unsplash and SerpApi, and replace/remove a key.
+   Removed keys should cause an explanatory Settings error rather than a crash.
+5. Test AppData ↔ portable-folder migration and an upgrade from a database
+   written by PR #3. Existing wallpapers, settings and credentials must remain.
+6. Confirm encrypted BLOBs, not readable keys, in the local
+   `api_credentials` SQLite table. Do not print actual keys in test reports.
