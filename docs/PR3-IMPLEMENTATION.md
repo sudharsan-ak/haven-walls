@@ -557,3 +557,34 @@ inherited `upgradeFromId` and was treated as a strict same-photo upgrade.
    still enforce same-photo upgrade rules automatically.
 6. Check standard Gallery saves, duplicate detection, protected active
    Windows wallpaper files and Open Library after successful import.
+
+
+## Publisher source retrieval fallback (PR #3 reliability fix)
+
+The selected HTTPS image URL can sometimes return a webpage, anti-hotlink
+response or an unavailable CDN image even though the publisher page advertises
+an image. The resolver previously skipped all metadata candidates whenever
+the initially selected direct URL failed, leaving no valid original to import.
+
+- Try all explicitly selected image URLs first, so an accessible image provides
+  the visual anchor for alternative source candidates.
+- Then try the chosen publisher page's explicit download links and standard
+  `og:image`, `twitter:image`, or `image_src` metadata when direct image links
+  are unavailable. Every destination and redirect retains public HTTPS and
+  DNS/IP protections, image size limits, decoded-file checks and time budgets.
+- An initial publisher metadata image without a usable original is a
+  **provisional** candidate. This is not proof of exact photographic identity:
+  the user should review it before using it as a wallpaper. Further source
+  candidates must match the selected baseline. Never crawl Google results,
+  accept arbitrary HTML as images, or bypass publisher restrictions.
+- Send ordinary desktop browser-compatible request and Accept headers so
+  normal public image hosts do not mistake the request for a non-image client.
+  No cookies, user credentials or background downloads are added.
+- If all selected publisher links return HTML or otherwise fail, show an
+  actionable failure instead of pretending the image was saved.
+
+Windows acceptance: retry the Lens result whose image link returned HTML;
+verify the chosen publisher metadata image is a real decoded photograph,
+inspect the preview to confirm identity and pixels, then save as new wallpaper.
+Also test a publisher with unrelated `og:image` and reject it if it does not
+match the selected photo. Test invalid/blocked URLs and normal source imports.

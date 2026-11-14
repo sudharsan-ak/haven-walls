@@ -34,9 +34,19 @@ async fn fetch_public_bytes(
             .no_proxy()
             .resolve_to_addrs(&host, &addresses)
             .timeout(Duration::from_secs(11))
-            .user_agent("HavenWalls/0.1 (user-approved original image lookup)")
+            // Some publishers serve HTML error pages to non-browser image
+            // requests. Match ordinary desktop image request headers while
+            // still respecting their response, redirects and rate limits.
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
             .build().map_err(|e| format!("Could not prepare HTTPS request: {e}"))?;
-        let mut request = client.get(url.clone());
+        let mut request = client.get(url.clone()).header(
+            reqwest::header::ACCEPT,
+            if expect_html {
+                "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5"
+            } else {
+                "image/avif,image/webp,image/apng,image/*;q=0.8,*/*;q=0.5"
+            },
+        );
         // Some public wallpaper CDNs expect a normal same-site page referrer.
         // Never leak a publisher's page URL to another host after redirect.
         if let Some(page) = publisher_page {
@@ -434,16 +444,18 @@ async fn find_best_source(
     let mut reference_hash: Option<(u64, f64)> = None;
     let mut tried = 0usize;
     let mut last_error = String::new();
-    // The selected image URL anchors visual identity first. Then prefer
-    // publisher-provided resolution downloads over social preview metadata,
-    // rather than exhausting the time budget on thumbnails first.
+    // First try explicit links chosen for this photograph; they provide a
+    // trusted visual reference for publisher download variants. If these
+    // endpoints return HTML/deny hotlinking, do not discard all publisher
+    // metadata merely because none of the explicit links could be decoded.
+    // Only metadata from the selected publisher page is eligible as fallback.
     let mut selected = urls.into_iter();
     let first = selected.next();
     let remaining = selected;
     let order = first.into_iter().map(|url| (url, false, false, 0u64))
+        .chain(remaining.map(|url| (url, false, false, 0u64)))
         .chain(resolution_downloads.into_iter()
             .map(|link| (link.url, true, link.verified_same_wallpaper, link.advertised_pixels)))
-        .chain(remaining.map(|url| (url, false, false, 0u64)))
         .chain(site_candidates.into_iter().map(|url| (url, true, false, 0u64)));
     for (url, from_page, same_wallpaper_id, advertised_pixels) in order {
         if tried >= MAX_CANDIDATES || start.elapsed() >= TOTAL_PROBE_TIME { break; }
@@ -452,7 +464,12 @@ async fn find_best_source(
         if advertised_pixels > 0 && best.as_ref().is_some_and(|existing|
             u64::from(existing.width) * u64::from(existing.height) >= advertised_pixels
         ) { continue; }
-        if from_page && best.is_none() && !same_wallpaper_id { continue; }
+        // Previously *all* publisher OG / twitter:image candidates were
+        // skipped if the first selected URL failed. That made a blocked CDN
+        // URL unrecoverable even when its publisher advertised the image.
+        // When no baseline exists, the first decoded publisher candidate
+        // becomes provisional. Later candidates still require a visual match
+        // against it, and the user must inspect the result before applying.
         if from_page && secure_url(&url).is_err() { continue; }
         tried += 1;
         match probe(url, if page.is_empty() { None } else { Some(&page) }).await {
