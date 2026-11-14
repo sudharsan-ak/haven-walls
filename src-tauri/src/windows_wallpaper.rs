@@ -96,9 +96,14 @@ fn encode_original(bytes: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Could not decode saved wallpaper: {e}"))?;
     let count = u64::from(photo.width()) * u64::from(photo.height());
     if count == 0 || count > 90_000_000 { return Err("Image is too large to apply.".into()); }
+    // Reuse the original JPEG bytes when no overlay is present to avoid
+    // a needless second lossy compression pass.
+    if matches!(image::guess_format(bytes), Ok(image::ImageFormat::Jpeg)) {
+        return Ok(bytes.to_vec());
+    }
     let mut jpeg = Vec::new();
     photo.write_with_encoder(
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 91)
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 95)
     )
         .map_err(|e| format!("Could not prepare a Windows-compatible JPEG: {e}"))?;
     Ok(jpeg)

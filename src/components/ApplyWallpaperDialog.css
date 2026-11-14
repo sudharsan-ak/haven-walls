@@ -29,3 +29,17 @@
 .hwa-actions { border-top: 1px solid #e1eaf2; padding: 14px 22px; display: flex; justify-content: flex-end; gap: 10px; }
 .hwa-panel button:focus-visible,.hwa-panel select:focus-visible,.hwa-panel input:focus-visible { outline: 2px solid #2687cf; outline-offset: 2px; }
 @media (max-width: 650px) { .hwa-fields { grid-template-columns: 1fr; } .hwa-preview { aspect-ratio: 16/10; } }
+
+.hwa-quality-summary {
+  color: #597c96; background: #edf5fa;
+  border-radius: 8px; padding: 10px 12px; font-size: 11px;
+}
+.hwa-quality-warning {
+  border: 1px solid #e7bd92; background: #fff6ec;
+  border-radius: 9px; padding: 12px 14px; color: #925126;
+  font-size: 11px; line-height: 1.6; margin: 12px 0;
+}
+.hwa-quality-warning strong { display: block; font-size: 12px; }
+.hwa-quality-warning p { margin: 7px 0 10px; }
+.hwa-quality-warning label { display: flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.hwa-quality-warning input { width: 17px; height: 17px; accent-color: #b35b27; }

@@ -6,6 +6,7 @@ import {
   type LibraryWallpaper,
 } from "../lib/wallpaperLibrary";
 import { formattedBytes } from "../lib/configuration";
+import { qualityTier } from "../lib/imageQuality";
 import {
   getWallpaperActivity, type WallpaperActivity,
 } from "../lib/windowsWallpaper";
@@ -35,6 +36,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
   const [openedOriginal, setOpenedOriginal] = useState("");
   const [originalError, setOriginalError] = useState("");
   const [sourceError, setSourceError] = useState("");
+  const [betterSourceUrl, setBetterSourceUrl] = useState("");
   const objectUrls = useRef(new Set<string>());
   const selectedId = useRef<string | null>(null);
   useEffect(() => () => {
@@ -121,7 +123,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
     if (phrase && ![item.title, item.source, item.credit, item.sourcePage]
       .some((value) => value.toLowerCase().includes(phrase))) return false;
     if (filter === "favorites" && !item.favorite) return false;
-    if (filter === "4k" && !(item.width >= 3840 && item.height >= 2160)) return false;
+    if (filter === "4k" && qualityTier(item.width, item.height) !== "4K+") return false;
     if (filter === "portrait" && !(item.height > item.width)) return false;
     return true;
   }), [items, filter, search]);
@@ -168,6 +170,7 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
     setOpenedOriginal("");
     setOriginalError("");
     setSourceError("");
+    setBetterSourceUrl(image.sourcePage || "");
     try {
       const data = await getLibraryWallpaperImage(image.id);
       // A rapid click on another entry may return out of order; the active
@@ -198,6 +201,33 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
     } catch {
       return false;
     }
+  }
+
+  function findBetterImage(image: LibraryWallpaper) {
+    const direct = validHttpsSource(image.originalUrl) ? image.originalUrl : "";
+    const manual = betterSourceUrl.trim();
+    const chosenPage = validHttpsSource(manual) ? manual : image.sourcePage;
+    if (!direct && !validHttpsSource(manual)) {
+      setSourceError("No usable online URL is available. Open the original website and paste its full-size image URL here.");
+      return;
+    }
+    const candidate: CatalogImage = {
+      id: image.id + "-quality-upgrade",
+      kind: "image",
+      source: image.source,
+      title: image.title,
+      previewUrl: image.thumbnailDataUrl || direct || manual,
+      originalUrl: direct || manual,
+      candidateUrls: manual && validHttpsSource(manual) && manual !== direct ? [manual] : [],
+      pageUrl: chosenPage,
+      credit: image.credit,
+      rights: image.rightsNote,
+      width: image.width,
+      height: image.height,
+    };
+    selectedId.current = null;
+    setSelected(null);
+    onSaveToLibrary([candidate]);
   }
 
   const totalBytes = items.reduce((sum, image) => sum + image.bytes, 0);
@@ -278,6 +308,9 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
                   ? <img src={item.thumbnailDataUrl} alt={item.title} loading="lazy" />
                   : <span>Preview unavailable</span>}
                 <span className="hwl-size">{item.width} × {item.height}</span>
+                <span className={"hwl-quality hwl-quality-" + (qualityTier(item.width, item.height) === "Below 1080p" ? "low" : "ok")}>
+                  {qualityTier(item.width, item.height)}
+                </span>
               </button>
               <div className="hwl-card-info">
                 <strong title={item.title}>{item.title}</strong>
@@ -344,7 +377,13 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
             </div>
             <div className="hwl-detail-text">
               <h2>{selected.title}</h2>
-              <p>{selected.width} × {selected.height} · {selected.format.toUpperCase()} · {formattedBytes(selected.bytes)}</p>
+              <p>{selected.width} × {selected.height} · {selected.format.toUpperCase()} · {formattedBytes(selected.bytes)} · <strong>{qualityTier(selected.width, selected.height)}</strong></p>
+              {qualityTier(selected.width, selected.height) === "Below 1080p" && (
+                <p className="hwl-low-quality" role="status">
+                  This is a small image and may look very blurry on a Windows desktop.
+                  Try finding a higher-resolution original from its source.
+                </p>
+              )}
               <p><strong>Source:</strong> {selected.source}</p>
               <p><strong>Photo credit:</strong> {selected.credit || "Not provided"}</p>
               <p><strong>Rights note:</strong> {selected.rightsNote || "Not verified"}</p>
@@ -372,6 +411,22 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
                   These buttons open recorded online addresses. Some providers
                   may only expose a preview image rather than a full-resolution original.
                 </small>
+                <div className="hwl-better-source">
+                  <label htmlFor="hwl-better-source-url">
+                    Try to find a higher-quality version
+                  </label>
+                  <p>Haven Walls checks the saved image link and standard image metadata on its original website. If the recorded source is wrong or incomplete, paste the original image or webpage URL below.</p>
+                  <input id="hwl-better-source-url" type="url"
+                    value={betterSourceUrl} maxLength={2048}
+                    placeholder="https://source-website.example/photo"
+                    onChange={(event) => setBetterSourceUrl(event.target.value)} />
+                  <button type="button" className="hwl-secondary"
+                    onClick={() => findBetterImage(selected)}
+                    disabled={!validHttpsSource(selected.originalUrl) && !validHttpsSource(betterSourceUrl)}>
+                    Find higher-quality version
+                  </button>
+                  <small>A successful larger original is added as a separate Library image; the old copy is preserved.</small>
+                </div>
                 {sourceError && <p role="alert" className="hwl-source-error">{sourceError}</p>}
               </div>
             </div>

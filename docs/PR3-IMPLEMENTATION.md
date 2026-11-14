@@ -158,3 +158,27 @@ This commit adds manual Windows wallpaper application and current application hi
 - Caption rendering uses a generated active copy; it does not license or modify the source image. Review applicable copyright/attribution requirements.
 - For any Windows API error, check the message shown in the apply dialog and your current monitor configuration. Use Windows Settings → Personalization → Background to restore a previous wallpaper.
 - The assistant does not build, test, trigger GitHub Actions or merge. The user owns Windows validation. Leave PR #3 as a draft until tested.
+
+## Final quality fix: highest accessible original before saving
+
+The earlier online importer saved the first successfully downloaded image candidate. That meant a 740 × 494 Google/website preview could win even if a larger version existed. This change replaces that behavior for user-selected online imports.
+
+- **Probe before persisting:** Check selected and derived image URLs plus a small number of original-source webpage metadata URLs. Compare actual decoded dimensions and save only the largest verified matching image, never the first response.
+- **Original webpage image metadata:** Limited standard og:image, twitter:image, image_src and image-preload metadata is checked from the recorded original website. Google search pages are not scraped. Candidates from the website must visually resemble the selected photo to avoid substituting an unrelated image.
+- **Higher-resolution link candidates:** Provider-specific larger-image URLs, width/height query-parameter variations, and WordPress thumbnail filenames are tested. A larger URL does not establish real 4K without decoding.
+- **Safety:** Only user-initiated public HTTPS requests, revalidation of limited redirects, public DNS pinning, response size limits, and actual image decoding. If the original is unavailable, clearly report it rather than silently saving a preview.
+- **Settings enforcement:** Minimum resolution applies to decoded pixels for landscape and portrait images; Quick Save does not bypass quality rules. A deliberate smaller-image override remains available.
+- **Visible Library quality:** Show Below 1080p, 1080p, 1440p or 4K+ labels based on saved pixels. Existing saved images remain untouched. Open one and choose Find higher-quality version. You may paste the original source website or a full-size image URL; a successful upgrade is saved separately.
+- **Windows quality warning:** Set Now checks the chosen monitor and saved minimum resolution. Undersized images require explicit Apply anyway approval rather than silently looking blurred on the desktop.
+- **No fabricated resolution:** Actual larger pixels may still be upscaled by a provider; no app promises of optical sharpness or invented 4K content.
+
+### Local Windows quality checks (user only)
+
+1. From Google Images, select a thumbnail whose original source is known to have a high-quality version. Save to Library and check the reported candidate count and actual stored pixels. A real full-size file should win if it is accessible from the recorded source.
+2. If the original site does not provide a downloadable full-size image through its metadata or source links, the app should reject a below-minimum version rather than claiming it is 4K. Paste an authorized original-image URL as a recovery path.
+3. Try Bing Daily or TMDB with a known high-resolution original and verify the saved image and 1080p, 1440p and 4K+ badges.
+4. Inspect an older 740 × 494 saved image, choose Find higher-quality version, and optionally paste the original webpage or full-size image URL. A successful larger image should be added as a separate Library item; the old one remains.
+5. Try Set Now on the low-resolution image. Confirm the warning and disabled Apply button until you deliberately check Apply lower-resolution image anyway. A genuine 4K source should not warn on 1080p/1440p displays.
+6. Verify Favorites, Quick Save, source-link actions, active wallpaper protection and existing Gallery sources.
+
+This change uses the existing Rust dependencies and does not modify Cargo.lock. No assistant builds, tests, CI or merges were run; Windows validation is required.

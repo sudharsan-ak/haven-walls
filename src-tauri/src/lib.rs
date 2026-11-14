@@ -52,6 +52,7 @@ pub fn run() {
             configuration::clear_temporary_cache,
             wallpaper_library::import_wallpaper_data,
             wallpaper_library::import_wallpaper_url,
+            wallpaper_library::best_source::import_best_wallpaper_urls,
             wallpaper_library::list_library_wallpapers,
             wallpaper_library::get_library_wallpaper_image,
             wallpaper_library::set_wallpaper_favorite,

@@ -294,7 +294,11 @@ fn import_bytes(
     }
     let (width, height) = image.dimensions();
     let (minimum_width, minimum_height) = min_dimensions(&settings.minimum_resolution);
-    if !metadata.allow_below_minimum && (width < minimum_width || height < minimum_height) {
+    // Resolution checks are orientation-aware: a 1080 × 1920 portrait image
+    // is eligible at the 1080p tier just like a 1920 × 1080 landscape.
+    let (image_long, image_short) = (width.max(height), width.min(height));
+    if !metadata.allow_below_minimum &&
+        (image_long < minimum_width || image_short < minimum_height) {
         return Err(format!(
             "Loaded image is {width} × {height}, below your {} minimum. \
              Check 'Allow smaller images' to import it anyway.",
@@ -642,3 +646,5 @@ pub fn open_wallpaper_source(app: AppHandle, url: String) -> Result<(), String> 
     app.opener().open_url(parsed.to_string(), None::<&str>)
         .map_err(|error| format!("Windows could not open the source in your default browser: {error}"))
 }
+
+pub mod best_source;

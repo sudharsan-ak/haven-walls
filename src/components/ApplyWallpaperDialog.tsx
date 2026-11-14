@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { LibraryWallpaper } from "../lib/wallpaperLibrary";
 import { getLibraryWallpaperImage } from "../lib/wallpaperLibrary";
-import { getConfiguration, type WallpaperFit } from "../lib/configuration";
+import { getConfiguration, type MinimumResolution, type WallpaperFit } from "../lib/configuration";
+import { belowResolution, minimumPixels, qualityTier, resolutionLongShort } from "../lib/imageQuality";
 import {
   applyLibraryWallpaper, FIT_OPTIONS, listWindowsMonitors,
   renderWallpaperOverlay, type WindowsMonitor,
@@ -26,6 +27,8 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [applied, setApplied] = useState(false);
+  const [minimumQuality, setMinimumQuality] = useState<MinimumResolution>("1080p");
+  const [allowLowQuality, setAllowLowQuality] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -36,6 +39,7 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
         setFit(snapshot.settings.wallpaperFit);
         setCaption(snapshot.settings.showCaption);
         setCredit(snapshot.settings.showPhotoCredit);
+        setMinimumQuality(snapshot.settings.minimumResolution);
         if (displays.length === 0) {
           setError("Windows did not report any attached monitors.");
         }
@@ -55,8 +59,35 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
     return () => window.removeEventListener("keydown", key);
   }, [busy, onClose]);
 
+  const targets = targetId === "all"
+    ? monitors
+    : monitors.filter((display) => display.id === targetId);
+  const [minimumLong, minimumShort] = minimumPixels(minimumQuality);
+  const spanBounds = fit === "span" && targetId === "all" && targets.length > 1
+    ? {
+        width: Math.max(...targets.map((screen) => screen.left + screen.width)) -
+          Math.min(...targets.map((screen) => screen.left)),
+        height: Math.max(...targets.map((screen) => screen.top + screen.height)) -
+          Math.min(...targets.map((screen) => screen.top)),
+      }
+    : null;
+  const displayLong = spanBounds
+    ? resolutionLongShort(spanBounds.width, spanBounds.height)[0]
+    : targets.reduce((max, monitor) =>
+        Math.max(max, resolutionLongShort(monitor.width, monitor.height)[0]), 0);
+  const displayShort = spanBounds
+    ? resolutionLongShort(spanBounds.width, spanBounds.height)[1]
+    : targets.reduce((max, monitor) =>
+        Math.max(max, resolutionLongShort(monitor.width, monitor.height)[1]), 0);
+  const neededLong = Math.max(minimumLong, displayLong);
+  const neededShort = Math.max(minimumShort, displayShort);
+  const qualityWarning = targets.length > 0 &&
+    belowResolution(image.width, image.height, neededLong, neededShort);
+
+  useEffect(() => { setAllowLowQuality(false); }, [image.id, targetId]);
+
   async function apply() {
-    if (busy || loading || monitors.length === 0) return;
+    if (busy || loading || monitors.length === 0 || (qualityWarning && !allowLowQuality)) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -138,6 +169,25 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
             </label>
           </div>
           <p className="hwa-fit-note">{FIT_OPTIONS.find((option) => option.value === fit)?.note}</p>
+          <p className="hwa-quality-summary">
+            Saved original: <strong>{image.width} × {image.height} · {qualityTier(image.width, image.height)}</strong>
+          </p>
+          {qualityWarning && (
+            <div className="hwa-quality-warning" role="status">
+              <strong>This image is too small for your selected display and quality preference.</strong>
+              <p>
+                Saved image: {image.width} × {image.height}. Recommended minimum:
+                {" "}{neededLong} × {neededShort}. Filling the desktop may cause severe pixelation.
+                For better results, cancel and choose Find higher-quality version from Library.
+              </p>
+              <label>
+                <input type="checkbox" checked={allowLowQuality}
+                  disabled={busy}
+                  onChange={(event) => setAllowLowQuality(event.target.checked)} />
+                Apply this lower-resolution image anyway
+              </label>
+            </div>
+          )}
           <div className="hwa-options">
             <label>
               <span><strong>Show photo credit</strong>
@@ -166,7 +216,8 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
           <button type="button" className="hwl-secondary" onClick={onClose} disabled={busy}>
             {applied ? "Close" : "Cancel"}
           </button>
-          <button type="button" className="hwl-primary" disabled={loading || busy || monitors.length === 0}
+          <button type="button" className="hwl-primary"
+            disabled={loading || busy || monitors.length === 0 || (qualityWarning && !allowLowQuality)}
             onClick={() => void apply()}>
             {busy ? "Applying…" : applied ? "Apply again" : "Apply to Windows"}
           </button>

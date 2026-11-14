@@ -162,3 +162,23 @@
 .hwl-card-actions { flex-wrap: wrap; }
 .hwl-card-actions button { flex: 1 1 30%; }
 @media (max-width: 780px) { .hwl-history-list > div { flex-direction: column; } }
+
+.hwl-quality {
+  position: absolute; top: 8px; left: 8px; background: #125a70e8;
+  color: #fff; font-size: 10px; font-weight: 700; border-radius: 5px; padding: 6px 9px;
+}
+.hwl-quality-low { background: #a94e27ed; }
+.hwl-low-quality {
+  color: #a34d28 !important; background: #fff5eb;
+  border: 1px solid #f0d4b9; border-radius: 8px;
+  padding: 10px 12px; line-height: 1.6;
+}
+.hwl-better-source { margin-top: 12px; border-top: 1px solid #e5edf4; padding-top: 13px; }
+.hwl-better-source label { display: block; font-size: 12px; font-weight: 700; color: #314e66; }
+.hwl-better-source p { margin: 7px 0 11px; }
+.hwl-better-source input {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px;
+  border: 1px solid #cfe0ed; background: #fcfdff; color: #2b435c;
+  border-radius: 8px; font: inherit; font-size: 12px; margin-bottom: 10px;
+}
+.hwl-better-source button { display: block; margin: 0 0 8px; }

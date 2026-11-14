@@ -3,7 +3,7 @@ import { getConfiguration } from "../lib/configuration";
 import type { CatalogImage } from "../lib/native";
 import { imageCandidates } from "../lib/imageResolution";
 import {
-  fileBlobToBase64, importWallpaperData, importWallpaperUrl, type ImportOutcome,
+  fileBlobToBase64, importWallpaperData, importBestWallpaperUrls, type ImportOutcome,
   type LibraryWallpaper,
 } from "../lib/wallpaperLibrary";
 import "./LibraryImportDialog.css";
@@ -112,25 +112,15 @@ export default function LibraryImportDialog({
         if (blob) {
           result = await importWallpaperData(await fileBlobToBase64(blob), metadata);
         } else {
-          // Sources have different CDN conventions. Attempt only the URLs
-          // associated with this explicitly reviewed image, not page scraping.
-          const candidates = imageCandidates(image);
-          let lastError = "";
-          for (const url of candidates) {
-            if (!url.startsWith("https://")) continue;
-            try {
-              result = await importWallpaperUrl(url, metadata);
-              break;
-            } catch (problem) {
-              lastError = problem instanceof Error ? problem.message : String(problem);
-              // Do not bypass quality rules, an excluded source, a duplicate
-              // warning, or any other user-configured policy with a fallback.
-              if (/below your|disabled in Settings|excluded |visually similar|Confirm|permission/i.test(lastError)) {
-                break;
-              }
-            }
+          // Resolve all known original/large image addresses plus standard
+          // image metadata from the selected source page. Rust downloads and
+          // decodes candidates before writing only the best valid image.
+          // A small preview must never win merely because it loads first.
+          const candidates = imageCandidates(image).filter((url) => url.startsWith("https://"));
+          if (candidates.length === 0) {
+            throw new Error("No usable HTTPS original image URL. Open the source website and copy its full-size image address.");
           }
-          if (!result) throw new Error(lastError || "No usable direct HTTPS image URL was available.");
+          result = await importBestWallpaperUrls(candidates, metadata);
         }
 
         if (!result.alreadySaved) imported = true;
@@ -170,9 +160,9 @@ export default function LibraryImportDialog({
 
         <div className="lidi-scroll">
           <p className="lidi-description">
-            Haven Walls saves a verified managed copy to your local Library.
+            Haven Walls checks available original image versions and saves the best verified match.
             You can apply a successfully saved image to Windows afterward. Images that are
-            blocked, below your minimum resolution, or exact duplicates are handled individually.
+            blocked, below your minimum resolution, or exact duplicates are reported individually.
           </p>
           <div className="lidi-preview-strip">
             {distinct.slice(0, 7).map((image, i) => (
@@ -244,7 +234,7 @@ export default function LibraryImportDialog({
           )}
 
           {busy && <p className="lidi-status" role="status">
-            Processing image {index} of {distinct.length}…
+            Checking source quality and importing image {index} of {distinct.length}…
           </p>}
           {logs.length > 0 && (
             <div className="lidi-log" aria-label="Import results" aria-live="polite">

@@ -84,7 +84,7 @@ function sourceCredit(image: LibraryWallpaper): string {
 
 /** Use a local Canvas: the persisted Library file is the only input. We don't
  * download any third-party images or inject anything into Google WebView2.
- * Image is capped to a 4K-size canvas to bound memory/IPC; no upscaling.
+ * Preserve native resolution up to 8K/40MP for captions and credits; only exceptionally large images are downsampled for bounded memory. No upscaling.
  * Original managed wallpaper remains completely untouched.
  */
 export async function renderWallpaperOverlay(
@@ -100,7 +100,11 @@ export async function renderWallpaperOverlay(
   const originalWidth = photo.naturalWidth;
   const originalHeight = photo.naturalHeight;
   if (!originalWidth || !originalHeight) throw new Error("Saved wallpaper has no readable image dimensions.");
-  const scale = Math.min(1, 3840 / originalWidth, 2160 / originalHeight);
+  const maxPixels = 40_000_000;
+  const scale = Math.min(
+    1, 8192 / originalWidth, 8192 / originalHeight,
+    Math.sqrt(maxPixels / (originalWidth * originalHeight)),
+  );
   const w = Math.max(1, Math.round(originalWidth * scale));
   const h = Math.max(1, Math.round(originalHeight * scale));
   const canvas = document.createElement("canvas");

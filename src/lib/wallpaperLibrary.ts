@@ -104,3 +104,16 @@ export async function openWallpaperSource(url: string): Promise<void> {
   requireHost();
   await invoke<void>("open_wallpaper_source", { url });
 }
+
+
+/** Evaluate the selected image's available originals and the recorded source
+ * page's standard image metadata, then persist only the highest-quality
+ * verified matching image. Never write a low-res preview while probing.
+ */
+export async function importBestWallpaperUrls(
+  candidateUrls: string[],
+  metadata: ImportMetadata,
+): Promise<ImportOutcome> {
+  requireHost();
+  return invoke<ImportOutcome>("import_best_wallpaper_urls", { candidateUrls, metadata });
+}
