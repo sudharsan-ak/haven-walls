@@ -9,6 +9,7 @@ import {
 import { catalogSources, getCatalogSource } from "../lib/catalog";
 import FullResolutionPreview from "./FullResolutionPreview";
 import GoogleWorkspace from "./GoogleWorkspace";
+import CategoryDiscovery from "./CategoryDiscovery";
 import SportsLeagueSources from "./SportsLeagueSources";
 import "./OnlineGallery.css";
 
@@ -21,6 +22,8 @@ type Props = {
   onTmdbTokenChange: (value: string) => void;
   serpapiKey: string;
   onSerpapiKeyChange: (value: string) => void;
+  unsplashKey: string;
+  onUnsplashKeyChange: (value: string) => void;
   googleSearchSeed: string;
   lensRequest: { imageId: string; requestId: number } | null;
   onSearchWeb: (query: string) => void;
@@ -485,6 +488,12 @@ function SourceGallery({
 // Google Images alone has nested Browser and API tabs.
 // All other source pages continue to use the existing Gallery view.
 export default function OnlineGallery(props: Props) {
+  if (props.source === "discover") {
+    return <CategoryDiscovery onSourceChange={props.onSourceChange}
+      onSaveToLibrary={props.onSaveToLibrary}
+      serpapiKey={props.serpapiKey} onSerpapiKeyChange={props.onSerpapiKeyChange}
+      unsplashKey={props.unsplashKey} onUnsplashKeyChange={props.onUnsplashKeyChange} />;
+  }
   if (props.source === "google") {
     return (
       <GoogleWorkspace

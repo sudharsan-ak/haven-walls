@@ -12,7 +12,7 @@ export async function readHostInfo(): Promise<HostInfo | null> {
   return invoke<HostInfo>("get_host_info");
 }
 
-export type CatalogSourceId = "bing" | "earth" | "sports" | "tmdb" | "google";
+export type CatalogSourceId = "discover" | "bing" | "earth" | "sports" | "tmdb" | "google";
 
 export interface CatalogImage {
   id: string;
@@ -70,6 +70,18 @@ export async function browseTMDBBackdrops(
   return invoke<CatalogResponse>("browse_tmdb_backdrops", { tvId, tmdbToken });
 }
 
+
+export type CategoryProvider = "commons" | "nasa" | "unsplash";
+
+/** Manual category search. Unsplash key is session-only and sent directly to its API.
+ * Metadata is not a verified image download or license clearance.
+ */
+export async function browseCategoryImages(
+  provider: CategoryProvider, query: string, unsplashKey = "",
+): Promise<CatalogResponse> {
+  if (!isTauri()) throw new Error("Category browsing needs Haven Walls for Windows.");
+  return invoke<CatalogResponse>("browse_category_images", { provider, query, unsplashKey });
+}
 
 /** Real Google Images results are supplied through a user-owned SerpApi key.
  * The query and key are sent directly from Rust to SerpApi over HTTPS.

@@ -11,6 +11,7 @@ interface Props {
   image: CatalogImage;
   onClose: () => void;
   onAddToLibrary?: (image: CatalogImage) => void;
+  addLabel?: string;
 }
 
 function isRemote(url: string): boolean {
@@ -22,7 +23,7 @@ function isRemote(url: string): boolean {
  * low-resolution search thumbnail. Actual pixels are read from the displayed
  * HTMLImageElement; we never claim provider metadata is a verified 4K image.
  */
-export default function FullResolutionPreview({ image, onClose, onAddToLibrary }: Props) {
+export default function FullResolutionPreview({ image, onClose, onAddToLibrary, addLabel = "Add to Library" }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedImage | null>(null);
   const [resolving, setResolving] = useState(true);
@@ -237,7 +238,7 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
                     image.originalUrl || "", image.previewUrl,
                   ].filter(Boolean))],
                 })}>
-                Add to Library
+                {addLabel}
               </button>
             )}
             {canCopyImage && (
