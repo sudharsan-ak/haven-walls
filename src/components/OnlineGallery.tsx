@@ -24,7 +24,7 @@ type Props = {
   googleSearchSeed: string;
   onSearchWeb: (query: string) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
-  libraryDialogOpen: boolean;
+  blockingDialogOpen: boolean;
 };
 
 function CatalogThumbnail({ image }: { image: CatalogImage }) {
@@ -492,7 +492,7 @@ export default function OnlineGallery(props: Props) {
         onSerpapiKeyChange={props.onSerpapiKeyChange}
         googleSearchSeed={props.googleSearchSeed}
         onSaveToLibrary={props.onSaveToLibrary}
-        libraryDialogOpen={props.libraryDialogOpen}
+        blockingDialogOpen={props.blockingDialogOpen}
       />
     );
   }

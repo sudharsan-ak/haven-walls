@@ -17,7 +17,7 @@ interface Props {
   onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
   onSaveToLibrary: (images: CatalogImage[]) => void;
-  libraryDialogOpen: boolean;
+  blockingDialogOpen: boolean;
 }
 
 type SearchMode = "browser" | "api";
@@ -167,7 +167,7 @@ function ApiResultCard({
 
 export default function GoogleWorkspace({
   onSourceChange, serpapiKey, onSerpapiKeyChange, googleSearchSeed,
-  onSaveToLibrary, libraryDialogOpen,
+  onSaveToLibrary, blockingDialogOpen,
 }: Props) {
   const [mode, setMode] = useState<SearchMode>("browser");
   const [browserQuery, setBrowserQuery] = useState(googleSearchSeed || DEFAULT_QUERY);
@@ -550,7 +550,9 @@ export default function GoogleWorkspace({
                   </div>
                 </div>
                 <InlineGoogleBrowser query={browserQuery} searchRevision={browserRevision}
-                  obscured={preview !== null || libraryDialogOpen} zoom={browserZoom / 100}
+                  // Hide native WebView2 whenever a React modal is active.
+                  // CSS z-index cannot reliably cover a native child WebView.
+                  obscured={preview !== null || blockingDialogOpen} zoom={browserZoom / 100}
                   viewportHeight={browserHeight} onError={setBrowserError} />
                 <div className="gws-browser-bottom">
                   <span>Right-click a Google image. Use Add to Haven Walls review, or Copy image link as fallback.</span>

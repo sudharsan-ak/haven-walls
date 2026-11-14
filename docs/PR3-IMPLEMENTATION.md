@@ -351,3 +351,39 @@ build and live-provider behavior must be tested by the user before merging.
 3. Check around a DST boundary; timestamps must not be shifted twice.
 4. The old full-width Recent wallpaper history section should be absent,
    while the Last applied block and stored history remain available.
+
+
+## Fix: Google Images native WebView2 overlapping Set as wallpaper
+
+**Bug:** A wallpaper saved from embedded Google Images can be applied using
+Save to Library -> Set Now. The import dialog closes as the Apply Wallpaper
+dialog opens, but the native Google child WebView2 was only hidden while the
+Library import dialog (or a Google preview) was open. It could reappear and
+paint on top of the Apply dialog regardless of CSS z-index.
+
+**Fix:** Forward the combined app-level dialog state (Library import OR Set
+as wallpaper) through OnlineGallery to GoogleWorkspace, and keep the child
+WebView2 obscured while either modal is visible. Existing embedded-browser
+layout code sends a null layout to the Rust host to hide it. The child
+browser is restored after the last blocking dialog closes, without reloading
+the Google search or losing the review selection.
+
+### User-owned Windows regression checks
+
+1. Gallery -> Google Images -> Browser Search. Start a search, right-click a
+   result -> Add to Haven Walls review -> Save selected to Library.
+2. Once saving completes, click **Set Now** without leaving Gallery. Check
+   the entire **Set as wallpaper** dialog: its preview, monitor choices,
+   scrolling content, buttons and footer must all be in front of Google.
+3. Close the Set Now dialog, confirm the Google Images browser reappears
+   in its correct embedded slot and remains usable.
+4. Repeat the flow several times, including with Quick Save on/off, a
+   duplicate image, and a smaller-than-monitor image. Check modal opening,
+   closing and changing selections.
+5. Open Google Images -> Inspect original, and Save to Library. Both dialogs
+   should obscure native Google Images and restore it on close.
+6. Recheck normal Library -> Set Now and Gallery switching. No duplicate
+   Google child window or source selection loss.
+
+No Rust, dependencies or Cargo.lock changes. This must be confirmed with
+the Windows build. No assistant build, test, GitHub Actions or merge was run.
