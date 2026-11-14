@@ -45,12 +45,12 @@ export interface CatalogResponse {
 /**
  * Catalog only. The user explicitly requests each lookup.
  * Nothing here downloads an original, saves an image, or sets a wallpaper.
- * TMDB bearer tokens are passed in memory and are never persisted by this module.
+ * Rust reads each provider's saved, DPAPI-encrypted key directly from SQLite.
+ * Keys are never returned to Gallery code.
  */
 export async function browseWallpaperSource(
   source: CatalogSourceId,
   query = "",
-  tmdbToken?: string,
 ): Promise<CatalogResponse> {
   if (!isTauri()) {
     throw new Error("Online browsing requires the Haven Walls desktop application.");
@@ -58,40 +58,36 @@ export async function browseWallpaperSource(
   return invoke<CatalogResponse>("browse_wallpaper_source", {
     source,
     query,
-    tmdbToken: tmdbToken || null,
   });
 }
 
 export async function browseTMDBBackdrops(
   tvId: number,
-  tmdbToken: string,
 ): Promise<CatalogResponse> {
   if (!isTauri()) {
     throw new Error("TV artwork browsing requires the Haven Walls desktop application.");
   }
-  return invoke<CatalogResponse>("browse_tmdb_backdrops", { tvId, tmdbToken });
+  return invoke<CatalogResponse>("browse_tmdb_backdrops", { tvId });
 }
 
 
 export type CategoryProvider = "commons" | "nasa" | "unsplash";
 
-/** Manual category search. Unsplash key is session-only and sent directly to its API.
+/** Manual category search. Rust retrieves saved Unsplash credentials if needed.
  * Metadata is not a verified image download or license clearance.
  */
 export async function browseCategoryImages(
-  provider: CategoryProvider, query: string, unsplashKey = "", page = 1,
+  provider: CategoryProvider, query: string, page = 1,
 ): Promise<CatalogResponse> {
   if (!isTauri()) throw new Error("Category browsing needs Haven Walls for Windows.");
-  return invoke<CatalogResponse>("browse_category_images", { provider, query, unsplashKey, page });
+  return invoke<CatalogResponse>("browse_category_images", { provider, query, page });
 }
 
-/** Real Google Images results are supplied through a user-owned SerpApi key.
- * The query and key are sent directly from Rust to SerpApi over HTTPS.
- * Haven Walls never writes the key or the image catalog to application storage.
+/** Google Images search. Rust decrypts the saved SerpApi key for this request.
+ * Keys are never returned to the frontend and never stored in source files.
  */
 export async function browseGoogleImages(
   query: string,
-  serpapiKey: string,
   minWidth: number,
   minHeight: number,
   page = 1,
@@ -101,7 +97,6 @@ export async function browseGoogleImages(
   }
   return invoke<CatalogResponse>("browse_google_images", {
     query,
-    serpapiKey,
     minWidth,
     minHeight,
     page,

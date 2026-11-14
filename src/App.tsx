@@ -28,9 +28,6 @@ export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
   const [page, setPage] = useState<"dashboard" | "gallery" | "library" | "sources" | "settings">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
-  const [tmdbToken, setTmdbToken] = useState("");
-  const [serpapiKey, setSerpapiKey] = useState("");
-  const [unsplashKey, setUnsplashKey] = useState("");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
   const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
@@ -125,12 +122,6 @@ export default function App() {
                 setLensRequest(null);
                 setGallerySource(source);
               }}
-              tmdbToken={tmdbToken}
-              onTmdbTokenChange={setTmdbToken}
-              serpapiKey={serpapiKey}
-              onSerpapiKeyChange={setSerpapiKey}
-              unsplashKey={unsplashKey}
-              onUnsplashKeyChange={setUnsplashKey}
               googleSearchSeed={googleSearchSeed}
               lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}
