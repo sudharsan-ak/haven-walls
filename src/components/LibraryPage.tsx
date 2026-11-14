@@ -216,7 +216,7 @@ export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveT
     // A publisher page is metadata, not a direct image. Keep the saved image
     // as the similarity anchor and let Rust inspect explicit download links.
     const directDownload = manualValid &&
-      (/\\.(?:jpe?g|png|webp|avif)$/i.test(new URL(manual).pathname) ||
+      (/\.(?:jpe?g|png|webp|avif)$/i.test(new URL(manual).pathname) ||
         new URL(manual).pathname.includes("/download/"));
     const original = directDownload ? manual : direct;
     const page = manualValid && !directDownload ? manual : image.sourcePage;
@@ -250,8 +250,8 @@ export default function LibraryPage({ revision, onDiscover, onSearchWeb, onSaveT
     const originalPath = validHttpsSource(image.originalUrl)
       ? new URL(image.originalUrl).pathname.split("/").pop() || "" : "";
     const descriptive = [sourcePath, originalPath, image.title]
-      .map((value) => value.replace(/\\.(html?|jpe?g|png|webp|avif)$/i, "")
-        .replace(/[-_]+/g, " ").replace(/\\b\\d{3,5}x\\d{3,5}\\b/gi, "").trim())
+      .map((value) => value.replace(/\.(html?|jpe?g|png|webp|avif)$/i, "")
+        .replace(/[-_]+/g, " ").replace(/\b\d{3,5}x\d{3,5}\b/gi, "").trim())
       .find((value) => value.length > 10) || image.title;
     selectedId.current = null;
     setSelected(null);
