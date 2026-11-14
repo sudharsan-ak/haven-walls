@@ -618,3 +618,39 @@ Check Fit/Fill with portrait and landscape photos, close/backdrop, favorite,
 source buttons, original-source search, Lens, Bing, Remove, Set as wallpaper,
 and short-height/narrow-window responsive behavior. No HTML prototype assets
 were copied into application storage; real Library thumbnails are used.
+
+
+## Library viewer usability: complete filmstrip and compact details
+
+- Removed the artificial five-thumbnail window. The viewer now displays every
+  Library item included by the current search/filter, using a horizontally
+  scrollable thumbnail strip. With eight saved wallpapers and adequate width,
+  all eight thumbnails fit. The selected item automatically scrolls into view
+  when navigating by keyboard, arrows or thumbnail clicks.
+- Lazy-load filmstrip thumbnails to avoid eagerly decoding every visible item.
+  Previous/Next navigation and the existing N / total counter still use the
+  filtered list, and keyboard arrows retain their behavior.
+- Compact the right panel: display the full filename via hover tooltip but
+  clamp the visible title to two lines, place dimensions/quality/format/size
+  in a compact chip row, and move Check original source / Google Lens near
+  the top in a small two-column control group.
+- Keep source page/original-image links directly accessible. Move custom links,
+  Bing fallback, metadata, photo credit and rights details into independently
+  expandable sections. Favorite, Remove and Set as wallpaper remain fixed
+  to the bottom, outside the scrolling details region.
+- No stored image metadata, file identity, wallpaper state or source-retrieval
+  behavior is changed by this UI-only follow-up.
+
+Windows acceptance:
+1. With eight saved images on a wide window, all eight thumbnails should be
+   available in the strip, not only five. With a larger Library or narrower
+   window, scroll horizontally and verify the active thumbnail moves into
+   view automatically.
+2. Filter to Favorites or 4K+; ensure filmstrip, N/total, and previous/next
+   remain within the filter.
+3. Confirm Check original source, Google Lens and original-source links are
+   readily accessible without scrolling on a normal desktop display.
+4. Expand each details section; ensure the right panel scrolls independently,
+   full filenames remain available by hovering, and Set as wallpaper stays
+   visible in the footer.
+5. Verify Fit/Fill, source errors, favorites, removal and Apply to Windows.

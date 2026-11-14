@@ -133,13 +133,17 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     return true;
   }), [items, filter, search]);
 
-  // The viewer follows the active Library search/filter, so Favorites and 4K+
-  // navigation never jump to hidden entries. A small filmstrip is windowed
-  // around the selected item rather than rendering every saved thumbnail.
+  // Filmstrip shows every item in the current filter, scrolling when the
+  // collection outgrows the stage. The selected image is kept in view.
   const selectedIndex = selected ? visible.findIndex((item) => item.id === selected.id) : -1;
-  const filmstripStart = Math.min(Math.max(0, selectedIndex - 2), Math.max(0, visible.length - 5));
-  const filmstripItems = visible.slice(filmstripStart, filmstripStart + 5);
+  const filmstripRef = useRef<HTMLDivElement | null>(null);
   const [viewerMode, setViewerMode] = useState<"fit" | "fill">("fit");
+
+  useEffect(() => {
+    if (!selected) return;
+    filmstripRef.current?.querySelector<HTMLElement>(".hwl-viewer-thumb.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+  }, [selected?.id, visible]);
 
   function closeViewer() {
     selectedId.current = null;
@@ -461,8 +465,9 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
                   <strong title={selected.title}>{selected.title}</strong>
                   <span>{selectedIndex + 1} / {visible.length}</span>
                 </div>
-                <div className="hwl-viewer-filmstrip" aria-label="Browse saved wallpapers">
-                  {filmstripItems.map((image) => (
+                <div className="hwl-viewer-filmstrip" ref={filmstripRef}
+                  aria-label="Browse all saved wallpapers in the current filter">
+                  {visible.map((image) => (
                     <button type="button" key={image.id}
                       className={"hwl-viewer-thumb" + (image.id === selected.id ? " active" : "")}
                       aria-label={"View " + image.title}
@@ -470,7 +475,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
                       title={image.title}
                       onClick={() => void open(image)}>
                       {image.thumbnailDataUrl ? (
-                        <img src={image.thumbnailDataUrl} alt="" />
+                        <img src={image.thumbnailDataUrl} alt="" loading="lazy" />
                       ) : <span>Image</span>}
                     </button>
                   ))}
@@ -485,28 +490,37 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
                   title="Close (Esc)">×</button>
               </header>
               <div className="hwl-viewer-content">
-                <h2>{selected.title}</h2>
-                <div className="hwl-viewer-pills">
+                <h2 title={selected.title}>{selected.title}</h2>
+                <div className="hwl-viewer-pills" aria-label="Wallpaper quality and format">
                   <span className="quality">{qualityTier(selected.width, selected.height)}</span>
                   <span>{selected.width} × {selected.height}</span>
                   <span>{selected.format.toUpperCase()}</span>
+                  <span>{formattedBytes(selected.bytes)}</span>
                 </div>
                 {qualityTier(selected.width, selected.height) === "Below 1080p" && (
                   <p className="hwl-source-error" role="status">
                     This image may look blurry on a desktop. Try finding a higher-resolution original.
                   </p>
                 )}
-                <div className="hwl-viewer-section-title">Image information</div>
-                <dl className="hwl-viewer-facts">
-                  <div><dt>File size</dt><dd>{formattedBytes(selected.bytes)}</dd></div>
-                  <div><dt>Saved from</dt><dd title={selected.source}>{selected.source}</dd></div>
-                  <div><dt>Photographer</dt><dd title={selected.credit || "Unknown"}>
-                    {selected.credit || "Not provided"}</dd></div>
-                </dl>
+                <section className="hwl-viewer-quality-box" aria-label="Find higher-quality image">
+                  <div className="hwl-viewer-quality-heading">
+                    <strong>Find higher quality</strong>
+                  </div>
+                  <div className="hwl-viewer-tool-buttons">
+                    <button type="button" className="hwl-secondary"
+                      onClick={() => findBetterImage(selected)}
+                      disabled={!validHttpsSource(selected.originalUrl) &&
+                        !validHttpsSource(betterSourceUrl)}>
+                      Check original source
+                    </button>
+                    <button type="button" className="hwl-secondary"
+                      onClick={() => onReverseSearch(selected)}>
+                      Google Lens reverse search
+                    </button>
+                  </div>
+                </section>
+                {sourceError && <p role="alert" className="hwl-source-error">{sourceError}</p>}
                 <div className="hwl-viewer-section-title">Original source</div>
-                <p className="hwl-viewer-source-desc">
-                  Original source links are stored with your wallpaper. The saved Library copy works offline.
-                </p>
                 <div className="hwl-viewer-links">
                   <button type="button" className="hwl-secondary"
                     disabled={!validHttpsSource(selected.sourcePage)}
@@ -521,49 +535,43 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
                     ↗ Original image
                   </button>
                 </div>
-                <div className="hwl-viewer-quality-box">
-                  <div className="hwl-viewer-quality-heading">
-                    <span aria-hidden="true">⌕</span>
-                    <strong>Find higher-quality version</strong>
-                  </div>
-                  <p>Check the original publisher or reverse-search this photograph for larger versions.</p>
+                <details key={selected.id + "-extra-search"}
+                  className="hwl-viewer-extra hwl-viewer-accordion">
+                  <summary>Custom image link and Bing search</summary>
+                  <label htmlFor="hwl-better-source-url">Original image or publisher URL</label>
+                  <input id="hwl-better-source-url" type="url"
+                    value={betterSourceUrl} maxLength={2048}
+                    placeholder="https://publisher.example/photo"
+                    onChange={(event) => setBetterSourceUrl(event.target.value)} />
                   <button type="button" className="hwl-secondary"
                     onClick={() => findBetterImage(selected)}
                     disabled={!validHttpsSource(selected.originalUrl) &&
                       !validHttpsSource(betterSourceUrl)}>
-                    ↗ Check original source
+                    Check supplied source
                   </button>
                   <button type="button" className="hwl-secondary"
-                    onClick={() => onReverseSearch(selected)}>
-                    ◎ Reverse search with Google Lens
+                    onClick={() => void openFreeVisualSearch(selected)}>
+                    Bing visual search ↗
                   </button>
-                  <details key={selected.id + "-source"} className="hwl-viewer-extra">
-                    <summary>Custom image link and Bing search</summary>
-                    <label htmlFor="hwl-better-source-url">Original image or source URL</label>
-                    <input id="hwl-better-source-url" type="url"
-                      value={betterSourceUrl} maxLength={2048}
-                      placeholder="https://publisher.example/photo"
-                      onChange={(event) => setBetterSourceUrl(event.target.value)} />
-                    <button type="button" className="hwl-secondary"
-                      onClick={() => findBetterImage(selected)}
-                      disabled={!validHttpsSource(selected.originalUrl) &&
-                        !validHttpsSource(betterSourceUrl)}>
-                      Check supplied source
-                    </button>
-                    <button type="button" className="hwl-secondary"
-                      onClick={() => void openFreeVisualSearch(selected)}>
-                      Bing visual search ↗
-                    </button>
-                    {visualSearchNote && <p role="status">{visualSearchNote}</p>}
-                  </details>
-                </div>
-                {sourceError && <p role="alert" className="hwl-source-error">{sourceError}</p>}
-                <details key={selected.id + "-rights"} className="hwl-viewer-rights">
-                  <summary>Usage rights &amp; more details</summary>
+                  {visualSearchNote && <p role="status">{visualSearchNote}</p>}
+                </details>
+                <details key={selected.id + "-info"}
+                  className="hwl-viewer-rights hwl-viewer-accordion">
+                  <summary>Image details and credit</summary>
+                  <dl className="hwl-viewer-facts">
+                    <div><dt>File size</dt><dd>{formattedBytes(selected.bytes)}</dd></div>
+                    <div><dt>Saved from</dt><dd title={selected.source}>{selected.source}</dd></div>
+                    <div><dt>Photographer</dt><dd title={selected.credit || "Unknown"}>
+                      {selected.credit || "Not provided"}</dd></div>
+                  </dl>
+                </details>
+                <details key={selected.id + "-rights"}
+                  className="hwl-viewer-rights hwl-viewer-accordion">
+                  <summary>Usage rights and source details</summary>
                   <p><strong>Usage rights:</strong> {selected.rightsNote || "Not verified"}</p>
                   <p><strong>Saved source:</strong> {selected.sourcePage || "Not available"}</p>
                   <p><strong>Original URL:</strong> {selected.originalUrl || "Not available"}</p>
-                  <p>Image source and photo credit are not proof of permission for a particular use.</p>
+                  <p>Image source and photo credit do not establish usage permission.</p>
                 </details>
               </div>
               <footer className="hwl-viewer-actions">

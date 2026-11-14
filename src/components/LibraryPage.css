@@ -391,3 +391,101 @@
   .hwl-viewer-header { min-height: 56px; padding: 10px 15px; }
   .hwl-viewer-content { padding: 13px 15px; }
 }
+
+
+/* Library viewer compact sidebar + complete, horizontally scrolling filmstrip. */
+.hwl-viewer-filmstrip {
+  scrollbar-width: thin;
+  scrollbar-color: #7892a5a6 transparent;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  padding-bottom: 3px;
+}
+.hwl-viewer-filmstrip .hwl-viewer-thumb {
+  scroll-margin-inline: 8px;
+}
+.hwl-viewer-content {
+  padding: 14px 19px;
+}
+.hwl-viewer-header {
+  min-height: 62px;
+  padding: 12px 19px;
+}
+.hwl-viewer-content h2 {
+  font-size: 19px;
+  line-height: 1.28;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.hwl-viewer-pills {
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 8px 0 12px;
+}
+.hwl-viewer-pills span {
+  padding: 4px 7px;
+  font-size: 10px;
+}
+.hwl-viewer-quality-box {
+  margin: 12px 0 14px;
+  padding: 11px;
+}
+.hwl-viewer-quality-heading strong { font-size: 12px; }
+.hwl-viewer-tool-buttons {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+.hwl-viewer-tool-buttons .hwl-secondary {
+  margin: 0;
+  padding: 9px 7px;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
+  white-space: normal;
+}
+.hwl-viewer-section-title {
+  margin: 10px 0 7px;
+  font-size: 10px;
+}
+.hwl-viewer-links {
+  margin: 0 0 12px;
+  gap: 7px;
+}
+.hwl-viewer-links button {
+  min-width: 0;
+  padding: 9px 7px;
+  font-size: 10px;
+}
+.hwl-viewer-accordion {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #e7eef4;
+}
+.hwl-viewer-accordion summary {
+  padding: 12px 0;
+  font-weight: 650;
+  color: #44667e;
+  list-style-position: inside;
+}
+.hwl-viewer-accordion[open] { padding-bottom: 10px; }
+.hwl-viewer-accordion .hwl-viewer-facts { padding: 2px 0 8px; }
+.hwl-viewer-accordion .hwl-viewer-facts > div { margin: 9px 0; }
+.hwl-viewer-actions {
+  gap: 7px;
+  padding: 12px 16px;
+}
+@media (max-width: 1050px) {
+  .hwl-viewer-content { padding: 12px 15px; }
+}
+@media (max-width: 770px) {
+  .hwl-viewer-content h2 { font-size: 17px; }
+  .hwl-viewer-tool-buttons { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
