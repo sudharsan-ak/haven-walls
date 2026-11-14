@@ -444,3 +444,11 @@ navigation require local Windows validation before merge. No assistant
 Windows build, workflow run or merge was performed.
 
 Additional navigation guard: leaving the Lens result screen through normal Gallery/source navigation clears the one-shot upload request, so merely revisiting Gallery does not re-upload a saved image.
+
+
+Lens result continuity: when an image is chosen from Google Lens results (via
+the native right-click review action or a copied image URL), its review entry
+retains `upgradeFromId` for the original Library photo. The existing Rust
+high-resolution and perceptual-match checks then permit only a larger match.
+This context is cleared when the user starts a normal keyword search.
+Google Lens URLs are not mislabeled as publisher source pages.

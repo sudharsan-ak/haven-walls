@@ -198,6 +198,9 @@ export default function GoogleWorkspace({
   const [apiError, setApiError] = useState("");
   const requestNumber = useRef(0);
   const blobUrls = useRef(new Set<string>());
+  // Context survives the native Google Lens navigation so selected results
+  // are checked against the exact original Library image on import.
+  const lensUpgradeId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!googleSearchSeed || lensRequest) return;
@@ -219,6 +222,7 @@ export default function GoogleWorkspace({
     if (!lensRequest) return;
     let active = true;
     setMode("browser");
+    lensUpgradeId.current = lensRequest.imageId;
     setLensFallbackNote("");
     setBrowserError("");
     setLensStatus({
@@ -263,6 +267,7 @@ export default function GoogleWorkspace({
   }
 
   function startNewKeywordSearch(term: string) {
+    lensUpgradeId.current = null;
     setLensStatus(null);
     setLensNavigation(null);
     setBrowserQuery(term);
@@ -296,10 +301,12 @@ export default function GoogleWorkspace({
       // An imgres imgrefurl or a publisher link supplies the real source.
       const browserPage = directHttpsImageAddress(event.payload.pageUrl);
       const actualBrowserPage = browserPage &&
-        !["google.com", "www.google.com", "images.google.com"].includes(new URL(browserPage).hostname)
+        !["google.com", "www.google.com", "images.google.com", "lens.google.com",
+          "consent.google.com", "accounts.google.com"].includes(new URL(browserPage).hostname)
         ? browserPage : "";
       const page = resolved.sourcePage || actualBrowserPage;
       const candidate = makeManualImage(directUrl, filename, false, resolved.preview, page);
+      if (lensUpgradeId.current) candidate.upgradeFromId = lensUpgradeId.current;
       if (resolved.original !== resolved.preview) {
         candidate.candidateUrls = [resolved.preview];
       }
@@ -390,6 +397,7 @@ export default function GoogleWorkspace({
     try { title = decodeURIComponent(segment); }
     catch { title = segment; }
     const image = makeManualImage(url, title.slice(0, 140), false);
+    if (lensUpgradeId.current) image.upgradeFromId = lensUpgradeId.current;
     addToQueue(image);
     setSelectionError("");
     setBrowserNote("Image link added. Inspect it to check the best available version and actual resolution.");
@@ -457,6 +465,7 @@ export default function GoogleWorkspace({
     }
     setBrowserError("");
     setBrowserNote("");
+    lensUpgradeId.current = null;
     setLensStatus(null);
     setLensNavigation(null);
     setBrowserRevision((value) => value + 1);
