@@ -89,3 +89,10 @@
 @media(max-width:1250px){.cdy-category-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.cdy-image-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.cdy-workbench{grid-template-columns:minmax(0,1fr)}.cdy-review{position:static}.cdy-filters{flex-wrap:wrap}}
 @media(max-width:560px){.cdy-category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cdy-image-grid{grid-template-columns:1fr}.cdy-filters label,.cdy-filters .cdy-query{flex:1 1 100%}.cdy-filters select{width:100%}.cdy-header-mark{display:none}.cdy-key-grid{grid-template-columns:1fr}}
+
+/* Pagination is explicitly initiated and never removes previous results. */
+.cdy-load-more{display:flex;flex-direction:column;align-items:center;gap:10px;
+  border-top:1px solid #e9f0f6;margin-top:20px;padding:23px 12px 8px;text-align:center}
+.cdy-load-more>.cdy-primary{padding:12px 25px;min-width:220px}
+.cdy-load-more small{font-size:10px;color:#8299ad;line-height:1.6;max-width:470px}
+.cdy-load-more strong{font-size:11px;color:#6c8ba3;font-weight:600}

@@ -69,3 +69,30 @@ This is a draft implementation requiring a Windows Rust + TypeScript build
 and real provider API calls. No CI run or merge is performed by the assistant.
 Do not deploy an Unsplash API-powered wallpaper catalog without verifying the
 specific application's eligibility and download-tracking requirements.
+
+## Load more (per-provider pagination)
+
+- Initial search fetches one page from each enabled provider. A **Load more
+  wallpapers** button appears below the grid when more pages are available.
+  No infinite scrolling or background API requests.
+- Each click requests one provider's next page and rotates through enabled
+  sources. Typical page sizes: Commons 32, Unsplash 24, NASA 18, and up to 36
+  filtered SerpApi results. New results append below current images without
+  resetting scroll position, changing Review selection or duplicating tiles.
+- Native paging: Wikimedia generator search `gsroffset`, NASA `page` and
+  `total_hits`, Unsplash `page` and `total_pages`, Google Images via
+  SerpApi's zero-indexed `ijn`. Requests validate pages 1–100.
+- The original search query, provider list, and session-only API credentials
+  are reused across pages. A new search/category/topic clears discovery
+  results and pagination state, but not Review selection. On a provider error
+  the current results stay visible and that source is skipped until refresh.
+
+Test on Windows:
+1. Search Places & Cities with Commons + Unsplash. Start with ~56 and click
+   Load more. Confirm new photos appear at the bottom and previous ones stay.
+2. Click again; confirm a different provider's next page loads. Repeated
+   clicks should not repeat first-page images or clear the Review tray.
+3. Switch category, topic, and refresh; pagination restarts. Review selection
+   stays intact.
+4. Verify NASA and SerpApi also advance to their respective next pages.
+5. Test all sources exhausted, offline errors, and source key failures.

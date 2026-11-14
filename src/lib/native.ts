@@ -38,6 +38,8 @@ export interface CatalogImage {
 export interface CatalogResponse {
   items: CatalogImage[];
   note: string;
+  /** Source pagination. Absent for legacy non-paginated sources. */
+  hasMore?: boolean;
 }
 
 /**
@@ -77,10 +79,10 @@ export type CategoryProvider = "commons" | "nasa" | "unsplash";
  * Metadata is not a verified image download or license clearance.
  */
 export async function browseCategoryImages(
-  provider: CategoryProvider, query: string, unsplashKey = "",
+  provider: CategoryProvider, query: string, unsplashKey = "", page = 1,
 ): Promise<CatalogResponse> {
   if (!isTauri()) throw new Error("Category browsing needs Haven Walls for Windows.");
-  return invoke<CatalogResponse>("browse_category_images", { provider, query, unsplashKey });
+  return invoke<CatalogResponse>("browse_category_images", { provider, query, unsplashKey, page });
 }
 
 /** Real Google Images results are supplied through a user-owned SerpApi key.
@@ -92,6 +94,7 @@ export async function browseGoogleImages(
   serpapiKey: string,
   minWidth: number,
   minHeight: number,
+  page = 1,
 ): Promise<CatalogResponse> {
   if (!isTauri()) {
     throw new Error("Google Images browsing requires the Haven Walls Windows application.");
@@ -101,6 +104,7 @@ export async function browseGoogleImages(
     serpapiKey,
     minWidth,
     minHeight,
+    page,
   });
 }
 
