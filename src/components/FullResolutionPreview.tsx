@@ -1,7 +1,11 @@
-import { useEffect, useState, type SyntheticEvent } from "react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import type { CatalogImage } from "../lib/native";
 import { inspectLoadedImage, type InspectedImageDraft } from "../lib/imageInspection";
-import { resolveBestAvailableImage, type ResolvedImage } from "../lib/imageResolution";
+import {
+  inspectBestOriginal, resolveBestAvailableImage,
+  type ResolvedImage, type VerifiedSourceImage,
+} from "../lib/imageResolution";
+import { qualityTier } from "../lib/imageQuality";
 
 interface Props {
   image: CatalogImage;
@@ -25,6 +29,10 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
   const [fallback, setFallback] = useState(false);
   const [failed, setFailed] = useState(false);
   const [inspection, setInspection] = useState<InspectedImageDraft | null>(null);
+  const [verifiedOriginal, setVerifiedOriginal] = useState<VerifiedSourceImage | null>(null);
+  const verifiedRef = useRef<VerifiedSourceImage | null>(null);
+  const [checkingOriginal, setCheckingOriginal] = useState(false);
+  const [sourceError, setSourceError] = useState("");
   const [copied, setCopied] = useState<"image" | "source" | null>(null);
 
   useEffect(() => {
@@ -35,10 +43,12 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
     setFallback(false);
     setFailed(false);
     setInspection(null);
+    verifiedRef.current = null;
     void resolveBestAvailableImage(image, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       setResolved(result);
       setResolving(false);
+      if (verifiedRef.current) return;
       if (result) {
         setFallback(result.isThumbnailFallback);
         setSrc(result.url);
@@ -50,6 +60,32 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
       }
     });
     return () => controller.abort();
+  }, [image]);
+
+  // Native source inspection is independent of the WebView2 thumbnail.
+  // A 4K original can be verified even while the displayed preview is smaller.
+  useEffect(() => {
+    let active = true;
+    setVerifiedOriginal(null);
+    setSourceError("");
+    setCheckingOriginal(true);
+    void inspectBestOriginal(image).then((result) => {
+      if (!active) return;
+      setVerifiedOriginal(result);
+      if (result) {
+        verifiedRef.current = result;
+        setSrc(result.previewDataUrl);
+        setResolving(false);
+        setFallback(false);
+        setFailed(false);
+      }
+    }).catch((problem: unknown) => {
+      if (!active) return;
+      setSourceError(problem instanceof Error ? problem.message : String(problem));
+    }).finally(() => {
+      if (active) setCheckingOriginal(false);
+    });
+    return () => { active = false; };
   }, [image]);
 
   useEffect(() => {
@@ -90,7 +126,9 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
     }
   }
 
-  const canCopyImage = Boolean(src && isRemote(src));
+  const originalImageUrl = verifiedOriginal?.originalUrl ||
+    (src && isRemote(src) ? src : null);
+  const canCopyImage = Boolean(originalImageUrl);
   return (
     <div className="online-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
@@ -127,37 +165,53 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
             <p>{image.source}{image.credit ? " · " + image.credit : ""}</p>
 
             <div className="online-hires-validation" role="status" aria-live="polite">
-              {failed ? "Original and fallback preview are unavailable."
-                : resolving ? "Checking available image URLs for the largest version…"
-                : !inspection ? "Loading image and checking actual pixel dimensions…"
-                  : (
-                    <>
-                      <strong>Loaded image: {inspection.actualWidth} × {inspection.actualHeight}</strong>
-                      <span>
-                        {inspection.meets4K ? " · 4K+"
-                          : inspection.meets1080p ? " · 1080p+"
-                            : " · Below 1080p"}
-                        {inspection.landscape ? " · Landscape" : " · Not standard landscape"}
-                        {fallback ? " · Thumbnail fallback only" : ""}
-                      </span>
-                      {image.width > 0 && image.height > 0 && (
-                        <small>
-                          Search provider reported {image.width} × {image.height}.
-                          {image.width !== inspection.actualWidth ||
-                          image.height !== inspection.actualHeight
-                            ? " The loaded file has different dimensions." : ""}
-                        </small>
-                      )}
-                    </>
+              {verifiedOriginal ? (
+                <>
+                  <strong>Verified downloaded source: {verifiedOriginal.width} × {verifiedOriginal.height}
+                    {" · "}{qualityTier(verifiedOriginal.width, verifiedOriginal.height)}</strong>
+                  <small>
+                    Display preview: {verifiedOriginal.previewWidth} × {verifiedOriginal.previewHeight}.
+                    The preview can be smaller than the verified original. Checked {verifiedOriginal.tried}
+                    {" "}{verifiedOriginal.tried === 1 ? "source candidate" : "source candidates"}.
+                  </small>
+                </>
+              ) : (
+                <>
+                  {failed ? "Image preview could not be loaded."
+                    : resolving ? "Checking displayed image dimensions…"
+                    : !inspection ? "Loading image preview…"
+                    : (
+                      <>
+                        <strong>Loaded preview: {inspection.actualWidth} × {inspection.actualHeight}
+                          {" · "}{qualityTier(inspection.actualWidth, inspection.actualHeight)}</strong>
+                        <span>{inspection.landscape ? " · Landscape" : " · Not standard landscape"}
+                          {fallback ? " · Thumbnail fallback" : ""}
+                        </span>
+                      </>
+                    )}
+                  {image.width > 0 && image.height > 0 && (
+                    <small>Search provider listed {image.width} × {image.height};
+                      that does not establish the original image's pixels.</small>
                   )}
+                  {checkingOriginal && (
+                    <small>Still checking the source for an accessible higher-resolution original…</small>
+                  )}
+                </>
+              )}
             </div>
-
-            {resolved && (
+            {!verifiedOriginal && !checkingOriginal && (
+              <p className="online-hires-warning">
+                {sourceError
+                  ? "Could not verify a larger original from this link. The source website may block automated requests or the link may be a thumbnail."
+                  : "Only the preview's displayed pixels are verified. A 4K/8K search-result title does not prove the original image is 4K."}
+              </p>
+            )}
+            {resolved && !verifiedOriginal && (
               <p className={resolved.isThumbnailFallback ? "online-hires-warning" : ""}>
                 {resolved.note}
               </p>
             )}
-            {fallback && !resolved && (
+            {fallback && !resolved && !verifiedOriginal && (
               <p className="online-hires-warning">
                 We could not find a usable higher-resolution image at this address.
                 The fallback preview may be small, even if the Google search was for 4K.
@@ -174,17 +228,21 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary }
               <button type="button" className="online-primary"
                 onClick={() => onAddToLibrary({
                   ...image,
-                  originalUrl: src.startsWith("https://") || src.startsWith("blob:")
-                    ? src : image.originalUrl,
-                  candidateUrls: [...new Set([...(image.candidateUrls || []),
-                    image.originalUrl || "", image.previewUrl].filter(Boolean))],
+                  originalUrl: verifiedOriginal?.originalUrl ||
+                    (src.startsWith("https://") || src.startsWith("blob:")
+                      ? src : image.originalUrl),
+                  candidateUrls: [...new Set([
+                    verifiedOriginal?.originalUrl || "",
+                    ...(image.candidateUrls || []),
+                    image.originalUrl || "", image.previewUrl,
+                  ].filter(Boolean))],
                 })}>
                 Add to Library
               </button>
             )}
             {canCopyImage && (
               <button className="online-secondary" type="button"
-                onClick={() => { if (src) void copyUrl("image", src); }}>
+                onClick={() => { if (originalImageUrl) void copyUrl("image", originalImageUrl); }}>
                 {copied === "image" ? "Image URL copied" : "Copy image URL"}
               </button>
             )}

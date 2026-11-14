@@ -6,6 +6,7 @@ import {
   type WallpaperFit, type MinimumResolution,
 } from "../lib/configuration";
 import "./SettingsPage.css";
+import ConfirmDialog from "./ConfirmDialog";
 
 const WALLPAPER_FITS: { value: WallpaperFit; label: string }[] = [
   { value: "smartFit", label: "Smart Fit (recommended)" },
@@ -29,6 +30,7 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [pendingAction, setPendingAction] = useState<"move" | "cache" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,14 +78,6 @@ export default function SettingsPage() {
 
   async function moveStorage() {
     if (!snapshot || busy || changed || storageChoice === snapshot.storage.mode) return;
-    const destination = storageChoice === "portable"
-      ? "the HavenWallsData folder alongside the EXE"
-      : "Windows AppData";
-    if (!window.confirm(
-      "Move Haven Walls data to " + destination + "?\n\n" +
-      "This copies the database and managed files without deleting the old location. " +
-      "Existing data at the destination will not be overwritten."
-    )) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -109,10 +103,6 @@ export default function SettingsPage() {
       setNotice("Temporary discovery cache is already empty.");
       return;
     }
-    if (!window.confirm(
-      "Clear " + formattedBytes(count) + " of disposable discovery images?\n\n" +
-      "Managed wallpapers, current wallpaper copies, pending approval, and offline reserve stay untouched."
-    )) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -235,7 +225,7 @@ export default function SettingsPage() {
           <div className="hws-settings-field">
             <strong>Disposable discovery cache</strong>
             <button type="button" className="hws-settings-secondary" disabled={busy}
-              onClick={() => void clearCache()}>Clear temporary cache</button>
+              onClick={() => setPendingAction("cache")}>Clear temporary cache</button>
             <small>Does not touch managed, favorites, active or offline-reserve image files.</small>
           </div>
         </div>
@@ -251,7 +241,7 @@ export default function SettingsPage() {
               onChange={() => setStorageChoice("portable")}/> Portable folder beside EXE</label>
             <button type="button" className="hws-settings-secondary"
               disabled={busy || changed || storageChoice === snapshot.storage.mode}
-              onClick={() => void moveStorage()}>
+              onClick={() => setPendingAction("move")}>
               Move storage
             </button>
           </div>
@@ -367,6 +357,34 @@ export default function SettingsPage() {
           {busy ? "Working…" : "Save settings"}
         </button>
       </div>
+      {pendingAction === "move" && (
+        <ConfirmDialog tone="warning"
+          title="Move Haven Walls storage?"
+          description={"Copy the Library and database to " +
+            (storageChoice === "portable" ? "the portable folder beside the EXE" : "Windows AppData") + "?"}
+          note="The current storage location is kept as a recovery copy. Existing destination files are never overwritten."
+          confirmLabel="Move storage"
+          busy={busy}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            setPendingAction(null);
+            void moveStorage();
+          }} />
+      )}
+      {pendingAction === "cache" && (
+        <ConfirmDialog tone="warning"
+          title="Clear temporary image cache?"
+          description={"Delete " + formattedBytes(snapshot.storage.discoveryBytes) +
+            " of disposable discovery previews?"}
+          note="Your saved Library wallpapers, active desktop copies and offline reserve are protected."
+          confirmLabel="Clear temporary cache"
+          busy={busy}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            setPendingAction(null);
+            void clearCache();
+          }} />
+      )}
     </section>
   );
 }

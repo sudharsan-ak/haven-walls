@@ -1,4 +1,5 @@
 import type { CatalogImage } from "./native";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 const GOOGLE_IMAGE_QUERY_PARAMS = ["imgurl", "mediaurl", "image_url"];
 const GOOGLE_LINK_QUERY_PARAMS = ["url", "q"];
@@ -214,6 +215,33 @@ export function imageCandidates(image: CatalogImage): string[] {
   return candidates;
 }
 
+export interface VerifiedSourceImage {
+  originalUrl: string;
+  width: number;
+  height: number;
+  previewDataUrl: string;
+  previewWidth: number;
+  previewHeight: number;
+  tried: number;
+}
+
+/** The native inspector verifies actual source pixels, independently of the
+ * smaller thumbnail used by WebView2. It does not save anything to Library.
+ * It may not be able to fetch originals protected by source-site restrictions.
+ */
+export async function inspectBestOriginal(
+  image: CatalogImage,
+): Promise<VerifiedSourceImage | null> {
+  if (!isTauri() || (image.originalUrl || "").startsWith("blob:")) return null;
+  const candidateUrls = imageCandidates(image)
+    .filter((url) => url.startsWith("https://"));
+  if (candidateUrls.length === 0) return null;
+  return invoke<VerifiedSourceImage>("inspect_best_wallpaper_urls", {
+    candidateUrls,
+    sourcePage: validRemoteUrl(image.pageUrl) || "",
+  });
+}
+
 export interface ResolvedImage {
   url: string;
   width: number;
@@ -305,6 +333,6 @@ export async function resolveBestAvailableImage(
     ? "An available image was verified at 4K or higher."
     : isThumbnailFallback
       ? "Only a cached/preview image is available from this link. Open the full-size image on the source site for a better URL."
-      : "This is the largest available image we could load from the provided link. It has not been verified as 4K.";
+      : "The best accessible preview from this link is below 4K. The original website may offer a larger download.";
   return { ...best, isThumbnailFallback, note };
 }

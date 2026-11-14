@@ -11,6 +11,7 @@ import {
   getWallpaperActivity, type WallpaperActivity,
 } from "../lib/windowsWallpaper";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
+import ConfirmDialog from "./ConfirmDialog";
 import "./LibraryPage.css";
 
 type Filter = "all" | "favorites" | "4k" | "portrait";
@@ -27,6 +28,8 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [pendingRemoval, setPendingRemoval] = useState<LibraryWallpaper | null>(null);
+  const [removalError, setRemovalError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
@@ -146,11 +149,6 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
 
   async function remove(image: LibraryWallpaper) {
     if (busyId) return;
-    if (!window.confirm(
-      "Remove “" + image.title + "” from your managed Haven Walls Library?\n\n" +
-      "This deletes the managed copy and thumbnail. The original file outside Haven Walls " +
-      "will not be changed. This cannot be undone."
-    )) return;
     setBusyId(image.id);
     setError("");
     try {
@@ -159,8 +157,11 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
       setSelected((current) => current?.id === image.id ? null : current);
       setOpenedOriginal("");
       setNotice("Removed wallpaper from the managed Library.");
+      setPendingRemoval(null);
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : String(problem));
+      const message = problem instanceof Error ? problem.message : String(problem);
+      setError(message);
+      setRemovalError(message);
     } finally { setBusyId(""); }
   }
 
@@ -438,7 +439,10 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
               </button>
               <button type="button" className="hwl-secondary hwl-danger"
                 disabled={Boolean(busyId)}
-                onClick={() => void remove(selected)}>Remove from Library</button>
+                onClick={() => {
+                  setRemovalError("");
+                  setPendingRemoval(selected);
+                }}>Remove from Library</button>
               <button type="button" className="hwl-primary"
                 disabled={Boolean(busyId)}
                 onClick={() => setApplyItem(selected)}>
@@ -453,6 +457,16 @@ export default function LibraryPage({ revision, onDiscover, onSaveToLibrary }: P
           imageDataUrl={selected?.id === applyItem.id ? openedOriginal : undefined}
           onClose={() => setApplyItem(null)}
           onApplied={() => void afterApply()} />
+      )}
+      {pendingRemoval && (
+        <ConfirmDialog tone="danger"
+          title="Remove wallpaper from Library?"
+          description={pendingRemoval.title}
+          note={removalError || "The managed image and thumbnail will be removed from Haven Walls. The original outside the app stays untouched. This cannot be undone."}
+          confirmLabel="Remove wallpaper"
+          busy={Boolean(busyId)}
+          onCancel={() => setPendingRemoval(null)}
+          onConfirm={() => void remove(pendingRemoval)} />
       )}
     </section>
   );

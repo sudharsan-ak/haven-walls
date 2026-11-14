@@ -2,6 +2,7 @@
 //! Only explicitly selected image URLs and a bounded set of image metadata URLs
 //! from the recorded original page are considered. Never scrape Google search.
 use super::*;
+use base64::Engine as _;
 use std::time::{Duration, Instant};
 
 const MAX_CANDIDATES: usize = 12;
@@ -241,13 +242,11 @@ fn related_picture(candidate: &Probe, reference: &Probe) -> bool {
         (candidate.fingerprint ^ reference.fingerprint).count_ones() <= 17
 }
 
-#[tauri::command]
-pub async fn import_best_wallpaper_urls(
-    app: AppHandle,
+/// Resolve an explicitly selected image without writing any Library file.
+async fn find_best_source(
     candidate_urls: Vec<String>,
-    mut metadata: ImportMetadata,
-) -> Result<ImportOutcome, String> {
-    metadata.clean()?;
+    source_page: String,
+) -> Result<(Probe, usize), String> {
     if candidate_urls.is_empty() || candidate_urls.len() > MAX_CANDIDATES {
         return Err("Select 1–12 candidate URLs for this image.".into());
     }
@@ -259,7 +258,7 @@ pub async fn import_best_wallpaper_urls(
     }
     // The original source page is inspected only for standard public metadata
     // supplied with this specific user-selected image. Never scrape Google.
-    let page = metadata.source_page.trim().to_string();
+    let page = source_page.trim().to_string();
     let mut site_candidates = Vec::new();
     if !page.is_empty() && !is_google_search_page(&page) &&
         secure_url(&page).is_ok() {
@@ -315,6 +314,17 @@ pub async fn import_best_wallpaper_urls(
              Open the source website and copy its full-size image URL to import manually."
         ));
     };
+    Ok((best, tried))
+}
+
+#[tauri::command]
+pub async fn import_best_wallpaper_urls(
+    app: AppHandle,
+    candidate_urls: Vec<String>,
+    mut metadata: ImportMetadata,
+) -> Result<ImportOutcome, String> {
+    metadata.clean()?;
+    let (best, tried) = find_best_source(candidate_urls, metadata.source_page.clone()).await?;
     let (w,h) = (best.width, best.height);
     metadata.original_url = best.url;
     // The existing importer applies user settings and writes only this
@@ -332,4 +342,53 @@ pub async fn import_best_wallpaper_urls(
         result.note, tried, w, h,
     );
     Ok(result)
+}
+
+
+/// The native inspector verifies the original source and returns a bounded
+/// preview. The image shown in the UI can be 1600px wide while its verified
+/// *downloaded source* remains 4K or 8K. Do not conflate those dimensions.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectedOriginal {
+    pub original_url: String,
+    pub width: u32,
+    pub height: u32,
+    pub preview_data_url: String,
+    pub preview_width: u32,
+    pub preview_height: u32,
+    pub tried: usize,
+}
+
+#[tauri::command]
+pub async fn inspect_best_wallpaper_urls(
+    candidate_urls: Vec<String>,
+    source_page: String,
+) -> Result<InspectedOriginal, String> {
+    if source_page.len() > 4096 {
+        return Err("Image source page address is too long.".into());
+    }
+    let (best, tried) = find_best_source(candidate_urls, source_page).await?;
+    let original_url = best.url;
+    let (width, height) = (best.width, best.height);
+    let (preview_data_url, preview_width, preview_height) =
+        tauri::async_runtime::spawn_blocking(move || {
+            let decoded = image::load_from_memory(&best.bytes)
+                .map_err(|e| format!("Could not decode original for preview: {e}"))?;
+            let preview = decoded.thumbnail(1600, 1000);
+            let preview_width = preview.width();
+            let preview_height = preview.height();
+            let mut jpeg = Vec::new();
+            preview.write_with_encoder(
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 87)
+            ).map_err(|e| format!("Could not prepare original preview: {e}"))?;
+            Ok::<(String, u32, u32), String>((
+                format!("data:image/jpeg;base64,{}", BASE64.encode(&jpeg)),
+                preview_width, preview_height
+            ))
+        }).await.map_err(|_| "Original image preview task was interrupted.".to_string())??;
+    Ok(InspectedOriginal {
+        original_url, width, height, preview_data_url,
+        preview_width, preview_height, tried,
+    })
 }

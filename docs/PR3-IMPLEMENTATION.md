@@ -182,3 +182,26 @@ The earlier online importer saved the first successfully downloaded image candid
 6. Verify Favorites, Quick Save, source-link actions, active wallpaper protection and existing Gallery sources.
 
 This change uses the existing Rust dependencies and does not modify Cargo.lock. No assistant builds, tests, CI or merges were run; Windows validation is required.
+
+## PR #3 UI cleanup: in-app confirmations and verified source display
+
+This follow-up addresses two issues seen in Windows screenshots:
+
+- Default JavaScript confirm popups displayed as tauri.localhost says. Library removal, storage movement, discovery cache clearing, league removal, and restoring league defaults now use a reusable in-app confirmation modal. Cancel never mutates data.
+- Google search titles can say "4K" or "8K" even though the selected Google preview only loads at 800 × 450. Titles are not original-file pixel verification.
+- Image inspection now verifies original source pixels using the native Rust resolver, without writing an image to the Library. A larger accessible original is reported using its actual decoded pixels, separately from the smaller preview dimensions rendered in the dialog.
+- The native inspector creates a bounded 1600 × 1000 preview for UI display, without relabeling its dimensions as the original. Add to Library and Copy Image URL prefer the verified original URL if accessible.
+- If the full-size original is inaccessible or missing from the supplied URL/source metadata, the UI reports that only preview pixels were verified. Some sites require a separate direct download URL. Haven Walls never infers actual image resolution from the Google title.
+- No new Rust crates, no automatic discovery, and no modification to Cargo.lock.
+
+### Windows acceptance checks for UI cleanup
+
+1. Library: click Remove from Library. A Haven Walls modal with Cancel and Remove wallpaper should appear, not a tauri.localhost says popup. Cancel leaves the item; confirm removes only a managed copy. Active wallpapers remain protected.
+2. Settings: confirm clearing a nonempty temporary cache and moving storage both show the styled modal. Cancel preserves the current state.
+3. Sports league sources: remove a custom league or reset defaults. The same confirmation UI appears and Cancel changes nothing.
+4. Google Images Browser Search: inspect a result titled 4K/8K whose image preview is small. Before source checking finishes, its loaded preview should show 800 × 450 or whatever was actually loaded.
+5. Where a publicly accessible original is found, the app reports Verified downloaded source with the original decoded dimensions and a separate rendered-preview size. Add to Library uses its original URL.
+6. If the original cannot be accessed or is offered only via a separate source-site download, the app must not claim the image is 4K. The user can visit the source site to obtain an authorized full-size file.
+7. Verify Gallery, Quick Save, favorites, library removal protection, manual Set Now, wallpaper fit, captions, and source links still work.
+
+Only the user builds and tests on Windows. No assistant CI, builds or merges.
