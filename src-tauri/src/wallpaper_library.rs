@@ -595,14 +595,14 @@ pub fn remove_library_wallpaper(
             let _ = fs::rename(&staged, &data_path);
             format!("Could not start wallpaper deletion: {e}")
         })?;
-    let deleted = transaction.execute("DELETE FROM wallpapers WHERE id=?1", params![id])
-        .map_err(|e| format!("Could not remove wallpaper metadata: {e}"));
-    let committed = deleted.and_then(|affected| {
-        if affected == 0 {
-            return Err(rusqlite::Error::QueryReturnedNoRows);
-        }
-        transaction.commit()
-    });
+    let committed = transaction
+        .execute("DELETE FROM wallpapers WHERE id=?1", params![id])
+        .and_then(|affected| {
+            if affected == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+            transaction.commit()
+        });
     if let Err(error) = committed {
         let _ = fs::rename(&staged, &data_path);
         return Err(format!("Could not finish wallpaper deletion: {error}"));
