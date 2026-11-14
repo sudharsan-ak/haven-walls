@@ -1,11 +1,12 @@
 //! Google Images discovery through SerpApi's documented Google Images API.
 //! Explicit user search only. We use metadata to filter candidates and never
 //! fetch or cache original files in the Rust backend.
-use crate::sources::{CatalogImage, CatalogResponse};
+use crate::{api_credentials, sources::{CatalogImage, CatalogResponse}};
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::time::Duration;
+use tauri::AppHandle;
 
 const API: &str = "https://serpapi.com/search.json";
 const MAX_BYTES: usize = 4_000_000;
@@ -137,8 +138,8 @@ fn parse_images(data: &Value, min_width: u32, min_height: u32) -> Result<Catalog
 
 #[tauri::command]
 pub async fn browse_google_images(
+    app: AppHandle,
     query: String,
-    serpapi_key: String,
     min_width: u32,
     min_height: u32,
     page: Option<u32>,
@@ -152,10 +153,8 @@ pub async fn browse_google_images(
         return Err("Only pages 1 through 100 are supported.".into());
     }
     let image_index = (page - 1).to_string();
-    let key = serpapi_key.trim();
-    if key.is_empty() {
-        return Err("Enter your SerpApi API key to search Google Images inside Haven Walls.".into());
-    }
+    let saved_key = api_credentials::required(&app, "serpapi")?;
+    let key = saved_key.trim();
     if !matches!(
         (min_width, min_height),
         (1920, 1080) | (2560, 1440) | (3840, 2160)
@@ -169,8 +168,8 @@ pub async fn browse_google_images(
         .build()
         .map_err(|_| "Couldn't initialize Google Images search.".to_string())?;
 
-    // This credential is passed over HTTPS directly from Rust to SerpApi,
-    // and is never written to Haven Walls' settings, logs, or disk.
+    // Retrieve a DPAPI-protected key from the local SQLite DB, then send it
+    // over HTTPS only to SerpApi. Never return the secret to the frontend.
     let response = client
         .get(API)
         .query(&[

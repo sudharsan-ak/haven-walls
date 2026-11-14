@@ -112,6 +112,12 @@ pub fn open_database(paths: &DataPaths) -> Result<Connection, String> {
            id INTEGER PRIMARY KEY CHECK (id = 1),
            json TEXT NOT NULL
          );
+         -- This table is created idempotently on startup; no rebuild, app
+         -- update, or re-run of this schema can overwrite stored ciphertext.
+         CREATE TABLE IF NOT EXISTS api_credentials (
+           provider TEXT PRIMARY KEY CHECK(provider IN ('serpapi','unsplash','tmdb')),
+           ciphertext BLOB NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS wallpapers (
            id TEXT PRIMARY KEY,
            title TEXT NOT NULL,

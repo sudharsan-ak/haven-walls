@@ -6,6 +6,7 @@ mod wallpaper_library;
 mod windows_wallpaper;
 mod google_images;
 mod category_discovery;
+mod api_credentials;
 mod google_browser;
 #[cfg(windows)]
 mod google_context_menu;
@@ -45,6 +46,9 @@ pub fn run() {
             sources::browse_tmdb_backdrops,
             google_images::browse_google_images,
             category_discovery::browse_category_images,
+            api_credentials::get_api_credential_status,
+            api_credentials::save_api_credential,
+            api_credentials::remove_api_credential,
             google_browser::open_google_images_inline,
             google_browser::open_google_lens_inline,
             google_browser::reverse_search_library_wallpaper_inline,

@@ -1,9 +1,10 @@
 //! PR #4: user-initiated, public catalog searches (no background downloads).
 //! Search metadata is never treated as verified image pixels or usage rights.
-use crate::sources::{CatalogImage, CatalogResponse};
+use crate::{api_credentials, sources::{CatalogImage, CatalogResponse}};
 use reqwest::{Client, Url};
 use serde_json::Value;
 use std::time::Duration;
+use tauri::AppHandle;
 
 const MAX_RESPONSE: usize = 3_500_000;
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -220,7 +221,7 @@ async fn unsplash(client: &Client, query: &str, api_key: &str, page: u32) -> Res
 /// This command is only called after a user selects a topic or presses Refresh.
 #[tauri::command]
 pub async fn browse_category_images(
-    provider: String, query: String, unsplash_key: String, page: Option<u32>,
+    app: AppHandle, provider: String, query: String, page: Option<u32>,
 ) -> Result<CatalogResponse, String> {
     let page = page.unwrap_or(1);
     if !(1..=100).contains(&page) {
@@ -234,7 +235,10 @@ pub async fn browse_category_images(
     match provider.as_str() {
         "commons" => commons(&client, query, page).await,
         "nasa" => nasa(&client, query, page).await,
-        "unsplash" => unsplash(&client, query, &unsplash_key, page).await,
+        "unsplash" => {
+            let key = api_credentials::required(&app, "unsplash")?;
+            unsplash(&client, query, &key, page).await
+        },
         _ => Err("Unsupported category source.".into()),
     }
 }
