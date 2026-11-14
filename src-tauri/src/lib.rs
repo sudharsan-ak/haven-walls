@@ -5,6 +5,7 @@ mod configuration;
 mod wallpaper_library;
 mod windows_wallpaper;
 mod google_images;
+mod category_discovery;
 mod google_browser;
 #[cfg(windows)]
 mod google_context_menu;
@@ -43,6 +44,7 @@ pub fn run() {
             sources::browse_wallpaper_source,
             sources::browse_tmdb_backdrops,
             google_images::browse_google_images,
+            category_discovery::browse_category_images,
             google_browser::open_google_images_inline,
             google_browser::open_google_lens_inline,
             google_browser::reverse_search_library_wallpaper_inline,
