@@ -23,8 +23,10 @@ export interface CatalogImage {
   originalUrl?: string | null;
   /** Alternative directly linked source URLs, tried when inspecting image quality. */
   candidateUrls?: string[];
-  /** The saved Library image this user-initiated higher-resolution lookup must match. */
+  /** Library reference for a candidate that can optionally upgrade an existing image. */
   upgradeFromId?: string;
+  /** A Lens result may be a different photo; default its import to a new wallpaper. */
+  reverseSearchMatch?: boolean;
   pageUrl: string;
   credit: string;
   rights: string;

@@ -359,7 +359,10 @@ export default function GoogleWorkspace({
       const browserPage = publisherLinkFromLens(event.payload.pageUrl);
       const page = resolved.sourcePage || fallbackPage || browserPage || "";
       const candidate = makeManualImage(directUrl, filename, false, directUrl, page);
-      if (lensUpgradeId.current) candidate.upgradeFromId = lensUpgradeId.current;
+      if (lensUpgradeId.current) {
+        candidate.upgradeFromId = lensUpgradeId.current;
+        candidate.reverseSearchMatch = true;
+      }
       if (!resolvedFromPublisher && resolved.original !== resolved.preview) {
         candidate.candidateUrls = [resolved.preview];
       }
@@ -461,7 +464,10 @@ export default function GoogleWorkspace({
     try { title = decodeURIComponent(segment); }
     catch { title = segment; }
     const image = makeManualImage(url, title.slice(0, 140), false);
-    if (lensUpgradeId.current) image.upgradeFromId = lensUpgradeId.current;
+    if (lensUpgradeId.current) {
+      image.upgradeFromId = lensUpgradeId.current;
+      image.reverseSearchMatch = true;
+    }
     addToQueue(image);
     setSelectionError("");
     setBrowserNote("Image link added. Inspect it to check the best available version and actual resolution.");

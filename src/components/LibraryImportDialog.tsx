@@ -35,6 +35,7 @@ export default function LibraryImportDialog({
   const autoStarted = useRef(false);
   const [allowSmaller, setAllowSmaller] = useState(false);
   const [allowSimilar, setAllowSimilar] = useState(false);
+  const [lensSaveMode, setLensSaveMode] = useState<"new" | "upgrade">("new");
   const [busy, setBusy] = useState(false);
   const [index, setIndex] = useState(0);
   const [logs, setLogs] = useState<ImportLog[]>([]);
@@ -57,6 +58,12 @@ export default function LibraryImportDialog({
     });
   }, [images]);
 
+  const hasLensChoices = distinct.some((item) =>
+    Boolean(item.reverseSearchMatch && item.upgradeFromId));
+  const applyingUpgrade = distinct.some((item) =>
+    Boolean(item.upgradeFromId &&
+      (!item.reverseSearchMatch || lensSaveMode === "upgrade")));
+
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busy) onClose();
@@ -65,8 +72,8 @@ export default function LibraryImportDialog({
     return () => window.removeEventListener("keydown", keyHandler);
   }, [busy, onClose]);
 
-  // A user click on Add to Library is the only action that opens this dialog.
-  // In Quick Save mode, start the import once as soon as the preference loads.
+  // Lens results might be unrelated pictures. Require an explicit choice
+  // even when Quick Save is enabled; never silently force a strict upgrade.
   useEffect(() => {
     let active = true;
     void getConfiguration().then((result) => {
@@ -82,16 +89,17 @@ export default function LibraryImportDialog({
   }, []);
 
   useEffect(() => {
-    if (quickMode !== true || manualRetry || autoStarted.current) return;
+    if (quickMode !== true || manualRetry || hasLensChoices || autoStarted.current) return;
     autoStarted.current = true;
     void save(true);
-  }, [quickMode]);
+  }, [quickMode, hasLensChoices, manualRetry]);
 
   async function save(withQuickSave: boolean) {
     if ((!withQuickSave && !confirmed) || busy || distinct.length === 0) return;
     setBusy(true);
     setComplete(false);
     setLogs([]);
+    setLastSaved(null);
     let imported = false;
     for (let i = 0; i < distinct.length; i++) {
       const image = distinct[i];
@@ -116,7 +124,11 @@ export default function LibraryImportDialog({
         rightsConfirmed: !withQuickSave && confirmed,
         allowBelowMinimum: allowSmaller,
         allowSimilar,
-        upgradeFrom: image.upgradeFromId || null,
+        // A reverse-search hit can be a different photo. Only enforce the
+        // saved original's fingerprint when the user selects Upgrade.
+        upgradeFrom: image.upgradeFromId &&
+          (!image.reverseSearchMatch || lensSaveMode === "upgrade")
+          ? image.upgradeFromId : null,
       };
       try {
         const blob = fileCandidate(image);
@@ -188,15 +200,43 @@ export default function LibraryImportDialog({
             {distinct.length > 7 && <span>+{distinct.length - 7}</span>}
           </div>
 
+          {hasLensChoices && !complete && (
+            <fieldset className="lidi-save-mode" disabled={busy}>
+              <legend>How should Haven Walls save these reverse-search results?</legend>
+              <label className={lensSaveMode === "new" ? "selected" : ""}>
+                <input type="radio" name="lens-save-mode" value="new"
+                  checked={lensSaveMode === "new"}
+                  onChange={() => setLensSaveMode("new")} />
+                <span><strong>Save as new wallpaper</strong>
+                  <small>Default. The image may be a different photograph. Apply normal
+                    resolution and duplicate checks, without comparing it to the original.</small>
+                </span>
+              </label>
+              <label className={lensSaveMode === "upgrade" ? "selected" : ""}>
+                <input type="radio" name="lens-save-mode" value="upgrade"
+                  checked={lensSaveMode === "upgrade"}
+                  onChange={() => setLensSaveMode("upgrade")} />
+                <span><strong>Upgrade original wallpaper</strong>
+                  <small>Only save if this is the same photograph at a genuinely
+                    higher resolution. Preserve the existing Library image.</small>
+                </span>
+              </label>
+              {distinct.length > 1 && (
+                <small className="lidi-mode-note">
+                  This choice applies to all reverse-search results in this batch.
+                </small>
+              )}
+            </fieldset>
+          )}
           {quickMode === null && (
             <p className="lidi-status" role="status">Loading your Library import preference…</p>
           )}
           {settingsError && <p className="lidi-error" role="alert">{settingsError}</p>}
           {quickMode === true && !manualRetry && (
             <p className="lidi-status" role="status">
-              Quick Save is enabled in Settings. Your selected images are being
-              saved without another confirmation. This does not verify or grant
-              image usage rights.
+              {hasLensChoices
+                ? "Quick Save is enabled, but reverse-search results require you to choose a save mode and click Save to Library. Image usage rights are not verified."
+                : "Quick Save is enabled in Settings. Your selected images are being saved without another confirmation. This does not verify or grant image usage rights."}
             </p>
           )}
 
@@ -252,7 +292,7 @@ export default function LibraryImportDialog({
                   <small>Still validates actual pixels and supported file format.</small>
                 </span>
               </label>
-              {!distinct.some((item) => item.upgradeFromId) && (
+              {!applyingUpgrade && (
                 <label className="lidi-check">
                   <input type="checkbox" checked={allowSimilar} disabled={busy}
                     onChange={(event) => setAllowSimilar(event.target.checked)}/>
@@ -280,7 +320,7 @@ export default function LibraryImportDialog({
           {complete && <p className="lidi-status" role="status">
             Finished processing {distinct.length} images. Check individual results above.
           </p>}
-          {complete && distinct.some((item) => item.upgradeFromId) &&
+          {complete && applyingUpgrade &&
             logs.some((entry) => entry.status === "error") && (
               <p className="lidi-status" role="status">
                 No suitable upgrade from these links? Return to the Library photo and try
@@ -314,7 +354,7 @@ export default function LibraryImportDialog({
                 Open Library
               </button>
             </>
-          ) : quickMode === null || (quickMode === true && !manualRetry) ? (
+          ) : quickMode === null || (quickMode === true && !manualRetry && !hasLensChoices) ? (
             <button type="button" className="online-primary" disabled>
               {busy ? "Saving automatically…" : "Preparing Quick Save…"}
             </button>

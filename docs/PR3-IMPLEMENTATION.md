@@ -513,3 +513,47 @@ Review selection, Save to Library and Set Now are unchanged.
    produces an actionable fallback, without a broken or unrelated import.
 5. Confirm normal Google Images right-click, copied-link fallback, Quick Save,
    upgrade similarity checks, and Set Now all still work.
+
+
+## Reverse search: save a new image versus upgrade the original
+
+**Observed on Windows:** The user reverse-searched a 1080p `Licensed to chill`
+image, picked a DIFFERENT Maldives photograph from Lens (5464 × 3640), and
+received a visual-match rejection. Previously every picked Lens result
+inherited `upgradeFromId` and was treated as a strict same-photo upgrade.
+
+- Google Lens review candidates now explicitly mark `reverseSearchMatch`
+  when they retain a possible original Library reference.
+- The Library import dialog offers **Save as new wallpaper** (default) and
+  **Upgrade original wallpaper** for Lens results. The former sends
+  `upgradeFrom: null`, so normal image-resolution, format, exact/near-duplicate,
+  rights and storage safeguards apply. A different photograph is no longer
+  compared against the starting wallpaper.
+- The latter sends the original `upgradeFromId` to Rust and preserves its
+  strict fingerprint, aspect-ratio and higher-resolution validation. Existing
+  images are never overwritten.
+- For direct `Find higher-quality version` imports from Library, there is no
+  Lens mode choice: strict upgrade validation remains the default.
+- **Quick Save cannot auto-start on reverse-search selections**. The user must
+  see and choose the mode and explicitly press Save. Other ordinary Quick Save
+  and direct Library upgrade flows remain unchanged.
+- A batch of reverse-search results uses one clearly labeled mode choice for
+  the batch. After importing, a success/duplicate/error log still distinguishes
+  actual Library saves from items merely added to Review.
+
+### Windows acceptance
+
+1. From Library, reverse-search `Licensed to chill`, choose a different
+   high-quality Maldives image in Lens, add to Review, then Save to Library.
+   Confirm **Save as new wallpaper** is preselected and that the image saves
+   if it passes ordinary checks; reopening Library shows a new card.
+2. Repeat with the exact same saved image, select **Upgrade original wallpaper**,
+   and verify only a genuinely larger visual match succeeds.
+3. Select an unrelated high-resolution image with Upgrade selected; it must
+   still be rejected without changing the existing Library image.
+4. With Quick Save enabled, verify the Lens mode choice stays visible and
+   requires a click on Save to Library, rather than importing immediately.
+5. From Library, use its direct **Find higher-quality version** flow. It must
+   still enforce same-photo upgrade rules automatically.
+6. Check standard Gallery saves, duplicate detection, protected active
+   Windows wallpaper files and Open Library after successful import.
