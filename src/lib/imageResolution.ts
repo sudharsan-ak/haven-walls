@@ -1,8 +1,9 @@
 import type { CatalogImage } from "./native";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 const GOOGLE_IMAGE_QUERY_PARAMS = ["imgurl", "mediaurl", "image_url"];
 const GOOGLE_LINK_QUERY_PARAMS = ["url", "q"];
-const MAX_IMAGE_CANDIDATES = 5;
+const MAX_IMAGE_CANDIDATES = 8;
 
 /** Only treat explicitly linked HTTPS images as remote image candidates. */
 export function validRemoteUrl(value: string | null | undefined): string | null {
@@ -74,6 +75,18 @@ function isLikelyDirectImage(raw: string): boolean {
 }
 
 /** Prefer source links rather than assuming a Google cached thumbnail can be upscaled. */
+function sourcePageFromGoogleLink(raw: string): string | null {
+  const url = validRemoteUrl(raw);
+  if (!url) return null;
+  const parsed = new URL(url);
+  if (!googleHost(parsed)) return null;
+  const page = ["imgrefurl", "imgref", "refurl", "url", "q"]
+    .map((name) => parsed.searchParams.get(name))
+    .map(validRemoteUrl)
+    .find((value) => Boolean(value && !googleHost(new URL(value))));
+  return page ?? null;
+}
+
 export function chooseOriginalFromLink(imageUrl: string, linkUrl?: string): {
   original: string;
   preview: string;
@@ -93,9 +106,53 @@ export function chooseOriginalFromLink(imageUrl: string, linkUrl?: string): {
     : linked && isLikelyDirectImage(linked) && !googleHost(new URL(linked))
       ? linked
       : preview;
-  const sourcePage = sourceLink && !isLikelyDirectImage(sourceLink) &&
-    !googleHost(new URL(sourceLink)) ? sourceLink : "";
+  const sourcePage = (linkUrl && sourcePageFromGoogleLink(linkUrl)) ||
+    sourcePageFromGoogleLink(imageUrl) ||
+    (sourceLink && !isLikelyDirectImage(sourceLink) &&
+    !googleHost(new URL(sourceLink)) ? sourceLink : "");
   return { original, preview, sourcePage };
+}
+
+/** Image URLs often contain resizing parameters or a WordPress thumbnail
+ * filename. Try the unresized form as a *candidate*, not as a guaranteed HQ.
+ * The native importer verifies actual pixels before saving anything.
+ */
+function removeKnownResize(urlString: string): string | null {
+  const valid = validRemoteUrl(urlString);
+  if (!valid || isGoogleCachedThumbnail(valid)) return null;
+  const url = new URL(valid);
+  let changed = false;
+  for (const key of ["w", "width", "h", "height", "resize", "crop", "fit", "size"]) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+  // WordPress thumbnails end with -WIDTHxHEIGHT before the extension.
+  if (/\/wp-content\/uploads\//i.test(url.pathname)) {
+    const resized = url.pathname.replace(/-\d{2,5}x\d{2,5}(?=\.(?:jpe?g|png|webp)$)/i, "");
+    if (resized !== url.pathname) {
+      url.pathname = resized;
+      changed = true;
+    }
+  }
+  return changed ? url.href : null;
+}
+
+/** A query that served a 700px thumbnail might accept a larger width, but
+ * many hosts reject it or ignore it. Never label it 4K without decoding.
+ */
+function requestLargeImage(urlString: string): string | null {
+  const valid = validRemoteUrl(urlString);
+  if (!valid || isGoogleCachedThumbnail(valid)) return null;
+  const url = new URL(valid);
+  const keys = ["w", "width", "h", "height"];
+  if (!keys.some((key) => url.searchParams.has(key))) return null;
+  if (url.searchParams.has("w")) url.searchParams.set("w", "3840");
+  if (url.searchParams.has("width")) url.searchParams.set("width", "3840");
+  if (url.searchParams.has("h")) url.searchParams.set("h", "2160");
+  if (url.searchParams.has("height")) url.searchParams.set("height", "2160");
+  return url.href;
 }
 
 /** Upgraded URLs are *candidates*, not proof of a real 4K file. A remote host
@@ -142,16 +199,47 @@ export function imageCandidates(image: CatalogImage): string[] {
   const original = image.originalUrl || image.previewUrl;
   if (original.startsWith("blob:")) return [original];
 
-  // Prefer the largest advertised source, but retain the actual input URL
-  // for hosts that reject the high-res variant.
+  // Try explicitly known large/original variants before cached or resized
+  // versions. The backend will inspect all accessible versions and choose.
   push(largerVersion(original));
+  push(removeKnownResize(original));
+  push(requestLargeImage(original));
   push(original);
   for (const alternate of image.candidateUrls || []) {
     push(largerVersion(alternate));
+    push(removeKnownResize(alternate));
+    push(requestLargeImage(alternate));
     push(alternate);
   }
   push(image.previewUrl);
   return candidates;
+}
+
+export interface VerifiedSourceImage {
+  originalUrl: string;
+  width: number;
+  height: number;
+  previewDataUrl: string;
+  previewWidth: number;
+  previewHeight: number;
+  tried: number;
+}
+
+/** The native inspector verifies actual source pixels, independently of the
+ * smaller thumbnail used by WebView2. It does not save anything to Library.
+ * It may not be able to fetch originals protected by source-site restrictions.
+ */
+export async function inspectBestOriginal(
+  image: CatalogImage,
+): Promise<VerifiedSourceImage | null> {
+  if (!isTauri() || (image.originalUrl || "").startsWith("blob:")) return null;
+  const candidateUrls = imageCandidates(image)
+    .filter((url) => url.startsWith("https://"));
+  if (candidateUrls.length === 0) return null;
+  return invoke<VerifiedSourceImage>("inspect_best_wallpaper_urls", {
+    candidateUrls,
+    sourcePage: validRemoteUrl(image.pageUrl) || "",
+  });
 }
 
 export interface ResolvedImage {
@@ -245,6 +333,6 @@ export async function resolveBestAvailableImage(
     ? "An available image was verified at 4K or higher."
     : isThumbnailFallback
       ? "Only a cached/preview image is available from this link. Open the full-size image on the source site for a better URL."
-      : "This is the largest available image we could load from the provided link. It has not been verified as 4K.";
+      : "The best accessible preview from this link is below 4K. The original website may offer a larger download.";
   return { ...best, isThumbnailFallback, note };
 }
