@@ -3,7 +3,6 @@ import {
   browseCategoryImages, browseGoogleImages, type CatalogImage, type CatalogResponse,
   type CatalogSourceId, type CategoryProvider,
 } from "../lib/native";
-import { openWallpaperSource } from "../lib/wallpaperLibrary";
 import FullResolutionPreview from "./FullResolutionPreview";
 import "./CategoryDiscovery.css";
 
@@ -105,13 +104,6 @@ export default function CategoryDiscovery({
       return list.some((entry) => imageKey(entry) === key) || list.length >= 30
         ? list : [...list, photo];
     });
-  }
-
-  async function openSource(photo: CatalogImage) {
-    try { await openWallpaperSource(photo.pageUrl); }
-    catch (reason) {
-      setErrors([reason instanceof Error ? reason.message : String(reason)]);
-    }
   }
 
   async function load(nextCategory: Category, nextTopic: string, selectedSource: SourceChoice = source,
