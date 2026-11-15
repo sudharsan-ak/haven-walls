@@ -105,3 +105,66 @@
  border-radius:6px;font-size:17px;width:22px;height:26px;cursor:pointer}
 .hw-browser-review-bottom .hw-browser-review-clear{background:transparent;color:#497d9e;
  border:1px solid #dbeaf4;cursor:pointer;padding:8px;font-size:10px;font-weight:650}
+
+
+/* Commit 3 refinement: real website left, resizable Found / Review right. */
+.hw-browser-body { min-width: 0; }
+.hw-browser-native-space { flex: 1 1 0; min-width: 110px; }
+.hw-browser-panel-resizer {
+  width: 8px; flex: 0 0 8px; cursor: col-resize;
+  position: relative; z-index: 1;
+  background: #edf4f9; border-left: 1px solid #dce7f1;
+  border-right: 1px solid #dce7f1; touch-action: none;
+}
+.hw-browser-panel-resizer:hover,
+.hw-browser-panel-resizer:focus-visible {
+  outline: none; background: #bddcf1;
+}
+.hw-browser-review {
+  flex: 0 0 auto; min-width: 300px; max-width: 65%;
+  width: 392px; border-left: 0; overflow: hidden;
+}
+.hw-browser-side-tabs {
+  flex: none; display: flex; border-bottom: 1px solid #e0eaf4;
+  padding: 7px 11px 0; gap: 7px; background: #f6faff;
+}
+.hw-browser-side-tabs button {
+  flex: 1; border: 0; border-bottom: 2px solid transparent;
+  padding: 10px 6px; background: transparent; color: #7d9ab2;
+  cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.hw-browser-side-tabs button.selected {
+  color: #2172ad; border-bottom-color: #2589cb;
+}
+.hw-browser-side-tabs span {
+  border-radius: 20px; background: #e1f0fb;
+  padding: 3px 7px; font-size: 10px;
+}
+.hw-browser-side-empty {
+  padding: 42px 22px; text-align: center; color: #8aa3b8;
+}
+.hw-browser-side-empty strong { display: block; font-size: 12px; color: #567c9b; }
+.hw-browser-side-empty p { line-height: 1.6; font-size: 11px; }
+.hw-browser-zoom {
+  display: flex; flex: none; align-items: center; gap: 1px;
+  height: 33px; border: 1px solid #dce8f3;
+  border-radius: 8px; padding: 1px 3px; background: #f5faff;
+}
+.hw-browser-zoom button {
+  background: transparent; border: 0; color: #397ba8;
+  border-radius: 5px; min-width: 24px; height: 26px;
+  cursor: pointer; font: inherit; font-size: 16px;
+}
+.hw-browser-zoom .hw-browser-zoom-value {
+  min-width: 43px; font-size: 11px; font-weight: 700;
+}
+.hw-browser-zoom button:disabled { opacity: .32; cursor: not-allowed; }
+.hw-browser-zoom button:hover:not(:disabled) { background: #dceefa; }
+/* Override the original compact-screen rule; keep Found available. */
+@media (max-width: 1120px) {
+  .hw-browser-review { flex: 0 0 auto; }
+}
+@media (max-width: 930px) {
+  .hw-browser-review { display: flex; }
+}

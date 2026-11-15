@@ -13,6 +13,8 @@ use tauri::{
 const PREFIX: &str = "hw-browser-tab-";
 const EVENT: &str = "haven-browser-navigation";
 const POPUP_EVENT: &str = "haven-browser-popup";
+#[cfg(windows)]
+const ZOOM_EVENT: &str = "haven-browser-zoom";
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +75,14 @@ struct TabEvent {
 struct PopupEvent {
     opener_id: String,
     url: String,
+}
+
+#[cfg(windows)]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZoomEvent {
+    tab_id: String,
+    percent: u16,
 }
 
 #[derive(Serialize)]
@@ -206,6 +216,7 @@ pub async fn browser_open_tab(
     std::fs::create_dir_all(&profile)
         .map_err(|_| "Could not prepare browser cookie/profile storage.".to_string())?;
     let builder = WebviewBuilder::new(&name, WebviewUrl::External(parsed))
+        .zoom_hotkeys_enabled(true)
         .data_directory(profile)
         .on_navigation(allowed_navigation)
         .on_page_load(move |_view, event| {
@@ -272,6 +283,43 @@ pub async fn browser_open_tab(
               );
           });
     }
+    #[cfg(windows)]
+    {
+        // WebView2 zoom hotkeys (Ctrl+/-, Ctrl+0) happen in the child HWND.
+        // React cannot listen to keydown in that separate process. Keep the
+        // toolbar's per-tab percentage synchronized through the native event.
+        let zoom_app = app.clone();
+        let zoom_id = tab_id.clone();
+        let zoom_error_app = app.clone();
+        child.with_webview(move |platform| {
+            use webview2_com::ZoomFactorChangedEventHandler;
+            let controller = platform.controller();
+            let handler = ZoomFactorChangedEventHandler::create(Box::new(move |sender, _| {
+                if let Some(sender) = sender {
+                    let mut factor = 1.0f64;
+                    unsafe { sender.ZoomFactor(&mut factor)?; }
+                    if factor.is_finite() {
+                        let percent = (factor * 100.0).round().clamp(50.0, 200.0) as u16;
+                        let _ = zoom_app.emit_to(
+                            "main", ZOOM_EVENT,
+                            ZoomEvent { tab_id: zoom_id.clone(), percent },
+                        );
+                    }
+                }
+                Ok(())
+            }));
+            let mut token = 0i64;
+            if let Err(problem) = unsafe { controller.add_ZoomFactorChanged(&handler, &mut token) } {
+                let _ = zoom_error_app.emit_to(
+                    "main", crate::browser_image_capture::CONTEXT_MENU_ERROR_EVENT,
+                    format!("Website zoom synchronization is unavailable: {problem}"),
+                );
+            }
+        }).unwrap_or_else(|_| {
+            let _ = app.emit_to("main", crate::browser_image_capture::CONTEXT_MENU_ERROR_EVENT,
+                "Browser zoom hotkey synchronization is unavailable.");
+        });
+    }
     show_selected(&app, &name, bounds)
 }
 
@@ -285,6 +333,20 @@ pub fn browser_show_tab(
         (None, None) => hide_all(&app),
         _ => Err("A browser tab and its bounds must be provided together.".into()),
     }
+}
+
+/// Zoom only the requested internal website tab, not the app shell.
+#[tauri::command]
+pub fn browser_set_zoom(
+    app: AppHandle, tab_id: String, percent: u16,
+) -> Result<(), String> {
+    if !(50..=200).contains(&percent) {
+        return Err("Website zoom must be between 50% and 200%.".into());
+    }
+    let view = app.get_webview(&label(&tab_id)?)
+        .ok_or_else(|| "Browser tab is unavailable for zoom.".to_string())?;
+    view.set_zoom(f64::from(percent) / 100.0)
+        .map_err(|_| "Could not change website zoom.".to_string())
 }
 
 #[tauri::command]

@@ -71,6 +71,7 @@ pub fn run() {
             internal_browser::browser_open_tab,
             internal_browser::browser_show_tab,
             internal_browser::browser_navigate_tab,
+            internal_browser::browser_set_zoom,
             internal_browser::browser_tab_action,
             internal_browser::browser_tab_state,
             internal_browser::browser_close_tab,

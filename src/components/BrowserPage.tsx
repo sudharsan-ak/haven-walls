@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   BROWSER_HOME, BROWSER_MAX_TABS, browserAddress, browserCloseTab,
   browserNavigateTab, browserOpenTab, browserShowTab, browserTabAction,
-  browserTabState, browserLoadData, browserSaveSession, browserScanImages,
+  browserTabState, browserLoadData, browserSaveSession, browserScanImages, browserSetZoom,
   type BrowserBounds, type BrowserNavigationEvent,
   type BrowserPopupEvent, type BrowserTabState, type BrowserAction,
   type BrowserBookmark, type BrowserVisit,
   type BrowserImagePicked, type BrowserScannedImage, type BrowserScanResponse, type BrowserScanError,
+  type BrowserZoomEvent,
 } from "../lib/browserNative";
 import "./BrowserPage.css";
 import BrowserDataPanel from "./BrowserDataPanel";
@@ -24,11 +25,12 @@ interface Tab {
   loading: boolean;
   back: boolean;
   forward: boolean;
+  zoom: number;
 }
 const createId = () => "t-" + Math.random().toString(36).slice(2, 11);
 const defaultTab = (): Tab => ({
   id: createId(), url: BROWSER_HOME, title: "Google",
-  loading: false, back: false, forward: false,
+  loading: false, back: false, forward: false, zoom: 100,
 });
 function describeUrl(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, "") || "New tab"; }
@@ -47,13 +49,20 @@ export default function BrowserPage({ active }: { active: boolean }) {
   const [ready, setReady] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
   const [history, setHistory] = useState<BrowserVisit[]>([]);
-  const [panel, setPanel] = useState<"bookmarks" | "history" | "save" | "images" | null>(null);
+  const [panel, setPanel] = useState<"bookmarks" | "history" | "save" | null>(null);
+  const [sideTab, setSideTab] = useState<"found" | "review">("review");
+  const [sideWidth, setSideWidth] = useState(392);
   const [scanBusy, setScanBusy] = useState(false);
-  const [scanData, setScanData] = useState<BrowserScanResponse | null>(null);
+  // Image candidates belong to the page in the particular tab that was scanned.
+  // They are not persisted, and are never automatically reused for a new URL.
+  const [scansByTab, setScansByTab] = useState<Record<string, BrowserScanResponse>>({});
   const [review, setReview] = useState<CatalogImage[]>([]);
   const [inspect, setInspect] = useState<CatalogImage | null>(null);
   const [captureNote, setCaptureNote] = useState("");
   const slotRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ pointerId: number; x: number; width: number } | null>(null);
+  const appliedZoomRef = useRef(new Map<string, number>());
   const inputRef = useRef<HTMLInputElement>(null);
   const loadedRef = useRef(new Set<string>());
   const frameRef = useRef<number | null>(null);
@@ -89,10 +98,15 @@ export default function BrowserPage({ active }: { active: boolean }) {
     void browserLoadData().then((data) => {
       if (!mounted) return;
       const restored = data.session?.tabs?.length
-        ? data.session.tabs.map((tab) => ({ ...tab, loading: false, back: false, forward: false }))
+        ? data.session.tabs.map((tab) => ({
+            ...tab, zoom: typeof tab.zoom === "number" && Number.isInteger(tab.zoom)
+              ? Math.max(50, Math.min(200, tab.zoom)) : 100,
+            loading: false, back: false, forward: false,
+          }))
         : [defaultTab()];
       const chosen = restored.find((tab) => tab.id === data.session?.selectedId) ?? restored[0];
       loadedRef.current.clear();
+      appliedZoomRef.current.clear();
       tabsRef.current = restored;
       selectedRef.current = chosen.id;
       setTabs(restored);
@@ -113,13 +127,15 @@ export default function BrowserPage({ active }: { active: boolean }) {
     return () => { mounted = false; };
   }, []);
 
-  // Serialize debounced saves so old navigation state cannot overwrite a
+  // Serialize saves so old navigation state cannot overwrite a
   // newer session. SQLite uses the existing app-owned data folder.
   useEffect(() => {
     if (!ready || !isTauri() || !selectedId) return;
     const session = {
       selectedId,
-      tabs: tabs.map(({ id, url, title }) => ({ id, url, title: title.slice(0, 180) })),
+      tabs: tabs.map(({ id, url, title, zoom }) => ({
+        id, url, title: title.slice(0, 180), zoom,
+      })),
     };
     // Save promptly after navigation, selection or closure instead of waiting
     // for a debounce that could expire after the app is already closed.
@@ -129,6 +145,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
   }, [ready, selectedId, tabs]);
 
   const current = tabs.find((tab) => tab.id === selectedId) ?? tabs[0];
+  const lastScan = selectedId ? scansByTab[selectedId] : undefined;
+  const scanData = lastScan?.pageUrl === current?.url ? lastScan : null;
 
   function measure(): BrowserBounds | null {
     const slot = slotRef.current;
@@ -169,6 +187,10 @@ export default function BrowserPage({ active }: { active: boolean }) {
         } else {
           await browserOpenTab(id, tab.url, bounds);
           loadedRef.current.add(id);
+        }
+        if (appliedZoomRef.current.get(id) !== tab.zoom) {
+          await browserSetZoom(id, tab.zoom);
+          appliedZoomRef.current.set(id, tab.zoom);
         }
       });
     });
@@ -220,6 +242,13 @@ export default function BrowserPage({ active }: { active: boolean }) {
           }).catch(() => {});
         }
       }),
+      listen<BrowserZoomEvent>("haven-browser-zoom", ({ payload }) => {
+        if (!Number.isInteger(payload.percent) || payload.percent < 50 || payload.percent > 200) return;
+        if (!tabsRef.current.some((tab) => tab.id === payload.tabId)) return;
+        appliedZoomRef.current.set(payload.tabId, payload.percent);
+        setTabs((previous) => previous.map((tab) => tab.id === payload.tabId && tab.zoom !== payload.percent
+          ? { ...tab, zoom: payload.percent } : tab));
+      }),
       listen<BrowserImagePicked>("haven-browser-image-picked", (event) => {
         const selected = event.payload;
         if (!tabsRef.current.some((tab) => tab.id === selected.tabId)) return;
@@ -247,8 +276,10 @@ export default function BrowserPage({ active }: { active: boolean }) {
           } catch { return "Website image"; }
         })();
         const item = makeImage(imageUrl || best, selected.pageUrl, title, 0, 0, best);
-        if (item) addReview([item]);
-        else setError("Could not verify an image URL from this website.");
+        if (item) {
+          addReview([item]);
+          setSideTab("review");
+        } else setError("Could not verify an image URL from this website.");
       }),
       listen<BrowserScanResponse>("haven-browser-scan-results", (event) => {
         const result = event.payload;
@@ -256,11 +287,13 @@ export default function BrowserPage({ active }: { active: boolean }) {
         scanRequestRef.current = null;
         setScanBusy(false);
         if (selectedRef.current !== result.tabId) {
-          setCaptureNote("The scan finished for a background tab. Select that tab and scan again.");
+          setCaptureNote("Background-tab scan finished. Select that tab to view its results.");
+          setScansByTab((previous) => ({ ...previous, [result.tabId]: result }));
           return;
         }
-        setScanData(result);
-        setPanel("images");
+        setScansByTab((previous) => ({ ...previous, [result.tabId]: result }));
+        setPanel(null);
+        setSideTab("found");
         setCaptureNote(result.images.length
           + " image candidates found. Select and inspect the ones you want.");
       }),
@@ -295,7 +328,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
     }
     const tab: Tab = {
       id: createId(), url, title: describeUrl(url), loading: false,
-      back: false, forward: false,
+      back: false, forward: false, zoom: 100,
     };
     tabsRef.current = [...tabsRef.current, tab];
     setTabs(tabsRef.current);
@@ -329,6 +362,12 @@ export default function BrowserPage({ active }: { active: boolean }) {
       setAddress(next.url);
     }
     loadedRef.current.delete(id);
+    appliedZoomRef.current.delete(id);
+    setScansByTab((previous) => {
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
     enqueue(() => browserCloseTab(id));
     setError("");
   }
@@ -473,6 +512,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
       return;
     }
     scanRequestRef.current = id;
+    setPanel(null);
     setScanBusy(true);
     setError("");
     setCaptureNote("");
@@ -485,10 +525,53 @@ export default function BrowserPage({ active }: { active: boolean }) {
     });
   }
 
+
+  function changeZoom(requested: number) {
+    const id = selectedRef.current;
+    if (!id) return;
+    const percent = Math.max(50, Math.min(200, Math.round(requested / 10) * 10));
+    setTabs((before) => before.map((tab) => tab.id === id ? { ...tab, zoom: percent } : tab));
+    if (loadedRef.current.has(id)) {
+      enqueue(async () => {
+        await browserSetZoom(id, percent);
+        appliedZoomRef.current.set(id, percent);
+      });
+    }
+  }
+
+  function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, width: sideWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+  function moveResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const room = bodyRef.current?.clientWidth ?? 1100;
+    const maximum = Math.max(300, Math.min(700, Math.floor(room * 0.62)));
+    setSideWidth(Math.max(300, Math.min(maximum, drag.width + drag.x - event.clientX)));
+  }
+  function endResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   function shortcut(event: KeyboardEvent<HTMLDivElement>) {
     if (!event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.toLowerCase();
-    if (key === "l") {
+    if (key === "+" || key === "=" || key === "add") {
+      event.preventDefault();
+      changeZoom((current?.zoom ?? 100) + 10);
+    } else if (key === "-" || key === "subtract") {
+      event.preventDefault();
+      changeZoom((current?.zoom ?? 100) - 10);
+    } else if (key === "0") {
+      event.preventDefault();
+      changeZoom(100);
+    } else if (key === "l") {
       event.preventDefault();
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -513,7 +596,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
         <div>
           <div className="eyebrow">Haven Walls / Browser</div>
           <h1>Browse &amp; discover</h1>
-          <p>Find wallpapers anywhere on the web. Image capture arrives in Commit 3.</p>
+          <p>Browse websites and compare their images in the Found / Review panel.</p>
         </div>
         <span className="hw-browser-stage">PR #5 · Commit 3</span>
       </header>
@@ -554,6 +637,18 @@ export default function BrowserPage({ active }: { active: boolean }) {
               placeholder="Search Google or enter a website address"/>
             <button type="submit" title="Go to address">Go</button>
           </form>
+          <div className="hw-browser-zoom" role="group" aria-label="Website zoom">
+            <button type="button" aria-label="Zoom website out" title="Zoom out (Ctrl+-)"
+              disabled={!ready || (current?.zoom ?? 100) <= 50}
+              onClick={() => changeZoom((current?.zoom ?? 100) - 10)}>−</button>
+            <button type="button" className="hw-browser-zoom-value"
+              title="Reset this tab to 100% (Ctrl+0)"
+              aria-label={"Reset website zoom from " + (current?.zoom ?? 100) + "% to 100%"}
+              onClick={() => changeZoom(100)}>{current?.zoom ?? 100}%</button>
+            <button type="button" aria-label="Zoom website in" title="Zoom in (Ctrl++)"
+              disabled={!ready || (current?.zoom ?? 100) >= 200}
+              onClick={() => changeZoom((current?.zoom ?? 100) + 10)}>+</button>
+          </div>
           <button type="button" className="hw-browser-icon-button"
             title="Bookmark current page" aria-label="Bookmark current page"
             onClick={() => setPanel("save")}>{
@@ -570,7 +665,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
             title="Scan this webpage for image candidates"
             onClick={scanPage}>{scanBusy ? "Finding…" : "▧ Find images"}</button>
           <button type="button" className="hw-browser-feature hw-browser-feature-live"
-            title="Show Review selection" onClick={() => setPanel(null)}>
+            title="Show selected images" onClick={() => { setPanel(null); setSideTab("review"); }}>
             Review · {review.length}
           </button>
         </div>
@@ -581,7 +676,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
               ? "Right-click an image → Add to Haven Walls Review · Find images scans the current webpage"
               : "Restoring browser session…")}</span>}
         </div>
-        <div className="hw-browser-body">
+        <div ref={bodyRef} className="hw-browser-body">
           <div className="hw-browser-native-space">
             <div className="hw-browser-placeholder" aria-hidden="true">
               <span>◎</span>
@@ -591,29 +686,65 @@ export default function BrowserPage({ active }: { active: boolean }) {
                 : "Run the Tauri desktop application to open real websites."}</small>
             </div>
             <div ref={slotRef} className="hw-browser-native-slot" aria-label="Native WebView2 website content"/>
-            {panel && panel !== "images" && current && (
+            {panel && current && (
               <BrowserDataPanel mode={panel} current={{ url: current.url, title: current.title }}
                 bookmarks={bookmarks} history={history}
                 onBookmarks={setBookmarks} onHistory={setHistory}
                 onOpen={openSavedWebsite} onClose={() => setPanel(null)}/>
             )}
-            {panel === "images" && scanData && (
-              <BrowserImagePanel pageUrl={scanData.pageUrl} images={scanData.images}
-                skipped={scanData.skipped}
-                onInspect={(candidate) => {
-                  const image = fromScanned(candidate);
-                  if (image) setInspect(image);
-                }}
-                onAddToReview={(items) => {
-                  addReview(items.flatMap((item) => {
-                    const image = fromScanned(item);
-                    return image ? [image] : [];
-                  }));
-                }}
-                onClose={() => setPanel(null)}/>
-            )}
+
           </div>
-          <aside className="hw-browser-review" aria-label="Browser image review selection">
+          <div className="hw-browser-panel-resizer" role="separator"
+            aria-label="Resize Found and Review panel" aria-orientation="vertical"
+            aria-valuemin={300} aria-valuemax={700} aria-valuenow={sideWidth}
+            tabIndex={0}
+            onPointerDown={beginResize} onPointerMove={moveResize}
+            onPointerUp={endResize} onPointerCancel={endResize}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                setSideWidth((value) => Math.max(300, Math.min(700,
+                  value + (event.key === "ArrowLeft" ? 30 : -30))));
+              }
+            }}/>
+          <aside className="hw-browser-review" aria-label="Found images and Review selection"
+            style={{ width: sideWidth }}>
+            <div className="hw-browser-side-tabs" role="tablist" aria-label="Website images">
+              <button type="button" role="tab" aria-selected={sideTab === "found"}
+                className={sideTab === "found" ? "selected" : ""}
+                onClick={() => setSideTab("found")}>Found
+                <span>{scanData?.images.length ?? 0}</span>
+              </button>
+              <button type="button" role="tab" aria-selected={sideTab === "review"}
+                className={sideTab === "review" ? "selected" : ""}
+                onClick={() => setSideTab("review")}>Review
+                <span>{review.length}/30</span>
+              </button>
+            </div>
+            {sideTab === "found" ? (
+              scanData ? (
+                <BrowserImagePanel pageUrl={scanData.pageUrl} images={scanData.images}
+                  skipped={scanData.skipped}
+                  onInspect={(candidate) => {
+                    const image = fromScanned(candidate);
+                    if (image) setInspect(image);
+                  }}
+                  onAddToReview={(items) => {
+                    addReview(items.flatMap((item) => {
+                      const image = fromScanned(item);
+                      return image ? [image] : [];
+                    }));
+                    setSideTab("review");
+                  }}
+                  onClose={() => setSideTab("review")}/>
+              ) : (
+                <div className="hw-browser-side-empty">
+                  <strong>No images scanned for this page</strong>
+                  <p>Keep browsing on the left. Click <b>Find images</b> to scan the current website.</p>
+                </div>
+              )
+            ) : (
+              <>
             <div className="hw-browser-review-title">
               <strong>Review selection</strong><span>{review.length} / 30</span>
             </div>
@@ -639,6 +770,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
               <button type="button" disabled>Save selected to Library</button>
               <small>Library import arrives in Commit 4. Inspect and image selection work now.</small>
             </div>
+              </>
+            )}
           </aside>
         </div>
         <footer className="hw-browser-footer">

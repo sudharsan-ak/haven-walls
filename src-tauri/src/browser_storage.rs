@@ -19,7 +19,11 @@ pub struct SavedTab {
     pub id: String,
     pub url: String,
     pub title: String,
+    // Old sessions had no zoom field. Keep them readable across upgrades.
+    #[serde(default = "default_zoom_percent")]
+    pub zoom: u16,
 }
+fn default_zoom_percent() -> u16 { 100 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserSession {
@@ -85,7 +89,8 @@ fn valid_session(session: &BrowserSession) -> Result<(), String> {
             || !seen.insert(tab.id.as_str()) {
             return Err("Browser session contains a duplicate or invalid tab ID.".into());
         }
-        if !valid_url(&tab.url) || tab.title.chars().count() > MAX_TITLE {
+        if !valid_url(&tab.url) || tab.title.chars().count() > MAX_TITLE
+            || !(50..=200).contains(&tab.zoom) {
             return Err("Browser session contains an invalid website or tab title.".into());
         }
     }
@@ -218,16 +223,35 @@ mod tests {
     fn validates_session_and_rejects_local_addresses() {
         let mut s = BrowserSession { selected_id: "tab-one".into(), tabs: vec![
             SavedTab { id: "tab-one".into(), url: "https://www.google.com/".into(),
-                title: "Google".into() },
+                title: "Google".into(), zoom: 100 },
         ] };
         assert!(valid_session(&s).is_ok());
         s.tabs[0].url = "file:///C:/Windows/system.ini".into();
         assert!(valid_session(&s).is_err());
     }
     #[test]
+    fn older_sessions_default_to_full_zoom() {
+        let old = r#"{"selectedId":"t-1","tabs":[{"id":"t-1","url":"https://example.com/","title":"Example"}]}"#;
+        let session: BrowserSession = serde_json::from_str(old).expect("older session");
+        assert_eq!(session.tabs[0].zoom, 100);
+        assert!(valid_session(&session).is_ok());
+    }
+    #[test]
+    fn rejects_out_of_range_zoom() {
+        let mut session = BrowserSession {
+            selected_id: "t-1".into(),
+            tabs: vec![SavedTab { id: "t-1".into(), url: "https://example.com/".into(),
+                title: "Example".into(), zoom: 210 }],
+        };
+        assert!(valid_session(&session).is_err());
+        session.tabs[0].zoom = 50;
+        assert!(valid_session(&session).is_ok());
+    }
+    #[test]
     fn rejects_missing_selected_tab_and_duplicates() {
         let original = SavedTab {
-            id: "first".into(), url: "https://example.com/".into(), title: "Example".into()
+            id: "first".into(), url: "https://example.com/".into(), title: "Example".into(),
+            zoom: 100
         };
         let mut s = BrowserSession { selected_id: "missing".into(), tabs: vec![original.clone()] };
         assert!(valid_session(&s).is_err());

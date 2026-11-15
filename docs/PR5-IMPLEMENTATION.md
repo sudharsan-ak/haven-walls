@@ -161,3 +161,55 @@ TypeScript frontend and native Rust release before accepting Commit 2.
 
 Important: the commit only proves code was pushed, not that the Windows
 build passed. Test it locally before accepting Commit 3.
+
+
+## Commit 3 UI refinement: side-by-side live website and Found / Review
+
+Feedback from Windows testing showed the full-page image scan replacing the
+website, and image rows collapsed into tiny strips. This is a repair to
+Commit 3, **not** the start of Commit 4.
+
+- The left side stays a live, independent native WebView2 browsing viewport.
+  Scanning no longer hides or replaces it. The existing native ResizeObserver
+  updates the WebView2 child as the viewport resizes.
+- The right panel starts at 392px and can be resized by dragging its left
+  divider; the divider is also keyboard-adjustable with ArrowLeft/ArrowRight.
+  The panel has **Found** and **Review** tabs; Review is shared across URLs.
+- Found uses a two-column grid with fixed 132px photo previews and
+  max-content card rows so cards cannot collapse into image strips. It
+  scrolls independently. Clicking the photo toggles selection. Search,
+  size filter, select-results, original inspection and Add to Review remain.
+- Found results are scoped to the tab and URL that was explicitly scanned.
+  Navigating elsewhere shows an empty prompt until that page is scanned.
+  Right-click capture switches to Review automatically; no images are
+  imported or downloaded into Library in this refinement.
+- Dedicated per-tab website zoom: minus, reset-percentage, plus (50%-200%).
+  Native WebView2 zoom hotkeys are enabled. WebView2 zoom change events
+  keep the toolbar percentage in sync with keyboard or mouse-wheel zoom.
+  Zoom is saved with each tab in the existing SQLite browser session.
+  Older saved sessions default to 100%; Rust rejects out-of-range zoom.
+  Zoom affects only the website, never the React application shell.
+
+### Windows retest after the layout refinement
+
+1. Start Haven Walls on the updated PR #5 branch, build with npm and Rust,
+   and verify the Browser still loads with restored tabs and bookmarks.
+2. Visit a site with many images; click Find images. Keep the live webpage
+   visible on the left while Found appears on the right.
+3. Scroll the webpage and Found independently. The Found image cards should
+   stay full-height and not collapse into thin horizontal strips.
+4. Drag the dividing handle, including while the website is loading.
+   The WebView2 viewport should resize without overlapping the right panel.
+5. Click thumbnails (not just checkboxes), add them to Review, switch between
+   Found / Review and back, and inspect a selected original.
+6. Change website URL; Found must not show images from the previous page.
+   Review images must remain unchanged. Switch browser tabs and confirm
+   each tab retains only its own previously scanned URL results.
+7. Zoom one tab to 120% and another to 80%, switch tabs, then restart
+   Haven Walls. Zoom values and actual site display should restore per tab.
+   Check Ctrl + plus/minus/zero while the website has focus.
+8. Confirm native right-click capture, existing Google Gallery / Lens,
+   bookmarks, history, and Library are unaffected. Import to Library
+   remains a Commit 4 task.
+
+This update is **not Windows build verified** until run on Windows.

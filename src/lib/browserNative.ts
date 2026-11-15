@@ -86,6 +86,8 @@ export interface StoredBrowserTab {
   id: string;
   url: string;
   title: string;
+  /** Percent zoom; missing in old browser sessions (defaults to 100). */
+  zoom?: number;
 }
 export interface BrowserSession {
   selectedId: string;
@@ -160,4 +162,17 @@ export interface BrowserImagePicked {
 export async function browserScanImages(tabId: string): Promise<void> {
   nativeOnly();
   return invoke<void>("browser_scan_images", { tabId });
+}
+
+/** Changes only the specific native website WebView2, not the app UI. */
+export async function browserSetZoom(tabId: string, percent: number): Promise<void> {
+  nativeOnly();
+  if (!Number.isInteger(percent) || percent < 50 || percent > 200) {
+    throw new Error("Website zoom must be between 50% and 200%.");
+  }
+  return invoke<void>("browser_set_zoom", { tabId, percent });
+}
+export interface BrowserZoomEvent {
+  tabId: string;
+  percent: number;
 }

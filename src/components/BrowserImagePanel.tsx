@@ -41,13 +41,13 @@ export default function BrowserImagePanel({
     <div className="hw-scan-panel" aria-label="Website image scanner" role="region">
       <header className="hw-scan-header">
         <div>
-          <strong>Find images on this page</strong>
+          <strong>Found images</strong>
           <small>{images.length} image candidates detected
             {skipped > 0 ? " · " + skipped + " duplicate/unsafe ignored" : ""}
           </small>
-          <small className="hw-scan-page">{pageUrl}</small>
+          <small className="hw-scan-page" title={pageUrl}>{pageUrl}</small>
         </div>
-        <button type="button" title="Close image results" aria-label="Close image results"
+        <button type="button" title="Switch to Review" aria-label="Switch to Review"
           onClick={onClose}>×</button>
       </header>
       <div className="hw-scan-controls">
@@ -56,12 +56,12 @@ export default function BrowserImagePanel({
             onChange={(event) => setSelected((before) => event.target.checked
               ? [...new Set([...before, ...filtered.map((item) => item.url)])].slice(0, 30)
               : before.filter((url) => !filtered.some((item) => item.url === url)))}/>
-          Select visible
+          Select results
         </label>
         <label>
           <input type="checkbox" checked={onlyLarge}
             onChange={(event) => setOnlyLarge(event.target.checked)}/>
-          At least 1920 × 1080 (reported)
+          Full HD+
         </label>
         <input className="hw-scan-search" type="search" value={search}
           placeholder="Filter by description" aria-label="Filter scanned images"
@@ -71,13 +71,16 @@ export default function BrowserImagePanel({
         {filtered.length ? filtered.map((item) => (
           <article className={"hw-scan-card" + (selected.includes(item.url) ? " checked" : "")}
             key={item.url}>
-            <div className="hw-scan-card-image">
-              <img src={item.url} alt={item.title} loading="lazy" referrerPolicy="no-referrer"/>
-              <label className="hw-scan-card-check" title="Select image">
-                <input type="checkbox" checked={selected.includes(item.url)}
-                  onChange={() => toggle(item.url)} aria-label={"Select " + item.title}/>
-              </label>
-            </div>
+            <button type="button" className="hw-scan-card-image"
+              aria-label={(selected.includes(item.url) ? "Deselect " : "Select ") + item.title}
+              aria-pressed={selected.includes(item.url)}
+              onClick={() => toggle(item.url)}
+              title="Click to select this image">
+              <img src={item.url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+              <span className="hw-scan-card-check" aria-hidden="true">
+                {selected.includes(item.url) ? "✓" : ""}
+              </span>
+            </button>
             <div className="hw-scan-card-details">
               <strong title={item.title}>{item.title}</strong>
               <small>{item.width && item.height
