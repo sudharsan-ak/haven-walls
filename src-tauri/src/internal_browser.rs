@@ -228,9 +228,13 @@ pub async fn browser_open_tab(
                     let _ = crate::browser_storage::record_visit(&visit_app, &visited);
                 });
             }
+            // WebView2 reports about:blank while its child window initializes.
+            // It is not a user navigation and must not overwrite the tab URL.
+            let external_url = allowed_navigation(event.url())
+                .then(|| event.url().to_string());
             let _ = load_app.emit_to("main", EVENT, TabEvent {
                 tab_id: id_for_load.clone(),
-                url: Some(event.url().to_string()),
+                url: external_url,
                 title: None,
                 loading: Some(matches!(event.event(), PageLoadEvent::Started)),
             });
@@ -410,5 +414,18 @@ mod tests {
         assert!(label("tab-123").is_ok());
         assert!(label("../main").is_err());
         assert!(label("www.example.com").is_err());
+    }
+}
+
+#[cfg(test)]
+mod navigation_guard_tests {
+    use super::*;
+    #[test]
+    fn rejects_internal_webview_urls() {
+        assert!(!allowed_navigation(&tauri::Url::parse("about:blank").unwrap()));
+        assert!(!allowed_navigation(&tauri::Url::parse("file:///C:/tmp/test.png").unwrap()));
+        assert!(!allowed_navigation(&tauri::Url::parse("data:text/plain,hello").unwrap()));
+        assert!(allowed_navigation(&tauri::Url::parse("https://www.google.com/").unwrap()));
+        assert!(allowed_navigation(&tauri::Url::parse("http://example.com/").unwrap()));
     }
 }

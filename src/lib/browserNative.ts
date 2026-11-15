@@ -176,3 +176,19 @@ export interface BrowserZoomEvent {
   tabId: string;
   percent: number;
 }
+
+
+/** Only external HTTP(S) page addresses belong in browser tab state.
+ * WebView2 may briefly report about:blank or other internal URLs during
+ * child initialization. These must never replace the user's last website.
+ */
+export function isBrowserPageUrl(value: string | null | undefined): value is string {
+  if (!value || value.length > 8192) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && Boolean(url.hostname) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}

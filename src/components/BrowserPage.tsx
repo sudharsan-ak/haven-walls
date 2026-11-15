@@ -5,6 +5,7 @@ import {
   BROWSER_HOME, BROWSER_MAX_TABS, browserAddress, browserCloseTab,
   browserNavigateTab, browserOpenTab, browserShowTab, browserTabAction,
   browserTabState, browserLoadData, browserSaveSession, browserScanImages, browserSetZoom,
+  isBrowserPageUrl,
   type BrowserBounds, type BrowserNavigationEvent,
   type BrowserPopupEvent, type BrowserTabState, type BrowserAction,
   type BrowserBookmark, type BrowserVisit,
@@ -131,6 +132,9 @@ export default function BrowserPage({ active }: { active: boolean }) {
   // newer session. SQLite uses the existing app-owned data folder.
   useEffect(() => {
     if (!ready || !isTauri() || !selectedId) return;
+    // Defense in depth: a WebView2 internal page must never replace a
+    // previously valid saved session. Do not issue invalid writes.
+    if (tabs.some((tab) => !isBrowserPageUrl(tab.url))) return;
     const session = {
       selectedId,
       tabs: tabs.map(({ id, url, title, zoom }) => ({
@@ -141,6 +145,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
     // for a debounce that could expire after the app is already closed.
     saveQueueRef.current = saveQueueRef.current
       .then(() => browserSaveSession(session))
+      .then(() => setError((previous) => previous.startsWith("Could not save browser tabs:")
+        ? "" : previous))
       .catch((problem: unknown) => setError("Could not save browser tabs: " + message(problem)));
   }, [ready, selectedId, tabs]);
 
@@ -223,14 +229,15 @@ export default function BrowserPage({ active }: { active: boolean }) {
       listen<BrowserNavigationEvent>("haven-browser-navigation", (event) => {
         const update = event.payload;
         if (!tabsRef.current.some((tab) => tab.id === update.tabId)) return;
+        const safeUrl = isBrowserPageUrl(update.url) ? update.url : null;
         setTabs((old) => old.map((tab) => tab.id === update.tabId ? {
           ...tab,
-          url: update.url ?? tab.url,
+          url: safeUrl ?? tab.url,
           title: update.title?.trim() || tab.title,
           loading: update.loading ?? tab.loading,
         } : tab));
-        if (selectedRef.current === update.tabId && update.url
-            && document.activeElement !== inputRef.current) setAddress(update.url);
+        if (selectedRef.current === update.tabId && safeUrl
+            && document.activeElement !== inputRef.current) setAddress(safeUrl);
         if (selectedRef.current === update.tabId) {
           setStatus(update.loading === true ? "Loading website…" : "Ready to browse");
         }
@@ -408,11 +415,14 @@ export default function BrowserPage({ active }: { active: boolean }) {
   }
 
   function updateState(id: string, state: BrowserTabState) {
+    const safeUrl = isBrowserPageUrl(state.url) ? state.url : null;
     setTabs((old) => old.map((tab) => tab.id === id ? {
-      ...tab, url: state.url, back: state.canGoBack, forward: state.canGoForward,
+      ...tab,
+      url: safeUrl ?? tab.url,
+      back: state.canGoBack, forward: state.canGoForward,
     } : tab));
-    if (selectedRef.current === id && document.activeElement !== inputRef.current) {
-      setAddress(state.url);
+    if (safeUrl && selectedRef.current === id && document.activeElement !== inputRef.current) {
+      setAddress(safeUrl);
     }
   }
 
