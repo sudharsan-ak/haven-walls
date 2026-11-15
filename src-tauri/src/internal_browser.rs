@@ -82,11 +82,68 @@ pub struct TabNavigationState {
     can_go_forward: bool,
 }
 
-fn navigation_state(view: &tauri::Webview) -> Result<TabNavigationState, String> {
+// Tauri's Webview exposes reload/navigation but not history inspection or
+// GoBack/GoForward. Windows WebView2 exposes all three through CoreWebView2.
+// Keep the native COM operation on the webview's UI thread. Await its result
+// on a *blocking worker*, not the Tauri main thread, to avoid deadlocking UI.
+#[cfg(windows)]
+async fn native_history(
+    view: &tauri::Webview, action: Option<&str>,
+) -> Result<(bool, bool), String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use windows::Win32::Foundation::BOOL;
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let action = action.map(str::to_owned);
+    view.with_webview(move |platform| {
+        let result = (|| -> Result<(bool, bool), String> {
+            let core = unsafe { platform.controller().CoreWebView2() }
+                .map_err(|_| "Could not access the Windows WebView2 browser.".to_string())?;
+            unsafe {
+                let mut back = BOOL::default();
+                let mut forward = BOOL::default();
+                core.get_CanGoBack(&mut back)
+                    .map_err(|_| "Could not read browser Back history.".to_string())?;
+                core.get_CanGoForward(&mut forward)
+                    .map_err(|_| "Could not read browser Forward history.".to_string())?;
+                match action.as_deref() {
+                    Some("back") if back.as_bool() => core.GoBack()
+                        .map_err(|_| "Could not go back in this tab.".to_string())?,
+                    Some("forward") if forward.as_bool() => core.GoForward()
+                        .map_err(|_| "Could not go forward in this tab.".to_string())?,
+                    Some("back" | "forward") | None => {},
+                    _ => return Err("Unsupported browser navigation action.".into()),
+                }
+                // Navigation happens asynchronously. History state is updated
+                // again when the page load event reaches the React shell.
+                Ok((back.as_bool(), forward.as_bool()))
+            }
+        })();
+        let _ = sender.send(result);
+    }).map_err(|_| "Could not inspect the browser's native history.".to_string())?;
+
+    tauri::async_runtime::spawn_blocking(move ||
+        receiver.recv_timeout(Duration::from_secs(5))
+    ).await.map_err(|_| "Browser history task was interrupted.".to_string())?
+      .map_err(|_| "Browser history timed out.".to_string())?
+}
+
+#[cfg(not(windows))]
+async fn native_history(
+    _view: &tauri::Webview, _action: Option<&str>,
+) -> Result<(bool, bool), String> {
+    Err("Browser history navigation requires Windows WebView2.".into())
+}
+
+async fn navigation_state(view: &tauri::Webview) -> Result<TabNavigationState, String> {
+    let (can_go_back, can_go_forward) = native_history(view, None).await?;
     Ok(TabNavigationState {
-        url: view.url().map_err(|_| "Browser URL is unavailable.".to_string())?.to_string(),
-        can_go_back: view.can_go_back().unwrap_or(false),
-        can_go_forward: view.can_go_forward().unwrap_or(false),
+        url: view.url()
+            .map_err(|_| "Browser URL is unavailable.".to_string())?
+            .to_string(),
+        can_go_back,
+        can_go_forward,
     })
 }
 
@@ -200,27 +257,30 @@ pub fn browser_navigate_tab(
 }
 
 #[tauri::command]
-pub fn browser_tab_action(
+pub async fn browser_tab_action(
     app: AppHandle, tab_id: String, action: String,
 ) -> Result<TabNavigationState, String> {
     let view = app.get_webview(&label(&tab_id)?)
         .ok_or_else(|| "Browser tab is unavailable.".to_string())?;
     match action.as_str() {
-        "back" => view.go_back(),
-        "forward" => view.go_forward(),
-        "reload" => view.reload(),
+        "back" | "forward" => {
+            native_history(&view, Some(&action)).await?;
+        }
+        "reload" => {
+            view.reload().map_err(|_| "Could not reload this browser tab.".to_string())?;
+        }
         _ => return Err("Unsupported browser navigation action.".into()),
-    }.map_err(|_| "Browser navigation failed.".to_string())?;
-    navigation_state(&view)
+    }
+    navigation_state(&view).await
 }
 
 #[tauri::command]
-pub fn browser_tab_state(
+pub async fn browser_tab_state(
     app: AppHandle, tab_id: String,
 ) -> Result<TabNavigationState, String> {
     let view = app.get_webview(&label(&tab_id)?)
         .ok_or_else(|| "Browser tab is unavailable.".to_string())?;
-    navigation_state(&view)
+    navigation_state(&view).await
 }
 
 #[tauri::command]

@@ -65,3 +65,11 @@ Windows Downloads.
   website permission prompts and browsing-data controls.
 
 Do not merge into \`main\` until all four commits are tested and approved.
+
+### Commit 1 Windows build fix
+
+Tauri's `Webview` does not implement `can_go_back`, `can_go_forward`,
+`go_back`, or `go_forward`. The browser uses Windows WebView2's
+`ICoreWebView2::get_CanGoBack/get_CanGoForward/GoBack/GoForward` via
+`with_webview`. The COM callbacks execute on the UI thread while an async
+Tauri command awaits their result on a blocking worker to avoid UI deadlocks.
