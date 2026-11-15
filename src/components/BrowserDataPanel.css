@@ -1,0 +1,45 @@
+/* A native HWND-backed WebView2 cannot be overlaid reliably with React CSS.
+   The active browser child is hidden whenever this panel appears. */
+.hw-saved { position: absolute; inset: 0; background: #fbfdff; z-index: 2;
+  display: flex; flex-direction: column; min-height: 0; color: #315471; }
+.hw-saved-heading { display: flex; justify-content: space-between; align-items: center;
+  padding: 17px 20px; border-bottom: 1px solid #e2edf6; }
+.hw-saved-heading strong { display: block; font-size: 16px; }
+.hw-saved-heading small { display: block; color: #8aa4b9; font-size: 11px; margin-top: 4px; }
+.hw-saved-heading button { border: 0; background: transparent; cursor: pointer;
+  color: #7396b4; font-size: 23px; }
+.hw-saved-error { color: #b45254; background: #fff2f2; margin: 8px 20px;
+  padding: 9px; border-radius: 7px; font-size: 11px; }
+.hw-saved-search { display: flex; padding: 13px 20px; gap: 10px; flex: none;
+  border-bottom: 1px solid #e9f1f7; }
+.hw-saved-search input { flex: 1; min-width: 0; border: 1px solid #d5e5f1;
+  padding: 10px 12px; border-radius: 8px; font: inherit; font-size: 12px; }
+.hw-saved-search button { border: 1px solid #eed6d6; border-radius: 7px;
+  background: #fff4f4; color: #a75151; padding: 6px 11px; font-size: 11px; cursor: pointer; }
+.hw-saved-list { overflow-y: auto; padding: 7px 18px 22px; min-height: 0; }
+.hw-saved-item { display: flex; align-items: center; gap: 6px;
+  padding: 9px 7px; border-bottom: 1px solid #e9f1f7; }
+.hw-saved-visit { flex: 1; text-align: left; border: 0; background: transparent;
+  cursor: pointer; min-width: 0; padding: 2px; }
+.hw-saved-visit strong { display: block; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: #366b92; font-size: 12px; }
+.hw-saved-visit small { display: block; margin-top: 5px; font-size: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8ba4b7; }
+.hw-saved-item > button:not(.hw-saved-visit) { flex: none; background: #edf5fb;
+  border: 0; border-radius: 6px; color: #6788a4; cursor: pointer;
+  width: 27px; height: 28px; font-size: 14px; }
+.hw-saved-empty { text-align: center; color: #9bb0c0; font-size: 12px; margin: 40px 0; }
+.hw-saved-form { display: flex; flex-direction: column; gap: 15px; max-width: 600px;
+  width: 100%; padding: 20px; margin: 0 auto; }
+.hw-saved-form label { display: flex; flex-direction: column; gap: 6px;
+  color: #7b96ab; font-size: 11px; font-weight: 650; }
+.hw-saved-form input { width: 100%; padding: 10px 12px; font: inherit; font-size: 12px;
+  border: 1px solid #d4e4f1; border-radius: 8px; color: #355b7b; }
+.hw-saved-form input:read-only { background: #f2f7fb; }
+.hw-saved-form-actions { display: flex; gap: 10px; }
+.hw-saved-form-actions button { cursor: pointer; border-radius: 8px;
+  border: 1px solid #d6e3ef; background: #fff; color: #3b779f;
+  padding: 10px 16px; font-size: 12px; }
+.hw-saved-form-actions .hw-saved-primary { background: #1778bd; color: #fff; border-color: #1778bd; }
+.hw-saved-form-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.hw-saved-form > small { color: #91a7ba; font-size: 10px; }

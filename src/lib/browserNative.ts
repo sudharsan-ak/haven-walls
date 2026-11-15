@@ -79,3 +79,55 @@ export async function browserCloseTab(tabId: string): Promise<void> {
   nativeOnly();
   return invoke<void>("browser_close_tab", { tabId });
 }
+
+
+/** Metadata lives in local SQLite; WebView2 manages cookies in browser-profile. */
+export interface StoredBrowserTab {
+  id: string;
+  url: string;
+  title: string;
+}
+export interface BrowserSession {
+  selectedId: string;
+  tabs: StoredBrowserTab[];
+}
+export interface BrowserBookmark {
+  id: number;
+  url: string;
+  title: string;
+  folder: string;
+  createdAt: string;
+}
+export interface BrowserVisit {
+  id: number;
+  url: string;
+  title: string;
+  visitedAt: string;
+}
+export interface BrowserData {
+  session: BrowserSession | null;
+  bookmarks: BrowserBookmark[];
+  history: BrowserVisit[];
+}
+export async function browserLoadData(): Promise<BrowserData> {
+  nativeOnly();
+  return invoke<BrowserData>("browser_load_data");
+}
+export async function browserSaveSession(session: BrowserSession): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_save_session", { session });
+}
+export async function browserAddBookmark(
+  url: string, title: string, folder: string,
+): Promise<BrowserBookmark[]> {
+  nativeOnly();
+  return invoke<BrowserBookmark[]>("browser_add_bookmark", { url, title, folder });
+}
+export async function browserRemoveBookmark(id: number): Promise<BrowserBookmark[]> {
+  nativeOnly();
+  return invoke<BrowserBookmark[]>("browser_remove_bookmark", { id });
+}
+export async function browserClearHistory(): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_clear_history");
+}

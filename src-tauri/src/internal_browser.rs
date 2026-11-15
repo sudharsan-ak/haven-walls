@@ -4,6 +4,7 @@
 //! Save/scan, download policy and durable session data belong to later commits.
 
 use serde::{Deserialize, Serialize};
+use crate::local_storage;
 use tauri::{
     webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl,
@@ -197,9 +198,25 @@ pub async fn browser_open_tab(
     let id_for_load = tab_id.clone();
     let id_for_title = tab_id.clone();
     let id_for_popup = tab_id.clone();
+    // All tabs share a single dedicated, durable WebView2 profile.
+    // It lives in the app-owned data root (AppData or portable folder), not
+    // the Windows Edge/Chrome profiles or transient build output.
+    let paths = local_storage::current_paths(&app)?;
+    let profile = paths.root.join("browser-profile");
+    std::fs::create_dir_all(&profile)
+        .map_err(|_| "Could not prepare browser cookie/profile storage.".to_string())?;
     let builder = WebviewBuilder::new(&name, WebviewUrl::External(parsed))
+        .data_directory(profile)
         .on_navigation(allowed_navigation)
         .on_page_load(move |_view, event| {
+            if matches!(event.event(), PageLoadEvent::Finished) {
+                let visit_app = load_app.clone();
+                let visited = event.url().to_string();
+                // Never run SQLite work synchronously inside WebView2's UI event.
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _ = crate::browser_storage::record_visit(&visit_app, &visited);
+                });
+            }
             let _ = load_app.emit_to("main", EVENT, TabEvent {
                 tab_id: id_for_load.clone(),
                 url: Some(event.url().to_string()),

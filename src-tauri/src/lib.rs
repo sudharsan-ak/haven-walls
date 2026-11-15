@@ -9,6 +9,7 @@ mod category_discovery;
 mod api_credentials;
 mod google_browser;
 mod internal_browser;
+mod browser_storage;
 #[cfg(windows)]
 mod google_context_menu;
 
@@ -63,6 +64,11 @@ pub fn run() {
             internal_browser::browser_tab_action,
             internal_browser::browser_tab_state,
             internal_browser::browser_close_tab,
+            browser_storage::browser_load_data,
+            browser_storage::browser_save_session,
+            browser_storage::browser_add_bookmark,
+            browser_storage::browser_remove_bookmark,
+            browser_storage::browser_clear_history,
             google_browser::open_google_images_inline,
             google_browser::open_google_lens_inline,
             google_browser::reverse_search_library_wallpaper_inline,

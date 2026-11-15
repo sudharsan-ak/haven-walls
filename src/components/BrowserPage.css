@@ -86,3 +86,5 @@
   .hw-browser-heading p { display: none; }
   .hw-browser-footer span:last-child { display: none; }
 }
+
+.hw-browser-active-icon { background: #e0eef9; color: #146ba9; }

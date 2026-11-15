@@ -89,3 +89,27 @@ Windows regression test: Click **Visit** on a Google Images photo, test a
 standard target=_blank link and `Ctrl+Click`, then verify a new internal
 tab opens the correct publisher URL and the ordinary Gallery and Library
 source-link actions remain usable.
+
+
+## Commit 2: persistent browsing (implementation)
+
+- New SQLite tables browser_session, browser_history and browser_bookmarks.
+  The schema is additive and safe to run repeatedly with existing data.
+- Browser loads its saved session before creating any WebView2 website tab.
+  Only the selected tab loads immediately; other tabs are lazy until selected.
+  Tab titles, current URLs, order and active selection survive restarts.
+- Bookmarks have user-editable titles and folder names; use ☆ to save a
+  website, ☷ to open the bookmark manager, and ◷ to search recent history.
+  Saved bookmarks can open in the current tab or a new internal tab.
+- WebView2 uses the same app-owned browser-profile data directory for all
+  internal tabs, with persistent cookies separate from Chrome/Edge profiles.
+  This directory follows the existing Haven Walls storage root when migrated.
+- The Rust host records finished navigations in SQLite, not via scripts
+  injected into external pages. History is capped at 1500 visits. Clear
+  History deletes only browser history, not bookmarks or API credentials.
+- Session restoration does not promise scroll positions or form values.
+
+Test on Windows: open three tabs, restart, and verify selected-tab-only lazy
+loading; test bookmarks in custom folders, search history, clearing history,
+cookie sign-in persistence, and Gallery/Library regression. Build both the
+TypeScript frontend and native Rust release before accepting Commit 2.

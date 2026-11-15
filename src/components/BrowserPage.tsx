@@ -4,10 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import {
   BROWSER_HOME, BROWSER_MAX_TABS, browserAddress, browserCloseTab,
   browserNavigateTab, browserOpenTab, browserShowTab, browserTabAction,
-  browserTabState, type BrowserBounds, type BrowserNavigationEvent,
+  browserTabState, browserLoadData, browserSaveSession,
+  type BrowserBounds, type BrowserNavigationEvent,
   type BrowserPopupEvent, type BrowserTabState, type BrowserAction,
+  type BrowserBookmark, type BrowserVisit,
 } from "../lib/browserNative";
 import "./BrowserPage.css";
+import BrowserDataPanel from "./BrowserDataPanel";
 
 interface Tab {
   id: string;
@@ -36,6 +39,10 @@ export default function BrowserPage({ active }: { active: boolean }) {
   const [address, setAddress] = useState(BROWSER_HOME);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Ready to browse");
+  const [ready, setReady] = useState(false);
+  const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
+  const [history, setHistory] = useState<BrowserVisit[]>([]);
+  const [panel, setPanel] = useState<"bookmarks" | "history" | "save" | null>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const loadedRef = useRef(new Set<string>());
@@ -43,27 +50,76 @@ export default function BrowserPage({ active }: { active: boolean }) {
   // Native WebView2 commands must execute in display order; otherwise a slow
   // create from tab A can cover tab B after rapid tab switching.
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const tabsRef = useRef(tabs);
   const activeRef = useRef(active);
   const selectedRef = useRef(selectedId);
+  const readyRef = useRef(ready);
+  const panelRef = useRef(panel);
   tabsRef.current = tabs;
   activeRef.current = active;
   selectedRef.current = selectedId;
+  readyRef.current = ready;
+  panelRef.current = panel;
 
-  // Initial tab ID is generated once; no website is loaded until Browser is opened.
+  // Read the previous session before opening a native WebView2 child.
+  // Only the restored selected tab loads; other tabs remain metadata.
   useEffect(() => {
-    if (selectedRef.current === null && tabsRef.current[0]) {
+    let mounted = true;
+    if (!isTauri()) {
       const first = tabsRef.current[0];
       selectedRef.current = first.id;
       setSelectedId(first.id);
+      setReady(true);
+      return;
     }
+    void browserLoadData().then((data) => {
+      if (!mounted) return;
+      const restored = data.session?.tabs?.length
+        ? data.session.tabs.map((tab) => ({ ...tab, loading: false, back: false, forward: false }))
+        : [defaultTab()];
+      const chosen = restored.find((tab) => tab.id === data.session?.selectedId) ?? restored[0];
+      loadedRef.current.clear();
+      tabsRef.current = restored;
+      selectedRef.current = chosen.id;
+      setTabs(restored);
+      setSelectedId(chosen.id);
+      setAddress(chosen.url);
+      setBookmarks(data.bookmarks);
+      setHistory(data.history);
+      setStatus(data.session ? "Previous tabs restored" : "Ready to browse");
+    }).catch((problem: unknown) => {
+      if (!mounted) return;
+      const first = tabsRef.current[0];
+      selectedRef.current = first.id;
+      setSelectedId(first.id);
+      setError("Could not restore browser tabs: " + message(problem));
+    }).finally(() => {
+      if (mounted) setReady(true);
+    });
+    return () => { mounted = false; };
   }, []);
+
+  // Serialize debounced saves so old navigation state cannot overwrite a
+  // newer session. SQLite uses the existing app-owned data folder.
+  useEffect(() => {
+    if (!ready || !isTauri() || !selectedId) return;
+    const session = {
+      selectedId,
+      tabs: tabs.map(({ id, url, title }) => ({ id, url, title: title.slice(0, 180) })),
+    };
+    // Save promptly after navigation, selection or closure instead of waiting
+    // for a debounce that could expire after the app is already closed.
+    saveQueueRef.current = saveQueueRef.current
+      .then(() => browserSaveSession(session))
+      .catch((problem: unknown) => setError("Could not save browser tabs: " + message(problem)));
+  }, [ready, selectedId, tabs]);
 
   const current = tabs.find((tab) => tab.id === selectedId) ?? tabs[0];
 
   function measure(): BrowserBounds | null {
     const slot = slotRef.current;
-    if (!slot || !activeRef.current) return null;
+    if (!slot || !activeRef.current || !readyRef.current || panelRef.current) return null;
     const rect = slot.getBoundingClientRect();
     const width = Math.floor(Math.min(window.innerWidth, rect.right) - Math.max(0, rect.left));
     const height = Math.floor(Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top));
@@ -85,7 +141,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     frameRef.current = window.requestAnimationFrame(() => {
       frameRef.current = null;
-      const id = activeRef.current ? selectedRef.current : null;
+      const id = activeRef.current && readyRef.current && !panelRef.current
+        ? selectedRef.current : null;
       const bounds = measure();
       enqueue(async () => {
         if (!id || !bounds) {
@@ -106,7 +163,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
 
   useEffect(() => {
     syncNative();
-  }, [active, selectedId]);
+  }, [active, selectedId, ready, panel]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -179,6 +236,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
     selectedRef.current = tab.id;
     setSelectedId(tab.id);
     setAddress(url);
+    setPanel(null);
     setError("");
   }
 
@@ -186,6 +244,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
     selectedRef.current = tab.id;
     setSelectedId(tab.id);
     setAddress(tab.url);
+    setPanel(null);
     setError("");
   }
 
@@ -268,6 +327,30 @@ export default function BrowserPage({ active }: { active: boolean }) {
     });
   }
 
+
+  function togglePanel(next: "bookmarks" | "history") {
+    setPanel((current) => current === next ? null : next);
+    void browserLoadData().then((data) => {
+      setBookmarks(data.bookmarks);
+      setHistory(data.history);
+    }).catch((problem: unknown) => setError(message(problem)));
+  }
+
+  function openSavedWebsite(url: string, newTab: boolean) {
+    setPanel(null);
+    if (newTab) { openTab(url); return; }
+    const id = selectedRef.current;
+    if (!id) return;
+    setAddress(url);
+    setTabs((old) => old.map((tab) => tab.id === id
+      ? { ...tab, url, title: describeUrl(url), loading: true } : tab));
+    // Closing the panel triggers the native show/create effect on the next
+    // React render. Do not try measuring a still-hidden WebView2 slot here.
+    if (loadedRef.current.has(id)) {
+      enqueue(() => browserNavigateTab(id, url));
+    }
+  }
+
   function shortcut(event: KeyboardEvent<HTMLDivElement>) {
     if (!event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.toLowerCase();
@@ -298,7 +381,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
           <h1>Browse &amp; discover</h1>
           <p>Find wallpapers anywhere on the web. Image capture arrives in Commit 3.</p>
         </div>
-        <span className="hw-browser-stage">PR #5 · Commit 1</span>
+        <span className="hw-browser-stage">PR #5 · Commit 2</span>
       </header>
       <div className="hw-browser-frame">
         <nav className="hw-browser-tabs" aria-label="Website tabs">
@@ -337,10 +420,17 @@ export default function BrowserPage({ active }: { active: boolean }) {
               placeholder="Search Google or enter a website address"/>
             <button type="submit" title="Go to address">Go</button>
           </form>
-          <button type="button" className="hw-browser-icon-button hw-browser-future"
-            title="Bookmarks arrive in Commit 2" disabled>☆</button>
-          <button type="button" className="hw-browser-icon-button hw-browser-future"
-            title="History arrives in Commit 2" disabled>◷</button>
+          <button type="button" className="hw-browser-icon-button"
+            title="Bookmark current page" aria-label="Bookmark current page"
+            onClick={() => setPanel("save")}>{
+              bookmarks.some((item) => item.url === current?.url) ? "★" : "☆"
+            }</button>
+          <button type="button" className={"hw-browser-icon-button" + (panel === "bookmarks" ? " hw-browser-active-icon" : "")}
+            title="Bookmarks" aria-label="Bookmarks"
+            onClick={() => togglePanel("bookmarks")}>☷</button>
+          <button type="button" className={"hw-browser-icon-button" + (panel === "history" ? " hw-browser-active-icon" : "")}
+            title="History" aria-label="History"
+            onClick={() => togglePanel("history")}>◷</button>
           <button type="button" className="hw-browser-feature" disabled
             title="Find images on page arrives in Commit 3">▧ Find images</button>
           <button type="button" className="hw-browser-feature" disabled
@@ -349,7 +439,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
         <div className="hw-browser-notice" role="status">
           {error
             ? <span className="hw-browser-error">{error}</span>
-            : <span>Real WebView2 website browsing · Tabs are session-only until Commit 2</span>}
+            : <span>{ready ? "Browser tabs, bookmarks and history saved locally · Background tabs restore on demand"
+              : "Restoring browser session…"}</span>}
         </div>
         <div className="hw-browser-body">
           <div className="hw-browser-native-space">
@@ -361,6 +452,12 @@ export default function BrowserPage({ active }: { active: boolean }) {
                 : "Run the Tauri desktop application to open real websites."}</small>
             </div>
             <div ref={slotRef} className="hw-browser-native-slot" aria-label="Native WebView2 website content"/>
+            {panel && current && (
+              <BrowserDataPanel mode={panel} current={{ url: current.url, title: current.title }}
+                bookmarks={bookmarks} history={history}
+                onBookmarks={setBookmarks} onHistory={setHistory}
+                onOpen={openSavedWebsite} onClose={() => setPanel(null)}/>
+            )}
           </div>
           <aside className="hw-browser-review" aria-label="Upcoming browser image review">
             <div className="hw-browser-review-title"><strong>Review selection</strong><span>0 / 30</span></div>
@@ -373,7 +470,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
           </aside>
         </div>
         <footer className="hw-browser-footer">
-          <span>{current?.loading ? "Loading…" : status} · Browser tabs stay open while switching sections</span>
+          <span>{current?.loading ? "Loading…" : status} · Browser sessions survive restarts</span>
           <span>New tab: Ctrl+T · Address: Ctrl+L</span>
         </footer>
       </div>
