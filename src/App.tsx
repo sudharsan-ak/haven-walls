@@ -3,6 +3,7 @@ import { readHostInfo, type HostInfo, type CatalogSourceId } from "./lib/native"
 import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
+import BrowserPage from "./components/BrowserPage";
 import SettingsPage from "./components/SettingsPage";
 import LibraryPage from "./components/LibraryPage";
 import LibraryImportDialog from "./components/LibraryImportDialog";
@@ -26,7 +27,7 @@ const upcoming = [
 
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
-  const [page, setPage] = useState<"dashboard" | "gallery" | "library" | "sources" | "settings">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "sources" | "settings">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
@@ -94,6 +95,9 @@ export default function App() {
             }}
               className={"nav-item " + (page === "gallery" ? "current" : "")}
               aria-current={page === "gallery" ? "page" : undefined}>▧ <span>Gallery</span></button>
+            <button type="button" onClick={() => setPage("browser")}
+              className={"nav-item " + (page === "browser" ? "current" : "")}
+              aria-current={page === "browser" ? "page" : undefined}>◎ <span>Browser</span></button>
             <button type="button" onClick={() => setPage("library")}
               className={"nav-item " + (page === "library" ? "current" : "")}
               aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
@@ -107,8 +111,9 @@ export default function App() {
           <div className="sidebar-footer">Local-first. No accounts or telemetry.</div>
         </aside>
 
-        <main className="content">
-          {page === "settings" ? (
+        <main className={"content" + (page === "browser" ? " content-browser" : "")}>
+          <BrowserPage active={page === "browser"} />
+          {page === "browser" ? null : page === "settings" ? (
             <SettingsPage />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}

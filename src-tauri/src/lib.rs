@@ -8,6 +8,7 @@ mod google_images;
 mod category_discovery;
 mod api_credentials;
 mod google_browser;
+mod internal_browser;
 #[cfg(windows)]
 mod google_context_menu;
 
@@ -49,6 +50,12 @@ pub fn run() {
             api_credentials::get_api_credential_status,
             api_credentials::save_api_credential,
             api_credentials::remove_api_credential,
+            internal_browser::browser_open_tab,
+            internal_browser::browser_show_tab,
+            internal_browser::browser_navigate_tab,
+            internal_browser::browser_tab_action,
+            internal_browser::browser_tab_state,
+            internal_browser::browser_close_tab,
             google_browser::open_google_images_inline,
             google_browser::open_google_lens_inline,
             google_browser::reverse_search_library_wallpaper_inline,

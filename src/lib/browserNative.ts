@@ -1,0 +1,81 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
+
+export const BROWSER_HOME = "https://www.google.com/";
+export const BROWSER_MAX_TABS = 12;
+
+export interface BrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface BrowserNavigationEvent {
+  tabId: string;
+  url: string | null;
+  title: string | null;
+  loading: boolean | null;
+}
+export interface BrowserPopupEvent {
+  openerId: string;
+  url: string;
+}
+export interface BrowserTabState {
+  url: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+export type BrowserAction = "back" | "forward" | "reload";
+
+/** Address bar accepts a website URL or plain-text Google search.
+ * The Rust command validates again before any native navigation.
+ */
+export function browserAddress(text: string): string {
+  const input = text.trim();
+  if (!input || input.length > 2048) throw new Error("Enter a website or search, up to 2,048 characters.");
+  if (/[\u0000-\u001f\u007f]/.test(input)) throw new Error("This address contains invalid characters.");
+  let candidate: string | null = null;
+  if (/^https?:\/\//i.test(input)) candidate = input;
+  else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(input) || /^(?:file|javascript|data|tauri|about):/i.test(input)) {
+    throw new Error("Only regular HTTP and HTTPS websites can be opened.");
+  } else if (!/\s/.test(input) && /^(?:localhost(?::\d+)?|(?:[\w-]+\.)+[\w-]{2,})(?:[/?#].*)?$/i.test(input)) {
+    candidate = (input.startsWith("localhost") ? "http://" : "https://") + input;
+  }
+  if (candidate) {
+    const url = new URL(candidate);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password) {
+      throw new Error("Only regular HTTP and HTTPS websites can be opened.");
+    }
+    return url.toString();
+  }
+  const search = new URL("https://www.google.com/search");
+  search.searchParams.set("q", input);
+  return search.toString();
+}
+
+function nativeOnly(): void {
+  if (!isTauri()) throw new Error("The Browser workspace requires the Haven Walls Windows app.");
+}
+export async function browserOpenTab(tabId: string, url: string, bounds: BrowserBounds): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_open_tab", { tabId, url, bounds });
+}
+export async function browserShowTab(tabId?: string, bounds?: BrowserBounds): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_show_tab", { tabId: tabId ?? null, bounds: bounds ?? null });
+}
+export async function browserNavigateTab(tabId: string, url: string): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_navigate_tab", { tabId, url });
+}
+export async function browserTabAction(tabId: string, action: BrowserAction): Promise<BrowserTabState> {
+  nativeOnly();
+  return invoke<BrowserTabState>("browser_tab_action", { tabId, action });
+}
+export async function browserTabState(tabId: string): Promise<BrowserTabState> {
+  nativeOnly();
+  return invoke<BrowserTabState>("browser_tab_state", { tabId });
+}
+export async function browserCloseTab(tabId: string): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_close_tab", { tabId });
+}
