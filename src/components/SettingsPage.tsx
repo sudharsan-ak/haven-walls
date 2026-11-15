@@ -7,6 +7,7 @@ import {
 } from "../lib/configuration";
 import "./SettingsPage.css";
 import ConfirmDialog from "./ConfirmDialog";
+import ApiCredentialsSettings from "./ApiCredentialsSettings";
 
 const WALLPAPER_FITS: { value: WallpaperFit; label: string }[] = [
   { value: "smartFit", label: "Smart Fit (recommended)" },
@@ -336,6 +337,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <ApiCredentialsSettings />
+
       <section className="hws-settings-panel" aria-labelledby="hws-privacy">
         <div className="hws-settings-section-header">
           <div><h2 id="hws-privacy">Privacy, appearance & upcoming</h2>
@@ -345,7 +348,6 @@ export default function SettingsPage() {
         <div className="hws-privacy-row"><strong>Automatic rotation and scheduling</strong><span>Not enabled yet</span></div>
         <div className="hws-privacy-row"><strong>Global shortcuts and startup tray</strong><span>Not enabled yet</span></div>
         <div className="hws-privacy-row"><strong>Dark appearance</strong><span>Planned; current light theme retained</span></div>
-        <div className="hws-privacy-row"><strong>API credentials</strong><span>Session-only in current discovery screens</span></div>
       </section>
 
       <div className="hws-settings-actions">

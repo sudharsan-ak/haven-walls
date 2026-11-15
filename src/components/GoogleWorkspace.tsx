@@ -15,8 +15,6 @@ import "./GoogleWorkspace.css";
 
 interface Props {
   onSourceChange: (value: CatalogSourceId) => void;
-  serpapiKey: string;
-  onSerpapiKeyChange: (value: string) => void;
   googleSearchSeed: string;
   lensRequest: { imageId: string; requestId: number } | null;
   onSaveToLibrary: (images: CatalogImage[]) => void;
@@ -201,7 +199,7 @@ function ApiResultCard({
 }
 
 export default function GoogleWorkspace({
-  onSourceChange, serpapiKey, onSerpapiKeyChange, googleSearchSeed,
+  onSourceChange, googleSearchSeed,
   lensRequest, onSaveToLibrary, blockingDialogOpen,
 }: Props) {
   const [mode, setMode] = useState<SearchMode>("browser");
@@ -226,7 +224,6 @@ export default function GoogleWorkspace({
   const [queue, setQueue] = useState<CatalogImage[]>([]);
   const [preview, setPreview] = useState<CatalogImage | null>(null);
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
-  const [keyVisible, setKeyVisible] = useState(false);
   const [minResolution, setMinResolution] = useState<Resolution>("4K");
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [apiResults, setApiResults] = useState<CatalogImage[]>([]);
@@ -562,12 +559,6 @@ export default function GoogleWorkspace({
       setStatus("error");
       return;
     }
-    if (!serpapiKey.trim()) {
-      setApiSettingsOpen(true);
-      setApiError("Add your SerpApi key under API settings to run an API search.");
-      setStatus("error");
-      return;
-    }
     const request = ++requestNumber.current;
     const resolution = minResolution === "4K" ? [3840, 2160] :
       minResolution === "1440p" ? [2560, 1440] : [1920, 1080];
@@ -578,7 +569,7 @@ export default function GoogleWorkspace({
 
     try {
       const result = await browseGoogleImages(
-        term, serpapiKey.trim(), resolution[0], resolution[1],
+        term, resolution[0], resolution[1],
       );
       if (request !== requestNumber.current) return;
       setApiResults(result.items);
@@ -788,18 +779,9 @@ export default function GoogleWorkspace({
             </div>
             {apiSettingsOpen && (
               <div className="gws-api-settings">
-                <label htmlFor="gws-serp-key">Personal SerpApi API key</label>
-                <div className="gws-manual-input">
-                  <input id="gws-serp-key" type={keyVisible ? "text" : "password"}
-                    autoComplete="off" spellCheck={false} value={serpapiKey}
-                    onChange={(event) => onSerpapiKeyChange(event.target.value)}
-                    placeholder="Paste your SerpApi key"/>
-                  <button type="button" className="online-secondary"
-                    onClick={() => setKeyVisible(!keyVisible)}>
-                    {keyVisible ? "Hide" : "Show"}
-                  </button>
-                </div>
-                <small>Your key remains in memory and is sent to SerpApi only when you search.</small>
+                <small>Manage your SerpApi key once under Settings → API credentials.
+                  Saved credentials are applied automatically to API searches.
+                  Browser Search needs no key.</small>
               </div>
             )}
             {apiError && <p className="gws-error" role="alert">{apiError}</p>}

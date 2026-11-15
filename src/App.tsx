@@ -27,9 +27,7 @@ const upcoming = [
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
   const [page, setPage] = useState<"dashboard" | "gallery" | "library" | "sources" | "settings">("dashboard");
-  const [gallerySource, setGallerySource] = useState<CatalogSourceId>("bing");
-  const [tmdbToken, setTmdbToken] = useState("");
-  const [serpapiKey, setSerpapiKey] = useState("");
+  const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
   const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
@@ -114,7 +112,7 @@ export default function App() {
             <SettingsPage />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
-              onDiscover={() => openGallery("bing")}
+              onDiscover={() => openGallery("discover")}
               onReverseSearch={reverseSearchSavedImage}
               onSaveToLibrary={setImportCandidates} />
           ) : page === "gallery" ? (
@@ -124,10 +122,6 @@ export default function App() {
                 setLensRequest(null);
                 setGallerySource(source);
               }}
-              tmdbToken={tmdbToken}
-              onTmdbTokenChange={setTmdbToken}
-              serpapiKey={serpapiKey}
-              onSerpapiKeyChange={setSerpapiKey}
               googleSearchSeed={googleSearchSeed}
               lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}
@@ -157,14 +151,6 @@ export default function App() {
                     </div>
                   </article>
                 ))}
-                <article className="provider-panel provider-disabled">
-                  <div className="provider-icon" aria-hidden="true">⊘</div>
-                  <div className="provider-info">
-                    <h2>Unsplash <span className="provider-pending">Not enabled</span></h2>
-                    <p>Unsplash's API requires approval for wallpaper-app use. No API integration is enabled here.</p>
-                    <p className="provider-description">We'll only enable this source if its permitted use is established.</p>
-                  </div>
-                </article>
               </div>
               <div className="provider-footnote">
                 Wallpaper caption and photo-credit preferences are now in
@@ -190,8 +176,8 @@ export default function App() {
               <span className="hero-kicker">Milestone 2 · PR #3</span>
               <h2 id="foundation-title">Find your next desktop background.</h2>
               <p>
-                Browse recent Bing photography, Earth View landscapes, sports team artwork,
-                and TV show backdrops. Save approved images to your offline Library.
+                Discover wallpapers by Nature, Space, Animals, Cities, Sports and more.
+                Inspect real source photos, then save selected images to your offline Library.
               </p>
               <div className="host-pill" role="status">
                 <span
@@ -222,7 +208,7 @@ export default function App() {
                 <h3>{item.title}</h3>
                 <p>{item.detail}</p>
                 {item.title === "Online gallery" ? (
-                  <button type="button" className="gallery-open-link" onClick={() => openGallery("bing")}>Open gallery</button>
+                  <button type="button" className="gallery-open-link" onClick={() => openGallery("discover")}>Open gallery</button>
                 ) : item.title === "Wallpaper Library" || item.title === "Set wallpaper" ? (
                   <button type="button" className="gallery-open-link"
                     onClick={() => setPage("library")}>

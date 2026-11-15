@@ -1,9 +1,11 @@
 //! Browsing-only integrations. Each external image retains its provider and rights notice.
 //! A photo being shown here does not authorize caching or applying it as wallpaper.
+use crate::api_credentials;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
+use tauri::AppHandle;
 
 const USER_AGENT: &str =
     "HavenWalls/0.1 (https://github.com/sudharsan-ak/haven-walls; contact: GitHub issues)";
@@ -34,6 +36,9 @@ pub struct CatalogImage {
 pub struct CatalogResponse {
     pub items: Vec<CatalogImage>,
     pub note: String,
+    /// Optional because existing Bing, Sports, and TMDB sources are not paginated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
 }
 
 fn client() -> Result<Client, String> {
@@ -109,6 +114,7 @@ fn bing_from_json(data: &Value) -> CatalogResponse {
     }
     CatalogResponse {
         items,
+        has_more: None,
         note: "Recent Bing homepage photos. This is a daily feed, not a keyword search. Bing's feed is undocumented and can change.".into(),
     }
 }
@@ -171,6 +177,7 @@ fn earth_from_json(data: &Value, query: &str) -> CatalogResponse {
         .collect();
     CatalogResponse {
         items,
+        has_more: None,
         note: "Archived Earth View image index, provided by a community mirror. Availability and usage rights are not guaranteed.".into(),
     }
 }
@@ -226,6 +233,7 @@ fn sports_from_json(data: &Value) -> CatalogResponse {
     }
     CatalogResponse {
         items,
+        has_more: None,
         note: "Team artwork and badges from TheSportsDB. These previews are not guaranteed to be 1080p or licensed for wallpaper use.".into(),
     }
 }
@@ -277,6 +285,7 @@ fn tmdb_shows_from_json(data: &Value) -> CatalogResponse {
     }
     CatalogResponse {
         items,
+        has_more: None,
         note: "Select the exact TV show before browsing its backdrops. TMDB attribution and image rights apply.".into(),
     }
 }
@@ -313,6 +322,7 @@ fn tmdb_backdrops_from_json(id: u64, data: &Value) -> CatalogResponse {
     items.truncate(24);
     CatalogResponse {
         items,
+        has_more: None,
         note: "TMDB show backdrops. Image metadata is provided for preview only, not cleared for wallpaper use.".into(),
     }
 }
@@ -347,9 +357,9 @@ async fn tmdb_backdrops(client: &Client, id: u64, token: &str) -> Result<Catalog
 
 #[tauri::command]
 pub async fn browse_wallpaper_source(
+    app: AppHandle,
     source: String,
     query: String,
-    tmdb_token: Option<String>,
 ) -> Result<CatalogResponse, String> {
     if query.chars().count() > 100 {
         return Err("Search is too long".into());
@@ -360,11 +370,8 @@ pub async fn browse_wallpaper_source(
         "earth" => earth_feed(&client, &query).await,
         "sports" => sports_search(&client, &query).await,
         "tmdb" => {
-            let token = tmdb_token.as_deref().unwrap_or("").trim();
-            if token.is_empty() {
-                return Err("A TMDB API Read Access Token is required for TV show search.".into());
-            }
-            tmdb_search(&client, &query, token).await
+            let token = api_credentials::required(&app, "tmdb")?;
+            tmdb_search(&client, &query, &token).await
         }
         _ => Err("This image source is not available".into()),
     }
@@ -372,14 +379,11 @@ pub async fn browse_wallpaper_source(
 
 #[tauri::command]
 pub async fn browse_tmdb_backdrops(
+    app: AppHandle,
     tv_id: u64,
-    tmdb_token: String,
 ) -> Result<CatalogResponse, String> {
-    let token = tmdb_token.trim();
-    if token.is_empty() {
-        return Err("A TMDB API Read Access Token is required.".into());
-    }
-    tmdb_backdrops(&client()?, tv_id, token).await
+    let token = api_credentials::required(&app, "tmdb")?;
+    tmdb_backdrops(&client()?, tv_id, &token).await
 }
 
 #[cfg(test)]
