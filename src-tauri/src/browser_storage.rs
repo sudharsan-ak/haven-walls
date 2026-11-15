@@ -128,12 +128,17 @@ pub fn browser_load_data(app: AppHandle, state: State<'_, StorageLock>)
         "SELECT json FROM browser_session WHERE id=1", [],
         |row| row.get(0),
     ).optional().map_err(|_| "Could not load the previous browser tabs.".to_string())?;
-    let session = json.map(|data| {
-        let session: BrowserSession = serde_json::from_str(&data)
-            .map_err(|_| "Saved browser session is unreadable.".to_string())?;
-        valid_session(&session)?;
-        Ok(session)
-    }).transpose()?;
+    // Decode and validate directly. Avoid an intermediate Result in a
+    // map/transpose closure, whose error type Rust cannot infer here.
+    let session: Option<BrowserSession> = match json {
+        Some(data) => {
+            let restored: BrowserSession = serde_json::from_str(&data)
+                .map_err(|_| "Saved browser session is unreadable.".to_string())?;
+            valid_session(&restored)?;
+            Some(restored)
+        }
+        None => None,
+    };
     Ok(BrowserData { session, bookmarks: bookmarks(&conn)?, history: history(&conn)? })
 }
 #[tauri::command]
