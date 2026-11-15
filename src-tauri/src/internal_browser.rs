@@ -92,7 +92,7 @@ async fn native_history(
 ) -> Result<(bool, bool), String> {
     use std::sync::mpsc;
     use std::time::Duration;
-    use windows::Win32::Foundation::BOOL;
+    use windows::core::BOOL;
 
     let (sender, receiver) = mpsc::sync_channel(1);
     let action = action.map(str::to_owned);
@@ -103,9 +103,9 @@ async fn native_history(
             unsafe {
                 let mut back = BOOL::default();
                 let mut forward = BOOL::default();
-                core.get_CanGoBack(&mut back)
+                core.CanGoBack(&mut back)
                     .map_err(|_| "Could not read browser Back history.".to_string())?;
-                core.get_CanGoForward(&mut forward)
+                core.CanGoForward(&mut forward)
                     .map_err(|_| "Could not read browser Forward history.".to_string())?;
                 match action.as_deref() {
                     Some("back") if back.as_bool() => core.GoBack()
