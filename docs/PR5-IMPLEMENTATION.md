@@ -73,3 +73,19 @@ Tauri's `Webview` does not implement `can_go_back`, `can_go_forward`,
 `ICoreWebView2::get_CanGoBack/get_CanGoForward/GoBack/GoForward` via
 `with_webview`. The COM callbacks execute on the UI thread while an async
 Tauri command awaits their result on a blocking worker to avoid UI deadlocks.
+
+### Commit 1 follow-up: Google Images Visit / target=_blank links
+
+The default Tauri opener plugin injects a click handler into native child
+WebViews that intercepts target=_blank website links. Those remote pages do
+not have Tauri opener IPC permissions, so Google Images **Visit** and ordinary
+**Open link in new tab** actions can silently fail. Disable this automatic
+interception using `tauri_plugin_opener::Builder::new()
+.open_js_links_on_click(false).build()`, retaining the plugin for explicit
+host-owned `app.opener().open_url()` calls. Our own native
+`on_new_window` handler then relays the URL to a new internal browser tab.
+
+Windows regression test: Click **Visit** on a Google Images photo, test a
+standard target=_blank link and `Ctrl+Click`, then verify a new internal
+tab opens the correct publisher URL and the ordinary Gallery and Library
+source-link actions remain usable.

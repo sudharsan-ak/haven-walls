@@ -34,7 +34,14 @@ fn get_host_info() -> HostInfo {
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        // Preserve the opener service for trusted commands such as
+        // "Open wallpaper source" while allowing native WebView2 new-tab
+        // requests to reach each browser tab's on_new_window handler.
+        // The default plugin script intercepts target=_blank and suppresses
+        // the popup before WebView2 sees it on remote website pages.
+        .plugin(tauri_plugin_opener::Builder::new()
+            .open_js_links_on_click(false)
+            .build())
         .manage(local_storage::StorageLock::default())
         .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
