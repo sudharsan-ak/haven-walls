@@ -88,3 +88,20 @@
 }
 
 .hw-browser-active-icon { background: #e0eef9; color: #146ba9; }
+
+
+/* PR #5 Commit 3: browser image scan + Review */
+.hw-browser-feature-live{opacity:1;background:#e6f3fc;color:#2375ac;cursor:pointer}
+.hw-browser-feature-live:hover:not(:disabled){background:#d2eafa}
+.hw-browser-feature-live:disabled{opacity:.4;cursor:not-allowed}
+.hw-browser-review-list{flex:1;min-height:0;overflow-y:auto;padding:7px}
+.hw-browser-review-item{display:flex;align-items:center;gap:4px;border-bottom:1px solid #e7eef5;padding:6px 0}
+.hw-browser-review-item>button:first-child{display:flex;align-items:center;gap:7px;min-width:0;flex:1;
+ padding:0;border:0;background:transparent;text-align:left;cursor:pointer}
+.hw-browser-review-item img{width:44px;height:39px;object-fit:cover;border-radius:6px;background:#eff6fc}
+.hw-browser-review-item span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+ font-size:10px;color:#467494}
+.hw-browser-review-item>button:last-child{border:0;background:#f3f7fc;color:#7b9fb9;
+ border-radius:6px;font-size:17px;width:22px;height:26px;cursor:pointer}
+.hw-browser-review-bottom .hw-browser-review-clear{background:transparent;color:#497d9e;
+ border:1px solid #dbeaf4;cursor:pointer;padding:8px;font-size:10px;font-weight:650}

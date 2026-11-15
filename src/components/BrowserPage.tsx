@@ -4,13 +4,18 @@ import { listen } from "@tauri-apps/api/event";
 import {
   BROWSER_HOME, BROWSER_MAX_TABS, browserAddress, browserCloseTab,
   browserNavigateTab, browserOpenTab, browserShowTab, browserTabAction,
-  browserTabState, browserLoadData, browserSaveSession,
+  browserTabState, browserLoadData, browserSaveSession, browserScanImages,
   type BrowserBounds, type BrowserNavigationEvent,
   type BrowserPopupEvent, type BrowserTabState, type BrowserAction,
   type BrowserBookmark, type BrowserVisit,
+  type BrowserImagePicked, type BrowserScannedImage, type BrowserScanResponse, type BrowserScanError,
 } from "../lib/browserNative";
 import "./BrowserPage.css";
 import BrowserDataPanel from "./BrowserDataPanel";
+import BrowserImagePanel from "./BrowserImagePanel";
+import FullResolutionPreview from "./FullResolutionPreview";
+import { chooseOriginalFromLink, unwrapKnownImageLink, validRemoteUrl } from "../lib/imageResolution";
+import type { CatalogImage } from "../lib/native";
 
 interface Tab {
   id: string;
@@ -42,7 +47,12 @@ export default function BrowserPage({ active }: { active: boolean }) {
   const [ready, setReady] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
   const [history, setHistory] = useState<BrowserVisit[]>([]);
-  const [panel, setPanel] = useState<"bookmarks" | "history" | "save" | null>(null);
+  const [panel, setPanel] = useState<"bookmarks" | "history" | "save" | "images" | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanData, setScanData] = useState<BrowserScanResponse | null>(null);
+  const [review, setReview] = useState<CatalogImage[]>([]);
+  const [inspect, setInspect] = useState<CatalogImage | null>(null);
+  const [captureNote, setCaptureNote] = useState("");
   const slotRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const loadedRef = useRef(new Set<string>());
@@ -56,11 +66,14 @@ export default function BrowserPage({ active }: { active: boolean }) {
   const selectedRef = useRef(selectedId);
   const readyRef = useRef(ready);
   const panelRef = useRef(panel);
+  const inspectRef = useRef(inspect);
+  const scanRequestRef = useRef<string | null>(null);
   tabsRef.current = tabs;
   activeRef.current = active;
   selectedRef.current = selectedId;
   readyRef.current = ready;
   panelRef.current = panel;
+  inspectRef.current = inspect;
 
   // Read the previous session before opening a native WebView2 child.
   // Only the restored selected tab loads; other tabs remain metadata.
@@ -119,7 +132,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
 
   function measure(): BrowserBounds | null {
     const slot = slotRef.current;
-    if (!slot || !activeRef.current || !readyRef.current || panelRef.current) return null;
+    if (!slot || !activeRef.current || !readyRef.current || panelRef.current || inspectRef.current) return null;
     const rect = slot.getBoundingClientRect();
     const width = Math.floor(Math.min(window.innerWidth, rect.right) - Math.max(0, rect.left));
     const height = Math.floor(Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top));
@@ -141,7 +154,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     frameRef.current = window.requestAnimationFrame(() => {
       frameRef.current = null;
-      const id = activeRef.current && readyRef.current && !panelRef.current
+      const id = activeRef.current && readyRef.current && !panelRef.current && !inspectRef.current
         ? selectedRef.current : null;
       const bounds = measure();
       enqueue(async () => {
@@ -163,7 +176,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
 
   useEffect(() => {
     syncNative();
-  }, [active, selectedId, ready, panel]);
+  }, [active, selectedId, ready, panel, inspect]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -206,6 +219,59 @@ export default function BrowserPage({ active }: { active: boolean }) {
             } : tab));
           }).catch(() => {});
         }
+      }),
+      listen<BrowserImagePicked>("haven-browser-image-picked", (event) => {
+        const selected = event.payload;
+        if (!tabsRef.current.some((tab) => tab.id === selected.tabId)) return;
+        const imageUrl = validRemoteUrl(selected.imageUrl);
+        const linkUrl = validRemoteUrl(selected.linkUrl);
+        // A publisher-page link alone must never be treated as an image.
+        // The only link-only fallback is a Google imgres URL that explicitly
+        // embeds a distinct, valid original image address.
+        const unwrapped = linkUrl ? unwrapKnownImageLink(linkUrl) : null;
+        const linkImage = unwrapped && unwrapped !== linkUrl ? unwrapped : null;
+        if (!imageUrl && !linkImage) {
+          setError("This selection provided a publisher link, not a direct image. Try Find images.");
+          return;
+        }
+        const resolved = chooseOriginalFromLink(imageUrl || linkImage || "", linkUrl || undefined);
+        const best = validRemoteUrl(resolved.original);
+        if (!best) {
+          setError("The selected image did not expose a usable HTTPS image URL. Try Find images.");
+          return;
+        }
+        const title = (() => {
+          try {
+            return decodeURIComponent(new URL(best).pathname.split("/").pop()
+              || "Website image").slice(0, 120);
+          } catch { return "Website image"; }
+        })();
+        const item = makeImage(imageUrl || best, selected.pageUrl, title, 0, 0, best);
+        if (item) addReview([item]);
+        else setError("Could not verify an image URL from this website.");
+      }),
+      listen<BrowserScanResponse>("haven-browser-scan-results", (event) => {
+        const result = event.payload;
+        if (scanRequestRef.current !== result.tabId) return;
+        scanRequestRef.current = null;
+        setScanBusy(false);
+        if (selectedRef.current !== result.tabId) {
+          setCaptureNote("The scan finished for a background tab. Select that tab and scan again.");
+          return;
+        }
+        setScanData(result);
+        setPanel("images");
+        setCaptureNote(result.images.length
+          + " image candidates found. Select and inspect the ones you want.");
+      }),
+      listen<BrowserScanError>("haven-browser-scan-error", (event) => {
+        if (scanRequestRef.current !== event.payload.tabId) return;
+        scanRequestRef.current = null;
+        setScanBusy(false);
+        setError(event.payload.message);
+      }),
+      listen<string>("haven-browser-image-error", (event) => {
+        setError(event.payload);
       }),
       listen<BrowserPopupEvent>("haven-browser-popup", (event) => {
         if (!tabsRef.current.some((tab) => tab.id === event.payload.openerId)) return;
@@ -351,6 +417,74 @@ export default function BrowserPage({ active }: { active: boolean }) {
     }
   }
 
+
+  // Native image selection is only metadata; originals are checked through
+  // the existing FullResolutionPreview before any future Library import.
+  function makeImage(
+    url: string, pageUrl: string, title: string, width: number, height: number,
+    original?: string | null,
+  ): CatalogImage | null {
+    const direct = validRemoteUrl(url);
+    if (!direct) return null;
+    const chosen = original ? chooseOriginalFromLink(direct, original) : null;
+    const best = (chosen?.original && validRemoteUrl(chosen.original)) || direct;
+    const page = validRemoteUrl(pageUrl) || "";
+    const label = title.slice(0, 150) || "Website image";
+    return {
+      id: "browser-" + best,
+      source: "Haven Walls Browser",
+      title: label,
+      previewUrl: direct,
+      originalUrl: best,
+      candidateUrls: direct !== best ? [direct] : [],
+      pageUrl: page,
+      credit: "Image hosted by " + new URL(best).hostname + " · Creator unverified",
+      rights: "Found on a website. Image rights and attribution have not been verified.",
+      width, height, kind: "image",
+    };
+  }
+
+  function fromScanned(item: BrowserScannedImage): CatalogImage | null {
+    return makeImage(item.url, scanData?.pageUrl || current?.url || "",
+      item.title, item.width, item.height, item.originalUrl);
+  }
+
+  function addReview(candidates: CatalogImage[]) {
+    setReview((previous) => {
+      const seen = new Set(previous.map((item) => item.originalUrl || item.previewUrl));
+      const next = [...previous];
+      for (const candidate of candidates) {
+        const key = candidate.originalUrl || candidate.previewUrl;
+        if (next.length >= 30) break;
+        if (!seen.has(key)) {
+          seen.add(key);
+          next.push(candidate);
+        }
+      }
+      return next;
+    });
+    setCaptureNote("Image selection updated. Inspect your candidates before saving.");
+  }
+
+  function scanPage() {
+    const id = selectedRef.current;
+    if (!id || !loadedRef.current.has(id) || scanBusy) {
+      setError("Open a website in the selected tab before scanning.");
+      return;
+    }
+    scanRequestRef.current = id;
+    setScanBusy(true);
+    setError("");
+    setCaptureNote("");
+    void browserScanImages(id).catch((cause: unknown) => {
+      if (scanRequestRef.current === id) {
+        scanRequestRef.current = null;
+        setScanBusy(false);
+        setError("Could not scan this website: " + message(cause));
+      }
+    });
+  }
+
   function shortcut(event: KeyboardEvent<HTMLDivElement>) {
     if (!event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.toLowerCase();
@@ -381,7 +515,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
           <h1>Browse &amp; discover</h1>
           <p>Find wallpapers anywhere on the web. Image capture arrives in Commit 3.</p>
         </div>
-        <span className="hw-browser-stage">PR #5 · Commit 2</span>
+        <span className="hw-browser-stage">PR #5 · Commit 3</span>
       </header>
       <div className="hw-browser-frame">
         <nav className="hw-browser-tabs" aria-label="Website tabs">
@@ -431,16 +565,21 @@ export default function BrowserPage({ active }: { active: boolean }) {
           <button type="button" className={"hw-browser-icon-button" + (panel === "history" ? " hw-browser-active-icon" : "")}
             title="History" aria-label="History"
             onClick={() => togglePanel("history")}>◷</button>
-          <button type="button" className="hw-browser-feature" disabled
-            title="Find images on page arrives in Commit 3">▧ Find images</button>
-          <button type="button" className="hw-browser-feature" disabled
-            title="Review integration arrives in Commit 4">Review · 0</button>
+          <button type="button" className="hw-browser-feature hw-browser-feature-live"
+            disabled={!ready || scanBusy || !loadedRef.current.has(selectedId || "")}
+            title="Scan this webpage for image candidates"
+            onClick={scanPage}>{scanBusy ? "Finding…" : "▧ Find images"}</button>
+          <button type="button" className="hw-browser-feature hw-browser-feature-live"
+            title="Show Review selection" onClick={() => setPanel(null)}>
+            Review · {review.length}
+          </button>
         </div>
         <div className="hw-browser-notice" role="status">
           {error
             ? <span className="hw-browser-error">{error}</span>
-            : <span>{ready ? "Browser tabs, bookmarks and history saved locally · Background tabs restore on demand"
-              : "Restoring browser session…"}</span>}
+            : <span>{captureNote || (ready
+              ? "Right-click an image → Add to Haven Walls Review · Find images scans the current webpage"
+              : "Restoring browser session…")}</span>}
         </div>
         <div className="hw-browser-body">
           <div className="hw-browser-native-space">
@@ -452,20 +591,53 @@ export default function BrowserPage({ active }: { active: boolean }) {
                 : "Run the Tauri desktop application to open real websites."}</small>
             </div>
             <div ref={slotRef} className="hw-browser-native-slot" aria-label="Native WebView2 website content"/>
-            {panel && current && (
+            {panel && panel !== "images" && current && (
               <BrowserDataPanel mode={panel} current={{ url: current.url, title: current.title }}
                 bookmarks={bookmarks} history={history}
                 onBookmarks={setBookmarks} onHistory={setHistory}
                 onOpen={openSavedWebsite} onClose={() => setPanel(null)}/>
             )}
+            {panel === "images" && scanData && (
+              <BrowserImagePanel pageUrl={scanData.pageUrl} images={scanData.images}
+                skipped={scanData.skipped}
+                onInspect={(candidate) => {
+                  const image = fromScanned(candidate);
+                  if (image) setInspect(image);
+                }}
+                onAddToReview={(items) => {
+                  addReview(items.flatMap((item) => {
+                    const image = fromScanned(item);
+                    return image ? [image] : [];
+                  }));
+                }}
+                onClose={() => setPanel(null)}/>
+            )}
           </div>
-          <aside className="hw-browser-review" aria-label="Upcoming browser image review">
-            <div className="hw-browser-review-title"><strong>Review selection</strong><span>0 / 30</span></div>
-            <p>Browse now. Right-click capture and page scanning will be enabled in Commit 3.</p>
-            <div className="hw-browser-review-empty">No wallpapers selected yet.</div>
+          <aside className="hw-browser-review" aria-label="Browser image review selection">
+            <div className="hw-browser-review-title">
+              <strong>Review selection</strong><span>{review.length} / 30</span>
+            </div>
+            <p>Right-click an image on any website, or use Find images to add multiple photos.</p>
+            {review.length ? (
+              <div className="hw-browser-review-list">
+                {review.map((item) => (
+                  <div className="hw-browser-review-item" key={item.id}>
+                    <button type="button" title="Inspect image" onClick={() => setInspect(item)}>
+                      <img src={item.previewUrl} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+                      <span>{item.title}</span>
+                    </button>
+                    <button type="button" title="Remove image"
+                      onClick={() => setReview((old) =>
+                        old.filter((candidate) => candidate.id !== item.id))}>×</button>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="hw-browser-review-empty">No wallpapers selected yet.</div>}
             <div className="hw-browser-review-bottom">
+              {review.length > 0 && <button type="button" className="hw-browser-review-clear"
+                onClick={() => setReview([])}>Clear selection</button>}
               <button type="button" disabled>Save selected to Library</button>
-              <small>Inspect → Review → Library arrives in Commit 4.</small>
+              <small>Library import arrives in Commit 4. Inspect and image selection work now.</small>
             </div>
           </aside>
         </div>
@@ -474,6 +646,15 @@ export default function BrowserPage({ active }: { active: boolean }) {
           <span>New tab: Ctrl+T · Address: Ctrl+L</span>
         </footer>
       </div>
+      {inspect && (
+        <FullResolutionPreview image={inspect} key={inspect.id}
+          onClose={() => setInspect(null)}
+          onAddToLibrary={(image) => {
+            addReview([image]);
+            setInspect(null);
+          }}
+          addLabel="Add to Review"/>
+      )}
     </section>
   );
 }

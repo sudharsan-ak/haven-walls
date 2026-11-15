@@ -131,3 +131,33 @@ export async function browserClearHistory(): Promise<void> {
   nativeOnly();
   return invoke<void>("browser_clear_history");
 }
+
+
+/** WebView2 host-owned image scan. No native API is exposed to remote pages. */
+export interface BrowserScannedImage {
+  url: string;
+  originalUrl: string | null;
+  title: string;
+  width: number;
+  height: number;
+}
+export interface BrowserScanResponse {
+  tabId: string;
+  pageUrl: string;
+  images: BrowserScannedImage[];
+  skipped: number;
+}
+export interface BrowserScanError {
+  tabId: string;
+  message: string;
+}
+export interface BrowserImagePicked {
+  tabId: string;
+  imageUrl: string;
+  pageUrl: string;
+  linkUrl: string;
+}
+export async function browserScanImages(tabId: string): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_scan_images", { tabId });
+}

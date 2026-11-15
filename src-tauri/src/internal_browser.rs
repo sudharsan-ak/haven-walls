@@ -32,7 +32,7 @@ impl BrowserBounds {
     }
 }
 
-fn label(tab_id: &str) -> Result<String, String> {
+pub(crate) fn label(tab_id: &str) -> Result<String, String> {
     if !(1..=36).contains(&tab_id.len())
         || !tab_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-') {
         return Err("Invalid browser tab identifier.".into());
@@ -243,11 +243,35 @@ pub async fn browser_open_tab(
             // not yet preserve window.opener relationships in this workflow.
             NewWindowResponse::Deny
         });
-    parent.add_child(
+    let child = parent.add_child(
         builder,
         LogicalPosition::new(bounds.x, bounds.y),
         LogicalSize::new(bounds.width, bounds.height),
     ).map_err(|_| "Could not create a website WebView2 tab.".to_string())?;
+    #[cfg(windows)]
+    {
+        // Register the native right-click action only for Browser child tabs.
+        // Other Tauri/Gallery WebViews keep their existing isolated handlers.
+        let context_app = app.clone();
+        let context_tab = tab_id.clone();
+        child.with_webview(move |platform| {
+            let result = unsafe {
+                platform.controller().CoreWebView2().and_then(|core|
+                    crate::browser_image_capture::register(&core, context_app.clone(), context_tab.clone()))
+            };
+            if let Err(error) = result {
+                let _ = context_app.emit_to(
+                    "main", crate::browser_image_capture::CONTEXT_MENU_ERROR_EVENT,
+                    format!("Native Browser image menu is unavailable: {error}"),
+                );
+            }
+        }).map_err(|_| "Could not access the Browser image context menu.".to_string())
+          .unwrap_or_else(|message| {
+              let _ = app.emit_to(
+                  "main", crate::browser_image_capture::CONTEXT_MENU_ERROR_EVENT, message
+              );
+          });
+    }
     show_selected(&app, &name, bounds)
 }
 

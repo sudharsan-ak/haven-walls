@@ -113,3 +113,51 @@ Test on Windows: open three tabs, restart, and verify selected-tab-only lazy
 loading; test bookmarks in custom folders, search history, clearing history,
 cookie sign-in persistence, and Gallery/Library regression. Build both the
 TypeScript frontend and native Rust release before accepting Commit 2.
+
+
+## Commit 3: Find images and native right-click capture (Windows validation pending)
+
+- Browser tabs install a native WebView2 context-menu item:
+  **Add to Haven Walls review**, using the working Google Gallery
+  context-menu code as the foundation. No Tauri permission is granted to
+  remote pages. Native WebView2 returns the selected image URL, link URL,
+  page URL and browser tab ID to the trusted Haven Walls shell.
+- The enabled **Find images** button runs a *user-triggered, one-time*
+  WebView2 ExecuteScript in the active page. No persistent script or
+  automatic scraping is installed. Results include DOM img elements,
+  srcset, data-original, Open Graph preview metadata, and inline CSS
+  backgrounds. Cross-origin iframes and dynamic pages can expose only
+  partial results.
+- Rust filters images: HTTPS-only public hosts, bounded URL and title
+  lengths, duplicate removal, maximum 160 results. A direct publisher
+  webpage URL is not assumed to be an image.
+- The scan gallery shows image previews, reported dimensions and
+  original-image candidates. Inspect uses the existing full-resolution
+  inspection flow, which verifies actual image size before saving.
+- The Review tray collects up to 30 unique images across browser tabs.
+  Users can inspect and remove selections. Actual Review to Library
+  persistence stays disabled until Commit 4.
+- The native WebView2 child is hidden for scan panels and inspection
+  overlays so it does not paint over React controls.
+
+### Windows acceptance for Commit 3
+
+1. Build both the TypeScript frontend and Rust Windows Tauri application.
+2. Visit Unsplash/Pexels and right-click a photo. Confirm the native
+   **Add to Haven Walls review** option inserts it into Review.
+3. Use **Find images** on a page with many photos. Confirm the thumbnail
+   gallery appears with image candidates and reported dimensions.
+4. Check several images, add them to Review, and inspect an original.
+5. Repeat on Google Images. When only a publisher link is available,
+   show a helpful limitation instead of adding webpage HTML as an image.
+6. Switch tabs and rescan. Old results must not replace those from the
+   currently active tab. Check a page with no detectable images.
+7. Verify Review deduplicates candidates and never exceeds 30 images.
+8. Close scan/inspection: the live webpage reappears, with navigation
+   and controls still working and no native overlay leakage.
+9. Verify existing Gallery Google Images/Lens and Library behavior remain
+   unchanged. No Library import occurs from Browser during Commit 3.
+10. Verify sessions, bookmarks, history and cookies still work after restart.
+
+Important: the commit only proves code was pushed, not that the Windows
+build passed. Test it locally before accepting Commit 3.

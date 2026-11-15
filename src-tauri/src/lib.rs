@@ -12,6 +12,16 @@ mod internal_browser;
 mod browser_storage;
 #[cfg(windows)]
 mod google_context_menu;
+#[cfg(windows)]
+mod browser_image_capture;
+#[cfg(not(windows))]
+mod browser_image_capture {
+    #[tauri::command]
+    pub fn browser_scan_images(_app: tauri::AppHandle, _tab_id: String)
+        -> Result<(), String> {
+        Err("Browser image scanning requires Windows WebView2.".into())
+    }
+}
 
 use serde::Serialize;
 
@@ -64,6 +74,7 @@ pub fn run() {
             internal_browser::browser_tab_action,
             internal_browser::browser_tab_state,
             internal_browser::browser_close_tab,
+            browser_image_capture::browser_scan_images,
             browser_storage::browser_load_data,
             browser_storage::browser_save_session,
             browser_storage::browser_add_bookmark,
