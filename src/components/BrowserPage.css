@@ -1,0 +1,170 @@
+/* PR #5 / Commit 1: real WebView2 tab shell inspired by the approved prototype. */
+.content.content-browser { padding: 22px 24px 18px; overflow: hidden; scrollbar-gutter: auto; }
+.content.content-browser > * { max-width: none; }
+.hw-browser { flex-direction: column; height: 100%; min-width: 0; min-height: 0; gap: 14px; }
+.hw-browser-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex: none; }
+.hw-browser-heading .eyebrow { font-size: 10px; }
+.hw-browser-heading h1 { margin: 5px 0 2px; font-size: 27px; line-height: 1.1; }
+.hw-browser-heading p { color: #7895ae; font-size: 11px; margin: 2px 0 0; }
+.hw-browser-stage { font-size: 10px; color: #4789b9; background: white; padding: 7px 13px;
+  border: 1px solid #d8e9f7; border-radius: 24px; white-space: nowrap; }
+.hw-browser-frame { flex: 1; min-height: 0; display: flex; flex-direction: column;
+  background: #fff; border: 1px solid #dce7f1; border-radius: 15px; overflow: hidden;
+  box-shadow: 0 7px 20px #1e5c8111; }
+.hw-browser-tabs { display: flex; align-items: end; flex: none; min-height: 41px; padding: 5px 10px 0;
+  gap: 4px; overflow-x: auto; background: #eaf3fa; border-bottom: 1px solid #d8e5ee; }
+.hw-browser-tab { min-width: 100px; max-width: 200px; flex: 0 1 170px; display: flex; align-items: center;
+  border: 1px solid transparent; border-radius: 10px 10px 0 0; height: 35px;
+  background: #e0edf8; padding: 0 4px 0 10px; color: #6687a1; }
+.hw-browser-tab.selected { background: #fff; color: #224e78; border-color: #d7e6f2; border-bottom-color: #fff; }
+.hw-browser-tab-name { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden;
+  flex: 1; background: transparent; border: 0; cursor: pointer; text-align: left; color: inherit; font: inherit;
+  font-size: 11px; font-weight: 650; padding: 7px 0; }
+.hw-browser-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-browser-favicon { flex: none; color: #3988ce; font-size: 11px; }
+.hw-browser-tab-close { border: none; cursor: pointer; background: transparent; color: #7392a9; font-size: 17px;
+  width: 22px; height: 25px; border-radius: 5px; }
+.hw-browser-tab-close:hover { background: #e1eefa; color: #365675; }
+.hw-browser-add-tab { border: none; background: transparent; color: #638eae; cursor: pointer;
+  font-size: 22px; align-self: center; padding: 0 8px; }
+.hw-browser-add-tab:disabled { opacity: .35; cursor: default; }
+.hw-browser-tab-count { font-size: 10px; color: #94abbc; margin: auto 0 auto auto; padding: 0 5px; white-space: nowrap; }
+.hw-browser-toolbar { display: flex; align-items: center; gap: 7px; min-height: 54px; padding: 8px 12px;
+  border-bottom: 1px solid #e5eef5; flex: none; }
+.hw-browser-icon-button { width: 29px; height: 32px; border-radius: 7px; color: #4b7ea7;
+  border: none; background: transparent; font: inherit; font-size: 23px; cursor: pointer; flex: none; }
+.hw-browser-icon-button:hover:not(:disabled) { background: #edf5fc; }
+.hw-browser-icon-button:disabled { color: #b7c6d4; cursor: default; }
+.hw-browser-address-form { min-width: 105px; flex: 1; display: flex; align-items: center; gap: 8px;
+  border: 1px solid #d6e4f0; background: #f3f8fc; border-radius: 9px; padding: 0 10px; height: 36px; }
+.hw-browser-address-form > span { color: #8299ae; }
+.hw-browser-address-form input { flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font: inherit; font-size: 12px; color: #3b5972; }
+.hw-browser-address-form input::placeholder { color: #9baebd; }
+.hw-browser-address-form button { border: none; background: transparent; color: #2e81c4;
+  cursor: pointer; font: inherit; font-weight: 700; font-size: 11px; }
+.hw-browser-feature { border: 1px solid #dce8f4; color: #7c9db9; background: #f5faff;
+  border-radius: 8px; font-size: 10px; padding: 9px 10px; font-weight: 700; white-space: nowrap; }
+.hw-browser-feature:disabled { opacity: .65; cursor: not-allowed; }
+.hw-browser-notice { min-height: 30px; border-bottom: 1px solid #e9f1f7; flex: none;
+  background: #f7fbfe; padding: 7px 15px; font-size: 10px; color: #7294af; }
+.hw-browser-error { color: #b33b42; font-weight: 650; }
+.hw-browser-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.hw-browser-native-space { flex: 1; min-width: 0; position: relative; background: #fff; min-height: 0; }
+.hw-browser-native-slot { position: absolute; inset: 0; }
+.hw-browser-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 30px; color: #aac0d2; gap: 8px;
+  background: #fcfdff; }
+.hw-browser-placeholder > span { font-size: 45px; color: #b7d4e9; }
+.hw-browser-placeholder strong { font-size: 15px; font-weight: 650; }
+.hw-browser-placeholder small { font-size: 11px; max-width: 330px; line-height: 1.6; }
+.hw-browser-review { display: flex; flex: 0 0 220px; flex-direction: column; border-left: 1px solid #deebf5;
+  background: #fbfdff; padding: 0; min-height: 0; }
+.hw-browser-review-title { display: flex; align-items: center; justify-content: space-between; padding: 17px 14px;
+  border-bottom: 1px solid #e9f0f7; color: #2f516e; font-size: 12px; }
+.hw-browser-review-title span { font-size: 10px; color: #3388cc; background: #e3f2ff;
+  border-radius: 20px; padding: 4px 8px; }
+.hw-browser-review p { color: #90a8bc; font-size: 11px; line-height: 1.5; margin: 14px; }
+.hw-browser-review-empty { margin: 0 12px; padding: 28px 12px; font-size: 11px;
+  border-radius: 9px; border: 1px dashed #d6e6f1; text-align: center; background: #f1f8fd;
+  color: #9bb2c5; }
+.hw-browser-review-bottom { margin-top: auto; display: flex; flex-direction: column; padding: 13px; gap: 11px; }
+.hw-browser-review-bottom button { border: none; border-radius: 9px; background: #a1c6e3;
+  color: white; padding: 12px; font-size: 11px; font-weight: 700; cursor: not-allowed; }
+.hw-browser-review-bottom small { color: #90a9be; font-size: 10px; line-height: 1.6; text-align: center; }
+.hw-browser-footer { flex: none; min-height: 28px; padding: 7px 12px; display: flex; align-items: center;
+  justify-content: space-between; gap: 14px; background: #fbfdff; border-top: 1px solid #ebf1f6;
+  color: #98afc1; font-size: 10px; }
+@media(max-width:1120px) {
+  .hw-browser-review { flex-basis: 180px; }
+  .hw-browser-feature { font-size: 0; padding: 8px; }
+  .hw-browser-feature::first-letter { font-size: 16px; }
+}
+@media(max-width:930px) {
+  .hw-browser-review { display: none; }
+  .content.content-browser { padding: 15px; }
+  .hw-browser-heading p { display: none; }
+  .hw-browser-footer span:last-child { display: none; }
+}
+
+.hw-browser-active-icon { background: #e0eef9; color: #146ba9; }
+
+
+/* PR #5 Commit 3: browser image scan + Review */
+.hw-browser-feature-live{opacity:1;background:#e6f3fc;color:#2375ac;cursor:pointer}
+.hw-browser-feature-live:hover:not(:disabled){background:#d2eafa}
+.hw-browser-feature-live:disabled{opacity:.4;cursor:not-allowed}
+.hw-browser-review-list{flex:1;min-height:0;overflow-y:auto;padding:7px}
+.hw-browser-review-item{display:flex;align-items:center;gap:4px;border-bottom:1px solid #e7eef5;padding:6px 0}
+.hw-browser-review-item>button:first-child{display:flex;align-items:center;gap:7px;min-width:0;flex:1;
+ padding:0;border:0;background:transparent;text-align:left;cursor:pointer}
+.hw-browser-review-item img{width:44px;height:39px;object-fit:cover;border-radius:6px;background:#eff6fc}
+.hw-browser-review-item span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+ font-size:10px;color:#467494}
+.hw-browser-review-item>button:last-child{border:0;background:#f3f7fc;color:#7b9fb9;
+ border-radius:6px;font-size:17px;width:22px;height:26px;cursor:pointer}
+.hw-browser-review-bottom .hw-browser-review-clear{background:transparent;color:#497d9e;
+ border:1px solid #dbeaf4;cursor:pointer;padding:8px;font-size:10px;font-weight:650}
+
+
+/* Commit 3 refinement: real website left, resizable Found / Review right. */
+.hw-browser-body { min-width: 0; }
+.hw-browser-native-space { flex: 1 1 0; min-width: 110px; }
+.hw-browser-panel-resizer {
+  width: 8px; flex: 0 0 8px; cursor: col-resize;
+  position: relative; z-index: 1;
+  background: #edf4f9; border-left: 1px solid #dce7f1;
+  border-right: 1px solid #dce7f1; touch-action: none;
+}
+.hw-browser-panel-resizer:hover,
+.hw-browser-panel-resizer:focus-visible {
+  outline: none; background: #bddcf1;
+}
+.hw-browser-review {
+  flex: 0 0 auto; min-width: 300px; max-width: 65%;
+  width: 392px; border-left: 0; overflow: hidden;
+}
+.hw-browser-side-tabs {
+  flex: none; display: flex; border-bottom: 1px solid #e0eaf4;
+  padding: 7px 11px 0; gap: 7px; background: #f6faff;
+}
+.hw-browser-side-tabs button {
+  flex: 1; border: 0; border-bottom: 2px solid transparent;
+  padding: 10px 6px; background: transparent; color: #7d9ab2;
+  cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.hw-browser-side-tabs button.selected {
+  color: #2172ad; border-bottom-color: #2589cb;
+}
+.hw-browser-side-tabs span {
+  border-radius: 20px; background: #e1f0fb;
+  padding: 3px 7px; font-size: 10px;
+}
+.hw-browser-side-empty {
+  padding: 42px 22px; text-align: center; color: #8aa3b8;
+}
+.hw-browser-side-empty strong { display: block; font-size: 12px; color: #567c9b; }
+.hw-browser-side-empty p { line-height: 1.6; font-size: 11px; }
+.hw-browser-zoom {
+  display: flex; flex: none; align-items: center; gap: 1px;
+  height: 33px; border: 1px solid #dce8f3;
+  border-radius: 8px; padding: 1px 3px; background: #f5faff;
+}
+.hw-browser-zoom button {
+  background: transparent; border: 0; color: #397ba8;
+  border-radius: 5px; min-width: 24px; height: 26px;
+  cursor: pointer; font: inherit; font-size: 16px;
+}
+.hw-browser-zoom .hw-browser-zoom-value {
+  min-width: 43px; font-size: 11px; font-weight: 700;
+}
+.hw-browser-zoom button:disabled { opacity: .32; cursor: not-allowed; }
+.hw-browser-zoom button:hover:not(:disabled) { background: #dceefa; }
+/* Override the original compact-screen rule; keep Found available. */
+@media (max-width: 1120px) {
+  .hw-browser-review { flex: 0 0 auto; }
+}
+@media (max-width: 930px) {
+  .hw-browser-review { display: flex; }
+}

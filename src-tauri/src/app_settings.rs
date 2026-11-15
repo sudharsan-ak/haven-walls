@@ -118,6 +118,27 @@ pub fn open_database(paths: &DataPaths) -> Result<Connection, String> {
            provider TEXT PRIMARY KEY CHECK(provider IN ('serpapi','unsplash','tmdb')),
            ciphertext BLOB NOT NULL
          );
+         -- Browser state survives every normal build and reinitialization.
+         -- Additive tables avoid changing or replacing existing PR #4 data.
+         CREATE TABLE IF NOT EXISTS browser_session (
+           id INTEGER PRIMARY KEY CHECK(id=1),
+           json TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS browser_bookmarks (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           url TEXT NOT NULL UNIQUE,
+           title TEXT NOT NULL,
+           folder TEXT NOT NULL DEFAULT 'Favorites',
+           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE IF NOT EXISTS browser_history (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           url TEXT NOT NULL,
+           title TEXT NOT NULL,
+           visited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE INDEX IF NOT EXISTS ix_browser_visits_recent
+           ON browser_history(id DESC);
          CREATE TABLE IF NOT EXISTS wallpapers (
            id TEXT PRIMARY KEY,
            title TEXT NOT NULL,

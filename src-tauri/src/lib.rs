@@ -8,8 +8,20 @@ mod google_images;
 mod category_discovery;
 mod api_credentials;
 mod google_browser;
+mod internal_browser;
+mod browser_storage;
 #[cfg(windows)]
 mod google_context_menu;
+#[cfg(windows)]
+mod browser_image_capture;
+#[cfg(not(windows))]
+mod browser_image_capture {
+    #[tauri::command]
+    pub fn browser_scan_images(_app: tauri::AppHandle, _tab_id: String)
+        -> Result<(), String> {
+        Err("Browser image scanning requires Windows WebView2.".into())
+    }
+}
 
 use serde::Serialize;
 
@@ -33,7 +45,14 @@ fn get_host_info() -> HostInfo {
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        // Preserve the opener service for trusted commands such as
+        // "Open wallpaper source" while allowing native WebView2 new-tab
+        // requests to reach each browser tab's on_new_window handler.
+        // The default plugin script intercepts target=_blank and suppresses
+        // the popup before WebView2 sees it on remote website pages.
+        .plugin(tauri_plugin_opener::Builder::new()
+            .open_js_links_on_click(false)
+            .build())
         .manage(local_storage::StorageLock::default())
         .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
@@ -49,6 +68,19 @@ pub fn run() {
             api_credentials::get_api_credential_status,
             api_credentials::save_api_credential,
             api_credentials::remove_api_credential,
+            internal_browser::browser_open_tab,
+            internal_browser::browser_show_tab,
+            internal_browser::browser_navigate_tab,
+            internal_browser::browser_set_zoom,
+            internal_browser::browser_tab_action,
+            internal_browser::browser_tab_state,
+            internal_browser::browser_close_tab,
+            browser_image_capture::browser_scan_images,
+            browser_storage::browser_load_data,
+            browser_storage::browser_save_session,
+            browser_storage::browser_add_bookmark,
+            browser_storage::browser_remove_bookmark,
+            browser_storage::browser_clear_history,
             google_browser::open_google_images_inline,
             google_browser::open_google_lens_inline,
             google_browser::reverse_search_library_wallpaper_inline,

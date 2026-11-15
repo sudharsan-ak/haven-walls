@@ -1,0 +1,108 @@
+
+/* Embedded in the right-side panel; do not overlay or resize the live website. */
+.hw-scan-panel {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  background: #fbfdff; display: flex; flex-direction: column;
+  color: #325b7b;
+}
+.hw-scan-header {
+  flex: none; display: flex; gap: 8px; align-items: flex-start;
+  justify-content: space-between; padding: 13px 13px 10px;
+  border-bottom: 1px solid #e1ebf5;
+}
+.hw-scan-header > div { min-width: 0; }
+.hw-scan-header strong { display: block; font-size: 13px; color: #315678; }
+.hw-scan-header small {
+  display: block; margin-top: 5px; font-size: 10px;
+  color: #8ca5bb;
+}
+.hw-scan-header .hw-scan-page {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+}
+.hw-scan-header > button {
+  border: none; background: transparent; font-size: 19px;
+  color: #7c9cb4; cursor: pointer; flex: none;
+}
+.hw-scan-controls {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 9px 12px; padding: 10px 12px;
+  border-bottom: 1px solid #e6eff7;
+  flex: none; font-size: 10px; color: #6287a4;
+}
+.hw-scan-controls label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+.hw-scan-controls input[type=checkbox] { accent-color: #207fc1; }
+.hw-scan-search {
+  flex: 1 1 100%; width: 100%; min-width: 0;
+  border: 1px solid #d7e6f1; background: white;
+  border-radius: 7px; padding: 8px 10px; font: inherit;
+  font-size: 11px;
+}
+.hw-scan-gallery {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: max-content; align-content: start;
+  align-items: start; gap: 11px; overflow-y: auto; overflow-x: hidden;
+  padding: 12px;
+}
+.hw-scan-card {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  border: 1px solid #dce8f3; border-radius: 9px; overflow: hidden;
+  background: white; box-shadow: 0 2px 6px #23597d13;
+}
+.hw-scan-card.checked { border-color: #2681c2; box-shadow: 0 0 0 1px #2681c2; }
+.hw-scan-card-image {
+  display: block; width: 100%; height: 132px; padding: 0;
+  border: 0; background: #e9f1f7; position: relative;
+  overflow: hidden; cursor: pointer; flex: none;
+}
+.hw-scan-card-image img {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+}
+.hw-scan-card-check {
+  position: absolute; top: 7px; left: 7px;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border: 1px solid #a0b4c4;
+  border-radius: 5px; background: #ffffffef; color: #fff;
+  font-weight: 700; font-size: 14px;
+}
+.hw-scan-card.checked .hw-scan-card-check {
+  background: #237fc1; border-color: #237fc1;
+}
+.hw-scan-card-details {
+  display: flex; flex-direction: column; flex: 1;
+  gap: 4px; padding: 9px; min-height: 76px;
+}
+.hw-scan-card-details strong {
+  font-size: 10px; color: #365b79; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; display: block;
+}
+.hw-scan-card-details small {
+  color: #90a5b8; font-size: 9px; line-height: 1.4;
+  display: block; min-height: 12px;
+}
+.hw-scan-card-details button {
+  align-self: flex-start; margin-top: auto; padding: 6px 9px;
+  font-size: 10px; font-weight: 650; border: 0; cursor: pointer;
+  background: #e6f3fc; border-radius: 6px; color: #2377b4;
+}
+.hw-scan-footer {
+  flex: none; padding: 10px 12px;
+  border-top: 1px solid #e3edf5; background: white;
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px; justify-content: space-between;
+}
+.hw-scan-footer span { font-size: 10px; color: #7899b3; }
+.hw-scan-footer button {
+  border: none; border-radius: 7px; padding: 9px 11px;
+  background: #1e7fbd; color: white; font-size: 10px;
+  font-weight: 700; cursor: pointer;
+}
+.hw-scan-footer button:disabled { opacity: .45; cursor: not-allowed; }
+.hw-scan-noimages {
+  grid-column: 1/-1; text-align: center;
+  padding: 35px 10px; color: #8da8bb; font-size: 11px;
+}
+.hw-scan-noimages strong { color: #486c89; }
+.hw-scan-noimages p { line-height: 1.6; }
