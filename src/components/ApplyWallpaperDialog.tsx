@@ -104,6 +104,8 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
       setApplied(true);
       setNotice(result.notice);
       onApplied();
+      // Close only after Windows confirms the wallpaper was applied.
+      onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
