@@ -55,7 +55,7 @@ pub struct BrowserData {
     pub history: Vec<BrowserVisit>,
 }
 
-fn database(app: &AppHandle) -> Result<Connection, String> {
+pub(crate) fn database(app: &AppHandle) -> Result<Connection, String> {
     let paths = local_storage::current_paths(app)?;
     local_storage::prepare_folders(&paths)?;
     app_settings::open_database(&paths)

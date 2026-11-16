@@ -8,7 +8,8 @@ import {
 import { formattedBytes } from "../lib/configuration";
 import { qualityTier } from "../lib/imageQuality";
 import {
-  getWallpaperActivity, formatWallpaperLocalTime, type WallpaperActivity,
+  getWallpaperActivity, formatWallpaperLocalTime,
+  type WallpaperActivity, type WallpaperApplyResult,
 } from "../lib/windowsWallpaper";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
@@ -44,6 +45,8 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
   const [betterSourceUrl, setBetterSourceUrl] = useState("");
   const objectUrls = useRef(new Set<string>());
   const selectedId = useRef<string | null>(null);
+  // Discard activity reads started before a successful wallpaper change.
+  const activityReadVersion = useRef(0);
   useEffect(() => () => {
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
@@ -90,6 +93,18 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     } finally {
       setLoading(false);
     }
+    const version = ++activityReadVersion.current;
+    try {
+      const latest = await getWallpaperActivity();
+      if (version === activityReadVersion.current) {
+        setActivity(latest);
+        setActivityError("");
+      }
+    } catch (problem) {
+      if (version === activityReadVersion.current) {
+        setActivityError(problem instanceof Error ? problem.message : String(problem));
+      }
+    }
   }
 
   useEffect(() => {
@@ -105,23 +120,55 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
 
   useEffect(() => {
     let active = true;
+    const version = ++activityReadVersion.current;
     void getWallpaperActivity().then((result) => {
-      if (active) setActivity(result);
+      if (active && version === activityReadVersion.current) {
+        setActivity(result);
+        setActivityError("");
+      }
     }).catch((error: unknown) => {
-      if (active) setActivityError(error instanceof Error ? error.message : String(error));
+      if (active && version === activityReadVersion.current) {
+        setActivityError(error instanceof Error ? error.message : String(error));
+      }
     });
     return () => { active = false; };
   }, [revision]);
 
-  async function afterApply() {
+  function afterApply(result: WallpaperApplyResult) {
+    // The native Apply command returns only after Windows accepted the
+    // wallpaper and its new assignment was committed. Update immediately
+    // instead of racing an OS status query while the modal closes.
+    ++activityReadVersion.current;
+    const appliedAt = new Date().toISOString();
+    const title = items.find((item) => item.id === result.wallpaperId)?.title || applyItem?.title || "Wallpaper";
+    setActivity((previous) => ({
+      history: previous?.history ?? [],
+      current: [
+        ...(result.targetId === "all" ? [] :
+          (previous?.current ?? []).filter((item) => item.targetId !== result.targetId)),
+        {
+          wallpaperId: result.wallpaperId,
+          targetId: result.targetId,
+          title,
+          appliedAt,
+          isCurrent: true,
+        },
+      ],
+    }));
+    setActivityError("");
     setNotice("Windows desktop wallpaper changed. The active working copy is protected.");
-    try {
-      setActivity(await getWallpaperActivity());
-      setActivityError("");
-    } catch (problem) {
-      setActivityError(problem instanceof Error ? problem.message : String(problem));
-    }
   }
+
+  // Current appearance is verified against Windows; deletion protection is
+  // deliberately broader and follows every persisted Haven Walls assignment.
+  const currentIds = useMemo(() => new Set(
+    (activity?.current || []).filter((entry) => entry.isCurrent)
+      .map((entry) => entry.wallpaperId),
+  ), [activity]);
+  const assignedIds = useMemo(() => new Set(
+    (activity?.current || []).map((entry) => entry.wallpaperId),
+  ), [activity]);
+  const canVerifyRemoval = Boolean(activity) && !activityError;
 
   const visible = useMemo(() => items.filter((item) => {
     const phrase = search.trim().toLowerCase();
@@ -195,7 +242,8 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
   }
 
   async function remove(image: LibraryWallpaper) {
-    if (busyId) return;
+    // Back-end remains authoritative if another display changes mid-operation.
+    if (busyId || !canVerifyRemoval || assignedIds.has(image.id)) return;
     setBusyId(image.id);
     setError("");
     try {
@@ -343,7 +391,8 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
               <span key={active.targetId} title={"Applied " + formatWallpaperLocalTime(active.appliedAt)}>
                 {active.targetId === "all" ? "All displays" :
                   "Selected display"}: {active.title}
-                <small>Applied {formatWallpaperLocalTime(active.appliedAt)}</small>
+                <small>{active.isCurrent ? "Current · " : "Last applied · "}
+                  {formatWallpaperLocalTime(active.appliedAt)}</small>
               </span>
             ))}
           </div>
@@ -383,13 +432,17 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
       {!loading && visible.length > 0 && (
         <div className="hwl-grid" aria-label="Saved wallpapers">
           {visible.map((item) => (
-            <article key={item.id} className="hwl-card">
+            <article key={item.id}
+              className={"hwl-card" + (currentIds.has(item.id) ? " hwl-card-current" : "")}>
               <button type="button" className="hwl-card-image"
                 title={"Inspect " + item.title}
                 onClick={() => void open(item)}>
                 {item.thumbnailDataUrl
                   ? <img src={item.thumbnailDataUrl} alt={item.title} loading="lazy" />
                   : <span>Preview unavailable</span>}
+                {currentIds.has(item.id) && (
+                  <span className="hwl-current-indicator">▣ Current wallpaper</span>
+                )}
                 <span className="hwl-size">{item.width} × {item.height}</span>
                 <span className={"hwl-quality hwl-quality-" + (qualityTier(item.width, item.height) === "Below 1080p" ? "low" : "ok")}>
                   {qualityTier(item.width, item.height)}
@@ -443,6 +496,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
               <div className="hwl-viewer-stage-badges">
                 <span>Saved original</span>
                 <span>{qualityTier(selected.width, selected.height)}</span>
+                {currentIds.has(selected.id) && <span>Current wallpaper</span>}
               </div>
               <div className="hwl-viewer-fit" role="group" aria-label="Image display mode">
                 <button type="button" aria-pressed={viewerMode === "fit"}
@@ -491,6 +545,14 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
               </header>
               <div className="hwl-viewer-content">
                 <h2 title={selected.title}>{selected.title}</h2>
+                {assignedIds.has(selected.id) && (
+                  <p className="hwl-protected-message" role="status">
+                    {currentIds.has(selected.id)
+                      ? "This wallpaper is currently in use."
+                      : "This image is still protected by Haven Walls' last display assignment."}
+                    {" "}Set another wallpaper through Haven Walls before removing it.
+                  </p>
+                )}
                 <div className="hwl-viewer-pills" aria-label="Wallpaper quality and format">
                   <span className="quality">{qualityTier(selected.width, selected.height)}</span>
                   <span>{selected.width} × {selected.height}</span>
@@ -584,7 +646,10 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
                   {selected.favorite ? "♥" : "♡"}
                 </button>
                 <button type="button" className="hwl-secondary hwl-danger"
-                  disabled={Boolean(busyId)}
+                  disabled={Boolean(busyId) || !canVerifyRemoval || assignedIds.has(selected.id)}
+                  title={assignedIds.has(selected.id)
+                    ? "Set a different wallpaper through Haven Walls before removing this image."
+                    : !canVerifyRemoval ? "Cannot verify protected wallpapers yet." : "Remove image"}
                   onClick={() => {
                     setRemovalError("");
                     setPendingRemoval(selected);
@@ -603,7 +668,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
         <ApplyWallpaperDialog image={applyItem}
           imageDataUrl={selected?.id === applyItem.id ? openedOriginal : undefined}
           onClose={() => setApplyItem(null)}
-          onApplied={() => void afterApply()} />
+          onApplied={afterApply} />
       )}
       {pendingRemoval && (
         <ConfirmDialog tone="danger"

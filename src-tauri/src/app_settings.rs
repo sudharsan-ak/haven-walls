@@ -124,6 +124,13 @@ pub fn open_database(paths: &DataPaths) -> Result<Connection, String> {
            id INTEGER PRIMARY KEY CHECK(id=1),
            json TEXT NOT NULL
          );
+         -- Review is a pending image selection, not a downloaded Library file.
+         -- A single snapshot keeps adds, removes and clears atomic. Existing
+         -- Library/settings/browser tables remain unchanged.
+         CREATE TABLE IF NOT EXISTS browser_review (
+           id INTEGER PRIMARY KEY CHECK(id=1),
+           json TEXT NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS browser_bookmarks (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
            url TEXT NOT NULL UNIQUE,

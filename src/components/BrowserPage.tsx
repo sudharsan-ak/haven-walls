@@ -5,6 +5,7 @@ import {
   BROWSER_HOME, BROWSER_MAX_TABS, browserAddress, browserCloseTab,
   browserNavigateTab, browserOpenTab, browserShowTab, browserTabAction,
   browserTabState, browserLoadData, browserSaveSession, browserScanImages, browserSetZoom,
+  browserLoadReview, browserSaveReview,
   isBrowserPageUrl,
   type BrowserBounds, type BrowserNavigationEvent,
   type BrowserPopupEvent, type BrowserTabState, type BrowserAction,
@@ -41,7 +42,65 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export default function BrowserPage({ active }: { active: boolean }) {
+/** Canonical browser Review metadata. A native preview may return a data:
+ * thumbnail for display, but only HTTPS candidates persist in the Review.
+ * Downloaded pixel data is never written into this queue.
+ */
+function prepareReviewImage(image: CatalogImage): CatalogImage | null {
+  if (image.kind !== "image") return null;
+  const previewUrl = validRemoteUrl(image.previewUrl);
+  if (!previewUrl) return null;
+  const originalUrl = validRemoteUrl(image.originalUrl);
+  const candidateUrls = [...new Set((image.candidateUrls || [])
+    .map((url) => validRemoteUrl(url)).filter((url): url is string => Boolean(url)))].slice(0, 12);
+  return {
+    id: image.id.slice(0, 4250),
+    source: image.source.slice(0, 140),
+    title: (image.title || "Website image").slice(0, 150),
+    previewUrl,
+    originalUrl,
+    candidateUrls,
+    pageUrl: validRemoteUrl(image.pageUrl) || "",
+    credit: image.credit.slice(0, 500),
+    rights: image.rights.slice(0, 900),
+    width: Number.isFinite(image.width) ? Math.max(0, Math.min(20000, Math.trunc(image.width))) : 0,
+    height: Number.isFinite(image.height) ? Math.max(0, Math.min(20000, Math.trunc(image.height))) : 0,
+    kind: "image",
+  };
+}
+
+function mergeReviewSelections(
+  saved: CatalogImage[], incoming: CatalogImage[],
+): CatalogImage[] {
+  const result: CatalogImage[] = [];
+  for (const raw of [...saved, ...incoming]) {
+    const image = prepareReviewImage(raw);
+    if (!image) continue;
+    const key = image.originalUrl || image.previewUrl;
+    const index = result.findIndex((item) => item.id === image.id
+      || item.previewUrl === image.previewUrl
+      || (item.originalUrl || item.previewUrl) === key);
+    if (index >= 0) {
+      // Replace the existing selection with the newer, inspected metadata.
+      result[index] = image;
+    } else if (result.length < 30) {
+      result.push(image);
+    }
+  }
+  return result;
+}
+
+interface Props {
+  active: boolean;
+  /** Hide the native child WebView2 while a global Library dialog is visible. */
+  blockingDialogOpen: boolean;
+  onSaveToLibrary: (images: CatalogImage[]) => void;
+  importCompletion: { sequence: number; completedIds: string[] } | null;
+}
+
+export default function BrowserPage({
+  active, blockingDialogOpen, onSaveToLibrary, importCompletion,
+}: Props) {
   const [tabs, setTabs] = useState<Tab[]>(() => [defaultTab()]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [address, setAddress] = useState(BROWSER_HOME);
@@ -58,6 +117,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
   // They are not persisted, and are never automatically reused for a new URL.
   const [scansByTab, setScansByTab] = useState<Record<string, BrowserScanResponse>>({});
   const [review, setReview] = useState<CatalogImage[]>([]);
+  // Do not write an initial empty queue over a saved Review before loading it.
+  const [reviewReady, setReviewReady] = useState(false);
   const [inspect, setInspect] = useState<CatalogImage | null>(null);
   const [captureNote, setCaptureNote] = useState("");
   const slotRef = useRef<HTMLDivElement>(null);
@@ -71,6 +132,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
   // create from tab A can cover tab B after rapid tab switching.
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const reviewQueueRef = useRef<Promise<void>>(Promise.resolve());
   const tabsRef = useRef(tabs);
   const activeRef = useRef(active);
   const selectedRef = useRef(selectedId);
@@ -79,7 +141,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
   const inspectRef = useRef(inspect);
   const scanRequestRef = useRef<string | null>(null);
   tabsRef.current = tabs;
-  activeRef.current = active;
+  activeRef.current = active && !blockingDialogOpen;
   selectedRef.current = selectedId;
   readyRef.current = ready;
   panelRef.current = panel;
@@ -150,6 +212,51 @@ export default function BrowserPage({ active }: { active: boolean }) {
       .catch((problem: unknown) => setError("Could not save browser tabs: " + message(problem)));
   }, [ready, selectedId, tabs]);
 
+  // Restore pending Review selections independently of website tabs. Keep
+  // any selections captured during startup instead of replacing them.
+  useEffect(() => {
+    if (!isTauri()) {
+      setReviewReady(true);
+      return;
+    }
+    let mounted = true;
+    void browserLoadReview().then((saved) => {
+      if (!mounted) return;
+      setReview((current) => mergeReviewSelections(saved, current));
+      setReviewReady(true);
+    }).catch((problem: unknown) => {
+      if (!mounted) return;
+      // Preserve the existing saved queue on disk. If loading fails, do not
+      // permit a new empty snapshot to overwrite it.
+      setError("Could not restore saved Review: " + message(problem));
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  // Serialize Review snapshots in user-action order. Each write is an
+  // atomic SQLite replacement and never downloads or imports an image.
+  useEffect(() => {
+    if (!reviewReady || !isTauri()) return;
+    const snapshot = review.map(prepareReviewImage).filter((item): item is CatalogImage => item !== null);
+    reviewQueueRef.current = reviewQueueRef.current
+      .then(() => browserSaveReview(snapshot))
+      .then(() => setError((previous) => previous.startsWith("Could not save Review:")
+        ? "" : previous))
+      .catch((problem: unknown) => setError("Could not save Review: " + message(problem)));
+  }, [reviewReady, review]);
+
+  // A Library import may finish with a mixture of saved, duplicate and
+  // failed entries. Remove only the IDs reported as saved or exact duplicates;
+  // any failed selection remains in SQLite-backed Review for a later retry.
+  useEffect(() => {
+    if (!importCompletion || importCompletion.completedIds.length === 0) return;
+    const completed = new Set(importCompletion.completedIds);
+    setReview((previous) => {
+      const remaining = previous.filter((image) => !completed.has(image.id));
+      return remaining.length === previous.length ? previous : remaining;
+    });
+  }, [importCompletion]);
+
   const current = tabs.find((tab) => tab.id === selectedId) ?? tabs[0];
   const lastScan = selectedId ? scansByTab[selectedId] : undefined;
   const scanData = lastScan?.pageUrl === current?.url ? lastScan : null;
@@ -204,7 +311,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
 
   useEffect(() => {
     syncNative();
-  }, [active, selectedId, ready, panel, inspect]);
+  }, [active, blockingDialogOpen, selectedId, ready, panel, inspect]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -282,7 +389,10 @@ export default function BrowserPage({ active }: { active: boolean }) {
               || "Website image").slice(0, 120);
           } catch { return "Website image"; }
         })();
-        const item = makeImage(imageUrl || best, selected.pageUrl, title, 0, 0, best);
+        // Google imgres links can identify the real publisher page. Passing
+        // Google's results page to Rust hides its source image metadata.
+        const item = makeImage(imageUrl || best, resolved.sourcePage ||
+          selected.pageUrl, title, 0, 0, best);
         if (item) {
           addReview([item]);
           setSideTab("review");
@@ -467,11 +577,11 @@ export default function BrowserPage({ active }: { active: boolean }) {
   }
 
 
-  // Native image selection is only metadata; originals are checked through
-  // the existing FullResolutionPreview before any future Library import.
+  // Native image selection is metadata only. The existing Library importer
+  // verifies and downloads originals after explicit Save to Library.
   function makeImage(
     url: string, pageUrl: string, title: string, width: number, height: number,
-    original?: string | null,
+    original?: string | null, alternates: string[] = [],
   ): CatalogImage | null {
     const direct = validRemoteUrl(url);
     if (!direct) return null;
@@ -485,7 +595,9 @@ export default function BrowserPage({ active }: { active: boolean }) {
       title: label,
       previewUrl: direct,
       originalUrl: best,
-      candidateUrls: direct !== best ? [direct] : [],
+      candidateUrls: [...new Set([direct, ...alternates]
+        .map((value) => validRemoteUrl(value))
+        .filter((value): value is string => Boolean(value && value !== best)))].slice(0, 12),
       pageUrl: page,
       credit: "Image hosted by " + new URL(best).hostname + " · Creator unverified",
       rights: "Found on a website. Image rights and attribution have not been verified.",
@@ -494,25 +606,17 @@ export default function BrowserPage({ active }: { active: boolean }) {
   }
 
   function fromScanned(item: BrowserScannedImage): CatalogImage | null {
-    return makeImage(item.url, scanData?.pageUrl || current?.url || "",
-      item.title, item.width, item.height, item.originalUrl);
+    // Prefer the clicked image's publisher over the Google results page.
+    // The native importer uses this to find the site's full-size image links.
+    return makeImage(item.url, item.sourcePageUrl ||
+      scanData?.pageUrl || current?.url || "",
+      item.title, item.width, item.height, item.originalUrl,
+      item.candidateUrls || []);
   }
 
   function addReview(candidates: CatalogImage[]) {
-    setReview((previous) => {
-      const seen = new Set(previous.map((item) => item.originalUrl || item.previewUrl));
-      const next = [...previous];
-      for (const candidate of candidates) {
-        const key = candidate.originalUrl || candidate.previewUrl;
-        if (next.length >= 30) break;
-        if (!seen.has(key)) {
-          seen.add(key);
-          next.push(candidate);
-        }
-      }
-      return next;
-    });
-    setCaptureNote("Image selection updated. Inspect your candidates before saving.");
+    setReview((previous) => mergeReviewSelections(previous, candidates));
+    setCaptureNote("Review selection updated; saving locally.");
   }
 
   function scanPage() {
@@ -608,7 +712,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
           <h1>Browse &amp; discover</h1>
           <p>Browse websites and compare their images in the Found / Review panel.</p>
         </div>
-        <span className="hw-browser-stage">PR #5 · Commit 3</span>
+        <span className="hw-browser-stage">PR #6 · Commit 2</span>
       </header>
       <div className="hw-browser-frame">
         <nav className="hw-browser-tabs" aria-label="Website tabs">
@@ -777,8 +881,15 @@ export default function BrowserPage({ active }: { active: boolean }) {
             <div className="hw-browser-review-bottom">
               {review.length > 0 && <button type="button" className="hw-browser-review-clear"
                 onClick={() => setReview([])}>Clear selection</button>}
-              <button type="button" disabled>Save selected to Library</button>
-              <small>Library import arrives in Commit 4. Inspect and image selection work now.</small>
+              <button type="button"
+                className="hw-browser-save-to-library"
+                disabled={!reviewReady || review.length === 0}
+                onClick={() => onSaveToLibrary(review.map((image) => ({ ...image })))}>
+                Save {review.length} {review.length === 1 ? "image" : "images"} to Library
+              </button>
+              <small>{reviewReady
+                ? "Saved images and exact duplicates leave Review. Failed items stay for retry."
+                : "Restoring your saved Review selection…"}</small>
             </div>
               </>
             )}

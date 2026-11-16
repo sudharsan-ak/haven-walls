@@ -26,6 +26,8 @@ pub struct Activity {
 pub struct CurrentWallpaper {
     pub target_id: String, pub wallpaper_id: String, pub title: String,
     pub applied_at: String,
+    // True only when the managed working file matches the actual Windows wallpaper.
+    pub is_current: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
@@ -61,15 +63,29 @@ pub fn get_wallpaper_activity(app: AppHandle) -> Result<Activity, String> {
     local_storage::prepare_folders(&paths)?;
     let conn = app_settings::open_database(&paths)?;
     ensure_schema(&conn)?;
+    // An external change in Windows Settings may supersede our recorded
+    // assignment. Retain that record for deletion protection, but only mark
+    // the image as current if Windows confirms its managed working-copy path.
+    let system_wallpapers = platform::current_wallpaper_paths().unwrap_or_default();
     let mut active_stmt = conn.prepare(
-        "SELECT a.target_id,a.wallpaper_id,w.title,a.applied_at
+        "SELECT a.target_id,a.wallpaper_id,w.title,a.applied_at,a.relative_path
          FROM active_assignments a JOIN wallpapers w ON w.id=a.wallpaper_id
          ORDER BY a.target_id"
     ).map_err(|e| format!("Could not read active wallpaper: {e}"))?;
-    let active_rows = active_stmt.query_map([], |row| Ok(CurrentWallpaper {
-        target_id: row.get(0)?, wallpaper_id: row.get(1)?,
-        title: row.get(2)?, applied_at: row.get(3)?,
-    })).map_err(|e| format!("Could not read active wallpaper: {e}"))?;
+    let active_rows = active_stmt.query_map([], |row| {
+        let target_id: String = row.get(0)?;
+        let relative_path: String = row.get(4)?;
+        let expected = paths.active().join(&relative_path).to_string_lossy().into_owned();
+        let is_current = system_wallpapers.iter().any(|(monitor_id, actual_path)| {
+            (target_id == "all" || monitor_id == &target_id)
+                && !actual_path.is_empty()
+                && expected.eq_ignore_ascii_case(actual_path)
+        });
+        Ok(CurrentWallpaper {
+            target_id, wallpaper_id: row.get(1)?,
+            title: row.get(2)?, applied_at: row.get(3)?, is_current,
+        })
+    }).map_err(|e| format!("Could not read active wallpaper: {e}"))?;
     let mut current = Vec::new();
     for entry in active_rows {
         current.push(entry.map_err(|e| format!("Could not read wallpaper entry: {e}"))?);
@@ -325,6 +341,25 @@ mod platform {
         }
         Ok(results)
     }
+    /// Read Windows' actual wallpaper paths, not only our persisted assignments.
+    pub fn current_wallpaper_paths() -> Result<Vec<(String, String)>, String> {
+        let _com = ComApartment::new()?;
+        let wall = shell()?;
+        let count = unsafe { wall.GetMonitorDevicePathCount() }
+            .map_err(|e| format!("Could not inspect desktop wallpapers: {e}"))?;
+        let mut paths = Vec::new();
+        for index in 0..count {
+            let monitor = unsafe { wall.GetMonitorDevicePathAt(index) }
+                .map(take_native)
+                .map_err(|e| format!("Could not read display identity: {e}"))?;
+            if monitor.is_empty() { continue; }
+            let wide = to_wide(OsStr::new(&monitor));
+            if let Ok(path) = unsafe { wall.GetWallpaper(PCWSTR(wide.as_ptr())) } {
+                paths.push((monitor, take_native(path)));
+            }
+        }
+        Ok(paths)
+    }
     pub struct Previous {
         path:String,position:DESKTOP_WALLPAPER_POSITION,
     }
@@ -383,6 +418,9 @@ mod platform {
     use super::MonitorInfo;
     use std::path::Path;
     pub struct Previous;
+    pub fn current_wallpaper_paths()->Result<Vec<(String,String)>,String>{
+        Ok(Vec::new())
+    }
     pub fn monitors()->Result<Vec<MonitorInfo>,String>{
         Err("Windows 10 or Windows 11 is required.".into())
     }
