@@ -74,3 +74,27 @@ advanced history UI are **not** implemented by Commit 1.
 
 Build and execution are not yet verified in this environment because the
 Windows Rust/Tauri toolchain is unavailable here. Keep the PR in draft.
+
+## Commit 1 follow-up: Immediate Library badge during rotation
+
+- Windows rotation and saved preferences worked in user testing, but the
+  **Current wallpaper** badge updated only after leaving and re-entering Library.
+- The Rust worker already emits `rotation:applied` with the successful native
+  `ApplyResult`. Library previously handled that event by refreshing from the OS,
+  which could overwrite the immediate success state with a stale wallpaper path.
+- Library now applies the confirmed success event directly using the same
+  `afterApply` handler as manual Set Now and Next. A ref keeps the handler
+  current without repeated event listener registration.
+- Refresh remains available for external Windows wallpaper changes; failed
+  wallpaper operations do not emit successful updates.
+
+### Retest
+
+1. Stay in Library, click Next wallpaper. The new Current wallpaper badge
+   should move immediately, without changing tabs.
+2. Keep Library open until an automatic timed rotation occurs. The badge
+   should move immediately again.
+3. Re-enter Library or click Refresh to confirm Windows agrees with the
+   displayed current wallpaper.
+4. Verify app restart still preserves rotation preferences.
+5. Rebuild with `npm run build` and `npm run tauri dev` on Windows.

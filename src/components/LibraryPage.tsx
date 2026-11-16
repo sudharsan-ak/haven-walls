@@ -49,6 +49,9 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
   const selectedId = useRef<string | null>(null);
   // Discard activity reads started before a successful wallpaper change.
   const activityReadVersion = useRef(0);
+  // Keep the native rotation event handler up-to-date without repeatedly
+  // removing and reinstalling its event subscription.
+  const onRotationApplied = useRef<(result: WallpaperApplyResult) => void>(() => {});
   useEffect(() => () => {
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
@@ -109,16 +112,18 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     }
   }
 
-  // Changes made by the Rust scheduler update Library while this page stays open.
+  // The scheduler emits a successful ApplyResult. Use that authoritative
+  // event payload to update the badge immediately. Requerying Windows right
+  // here can return its previous path briefly and overwrite the new badge.
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | null = null;
-    void listen("rotation:applied", () => {
-      if (active) void refresh();
+    void listen<WallpaperApplyResult>("rotation:applied", (event) => {
+      if (active) onRotationApplied.current(event.payload);
     }).then((stop) => {
       if (active) unlisten = stop;
       else stop();
-    }).catch(() => { /* Next and manual apply still refresh their local state. */ });
+    }).catch(() => { /* The Next button also provides an ApplyResult directly. */ });
     return () => {
       active = false;
       unlisten?.();
@@ -176,6 +181,10 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     setActivityError("");
     setNotice("Windows desktop wallpaper changed. The active working copy is protected.");
   }
+
+  useEffect(() => {
+    onRotationApplied.current = afterApply;
+  });
 
   // Current appearance is verified against Windows; deletion protection is
   // deliberately broader and follows every persisted Haven Walls assignment.
