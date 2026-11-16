@@ -35,7 +35,7 @@ pub struct HistoryEntry {
     pub wallpaper_id: Option<String>, pub title: String,
     pub target_id: String, pub fit: String, pub applied_at: String,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct ApplyResult { pub notice: String, pub target_id: String, pub wallpaper_id: String }
 
@@ -148,7 +148,7 @@ pub async fn apply_library_wallpaper(
     ).await.map_err(|_| "Wallpaper operation was interrupted.".to_string())?
 }
 
-fn apply_sync(
+pub(crate) fn apply_sync(
     app: &AppHandle, wallpaper_id: String, target_id: String,
     fit: Option<String>, overlay: Option<String>,
 ) -> Result<ApplyResult, String> {
@@ -272,6 +272,10 @@ fn apply_sync(
             let _ = fs::remove_file(paths.active().join(item));
         }
     }
+    // Keep the rotation timer aligned with successful manual Set Now actions.
+    // This is best-effort and must never turn a successful Windows apply into
+    // an apparent error if rotation metadata cannot be updated.
+    let _ = crate::rotation::note_successful_apply(&conn, &wallpaper_id);
     Ok(ApplyResult {
         target_id, wallpaper_id,
         notice: format!("Applied {title} to Windows. Your saved Library original remains unchanged."),

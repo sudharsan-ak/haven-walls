@@ -11,7 +11,9 @@ import {
   getWallpaperActivity, formatWallpaperLocalTime,
   type WallpaperActivity, type WallpaperApplyResult,
 } from "../lib/windowsWallpaper";
+import { listen } from "@tauri-apps/api/event";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
+import RotationPanel from "./RotationPanel";
 import ConfirmDialog from "./ConfirmDialog";
 import "./LibraryPage.css";
 
@@ -106,6 +108,22 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
       }
     }
   }
+
+  // Changes made by the Rust scheduler update Library while this page stays open.
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen("rotation:applied", () => {
+      if (active) void refresh();
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    }).catch(() => { /* Next and manual apply still refresh their local state. */ });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [revision]);
 
   useEffect(() => {
     let active = true;
@@ -398,6 +416,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
           </div>
         </section>
       )}
+      <RotationPanel onApplied={afterApply} />
       <div className="hwl-controls">
         <input type="search" value={search}
           placeholder="Search title, provider, or photographer…"

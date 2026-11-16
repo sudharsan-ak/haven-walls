@@ -345,7 +345,7 @@ export default function SettingsPage() {
             <p>Local-first by design. Future background behavior is not silently activated.</p></div>
         </div>
         <div className="hws-privacy-row"><strong>Telemetry</strong><span>Off · Not collected</span></div>
-        <div className="hws-privacy-row"><strong>Automatic rotation and scheduling</strong><span>Not enabled yet</span></div>
+        <div className="hws-privacy-row"><strong>Automatic rotation</strong><span>Library rotation controls are available in Library; advanced schedules coming later</span></div>
         <div className="hws-privacy-row"><strong>Global shortcuts and startup tray</strong><span>Not enabled yet</span></div>
         <div className="hws-privacy-row"><strong>Dark appearance</strong><span>Planned; current light theme retained</span></div>
       </section>

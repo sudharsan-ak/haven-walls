@@ -211,7 +211,7 @@ export default function App() {
           <h1>Welcome to Haven Walls</h1>
           <p className="subheading">
             A better way to discover and manage desktop wallpapers.
-            Save wallpapers locally and apply them to Windows. Automatic rotation is coming later.
+            Save wallpapers locally, apply them to Windows, and enable basic Library rotation from the Library page.
           </p>
 
           <section className="hero" aria-labelledby="foundation-title">

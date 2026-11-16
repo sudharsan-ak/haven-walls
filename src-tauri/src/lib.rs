@@ -4,6 +4,7 @@ mod app_settings;
 mod configuration;
 mod wallpaper_library;
 mod windows_wallpaper;
+mod rotation;
 mod google_images;
 mod category_discovery;
 mod api_credentials;
@@ -55,9 +56,11 @@ pub fn run() {
             .open_js_links_on_click(false)
             .build())
         .manage(local_storage::StorageLock::default())
+        .manage(rotation::RotationGate::default())
         .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
             configuration::initialize(app.handle()).map_err(std::io::Error::other)?;
+            rotation::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -107,7 +110,10 @@ pub fn run() {
             wallpaper_library::open_wallpaper_source,
             windows_wallpaper::list_wallpaper_monitors,
             windows_wallpaper::get_wallpaper_activity,
-            windows_wallpaper::apply_library_wallpaper
+            windows_wallpaper::apply_library_wallpaper,
+            rotation::get_rotation_status,
+            rotation::save_rotation_preferences,
+            rotation::rotation_next
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");
