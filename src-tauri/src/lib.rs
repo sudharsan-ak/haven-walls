@@ -57,6 +57,7 @@ pub fn run() {
             .build())
         .manage(local_storage::StorageLock::default())
         .manage(rotation::RotationGate::default())
+        .manage(wallpaper_library::best_source::InspectionCache::default())
         .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
             configuration::initialize(app.handle()).map_err(std::io::Error::other)?;

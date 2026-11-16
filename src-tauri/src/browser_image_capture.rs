@@ -251,7 +251,13 @@ pub const SCAN_JS: &str = r#"
       const onGoogle = ['google.com', 'www.google.com', 'images.google.com']
         .includes(location.hostname.toLowerCase());
       const directFile = /\.(?:jpe?g|png|webp|avif)$/i.test(link.pathname);
-      return onGoogle && !directFile ? acceptable(href) : '';
+      if (onGoogle && !directFile) return acceptable(href);
+      // Photo-grid thumbnails often link to their own photo detail page.
+      // Preserve it rather than treating the search page as the publisher.
+      const photoDetail = /^\/(?:photo|photos|image|images|wallpaper|wallpapers)\//i
+        .test(link.pathname);
+      return link.origin === location.origin && photoDetail && !directFile
+        ? acceptable(href) : '';
     } catch { return ''; }
   };
   const add = (src, original, title, width, height, publisher = '', alternates = []) => {

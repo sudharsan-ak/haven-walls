@@ -4,11 +4,18 @@
 use super::*;
 use base64::Engine as _;
 use std::time::{Duration, Instant};
+use std::sync::Mutex;
 
 const MAX_CANDIDATES: usize = 12;
 const MAX_SITE_IMAGES: usize = 4;
 const MAX_HTML_BYTES: usize = 384 * 1024;
 const TOTAL_PROBE_TIME: Duration = Duration::from_secs(48);
+const INSPECTION_CACHE_TTL: Duration = Duration::from_secs(20 * 60);
+const INSPECTION_CACHE_LIMIT: usize = 96 * 1024 * 1024;
+const INSPECTION_CACHE_MAX_ITEMS: usize = 6;
+
+// Do not negotiate AVIF/APNG while the Rust decoder supports JPEG/PNG/WebP.
+const ACCEPT_SUPPORTED_IMAGE: &str = "image/jpeg,image/png,image/webp;q=0.9,*/*;q=0.1";
 
 struct Probe {
     url: String,
@@ -16,6 +23,49 @@ struct Probe {
     width: u32,
     height: u32,
     fingerprint: u64,
+}
+
+// Keep only a small, expiring in-memory set of originals already verified
+// by native Inspect. SQLite Review continues storing URL metadata only.
+struct CachedInspection {
+    source_page: String,
+    checked_at: Instant,
+    probe: Probe,
+}
+#[derive(Default)]
+pub struct InspectionCache(Mutex<Vec<CachedInspection>>);
+
+fn keep_inspected_original(app: &AppHandle, source_page: String, probe: Probe) {
+    if probe.bytes.len() > INSPECTION_CACHE_LIMIT { return; }
+    let cache = app.state::<InspectionCache>();
+    let Ok(mut entries) = cache.0.lock() else { return; };
+    entries.retain(|entry| entry.checked_at.elapsed() < INSPECTION_CACHE_TTL
+        && entry.probe.url != probe.url);
+    entries.push(CachedInspection {
+        source_page, checked_at: Instant::now(), probe,
+    });
+    // Both item count and total memory usage are bounded.
+    while entries.len() > INSPECTION_CACHE_MAX_ITEMS ||
+        entries.iter().map(|entry| entry.probe.bytes.len()).sum::<usize>()
+            > INSPECTION_CACHE_LIMIT {
+        entries.remove(0);
+    }
+}
+
+fn take_inspected_original(
+    app: &AppHandle, candidate_urls: &[String], source_page: &str,
+) -> Option<Probe> {
+    let urls: Vec<String> = candidate_urls.iter()
+        .filter_map(|url| reqwest::Url::parse(url).ok())
+        .filter(|url| url.scheme() == "https")
+        .map(|url| url.to_string()).collect();
+    let cache = app.state::<InspectionCache>();
+    let mut entries = cache.0.lock().ok()?;
+    entries.retain(|entry| entry.checked_at.elapsed() < INSPECTION_CACHE_TTL);
+    let index = entries.iter().position(|entry|
+        entry.source_page == source_page && urls.contains(&entry.probe.url)
+    )?;
+    Some(entries.remove(index).probe)
 }
 
 async fn fetch_public_bytes(
@@ -44,7 +94,7 @@ async fn fetch_public_bytes(
             if expect_html {
                 "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5"
             } else {
-                "image/avif,image/webp,image/apng,image/*;q=0.8,*/*;q=0.5"
+                ACCEPT_SUPPORTED_IMAGE
             },
         );
         // Some public wallpaper CDNs expect a normal same-site page referrer.
@@ -539,7 +589,14 @@ pub async fn import_best_wallpaper_urls(
     mut metadata: ImportMetadata,
 ) -> Result<ImportOutcome, String> {
     metadata.clean()?;
-    let (best, tried) = find_best_source(candidate_urls, metadata.source_page.clone()).await?;
+    // Inspect already fetched and decoded the original. Reuse those verified
+    // bytes when possible; otherwise resolve selected URLs normally.
+    let cached = take_inspected_original(&app, &candidate_urls, &metadata.source_page);
+    let reused = cached.is_some();
+    let (best, tried) = match cached {
+        Some(original) => (original, 0),
+        None => find_best_source(candidate_urls, metadata.source_page.clone()).await?,
+    };
     let (w,h) = (best.width, best.height);
     metadata.original_url = best.url;
     // The existing importer applies user settings and writes only this
@@ -549,13 +606,20 @@ pub async fn import_best_wallpaper_urls(
         import_bytes(&app, &state, best.bytes, metadata, true)
     }).await.map_err(|_| "Wallpaper import task was interrupted.".to_string())?
       .map_err(|error| format!(
-        "Checked {tried} source version(s); best accessible image was {w} × {h}.          {error} If the source website offers a larger original, paste that direct image URL."
+        "Best accessible image was {w} × {h} after checking {tried} source(s). {error} If the source website offers a larger original, paste that direct image URL."
       ))?;
-    result.note = format!(
-        "{} Checked {} available source version(s) and chose {} × {} pixels. \
-         Resolution reflects decoded pixels, not a guarantee of optical sharpness.",
-        result.note, tried, w, h,
-    );
+    result.note = if reused {
+        format!(
+            "{} Reused the original already verified during Inspect ({} × {} pixels), without downloading it again.",
+            result.note, w, h,
+        )
+    } else {
+        format!(
+            "{} Checked {} available source version(s) and chose {} × {} pixels. \
+             Resolution reflects decoded pixels, not a guarantee of optical sharpness.",
+            result.note, tried, w, h,
+        )
+    };
     Ok(result)
 }
 
@@ -577,16 +641,17 @@ pub struct InspectedOriginal {
 
 #[tauri::command]
 pub async fn inspect_best_wallpaper_urls(
+    app: AppHandle,
     candidate_urls: Vec<String>,
     source_page: String,
 ) -> Result<InspectedOriginal, String> {
     if source_page.len() > 4096 {
         return Err("Image source page address is too long.".into());
     }
-    let (best, tried) = find_best_source(candidate_urls, source_page).await?;
-    let original_url = best.url;
+    let (best, tried) = find_best_source(candidate_urls, source_page.clone()).await?;
+    let original_url = best.url.clone();
     let (width, height) = (best.width, best.height);
-    let (preview_data_url, preview_width, preview_height) =
+    let (preview_data_url, preview_width, preview_height, original) =
         tauri::async_runtime::spawn_blocking(move || {
             let decoded = image::load_from_memory(&best.bytes)
                 .map_err(|e| format!("Could not decode original for preview: {e}"))?;
@@ -597,11 +662,12 @@ pub async fn inspect_best_wallpaper_urls(
             preview.write_with_encoder(
                 image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 87)
             ).map_err(|e| format!("Could not prepare original preview: {e}"))?;
-            Ok::<(String, u32, u32), String>((
+            Ok::<(String, u32, u32, Probe), String>((
                 format!("data:image/jpeg;base64,{}", BASE64.encode(&jpeg)),
-                preview_width, preview_height
+                preview_width, preview_height, best,
             ))
         }).await.map_err(|_| "Original image preview task was interrupted.".to_string())??;
+    keep_inspected_original(&app, source_page, original);
     Ok(InspectedOriginal {
         original_url, width, height, preview_data_url,
         preview_width, preview_height, tried,

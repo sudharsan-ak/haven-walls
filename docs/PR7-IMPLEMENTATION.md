@@ -98,3 +98,30 @@ Windows Rust/Tauri toolchain is unavailable here. Keep the PR in draft.
    displayed current wallpaper.
 4. Verify app restart still preserves rotation preferences.
 5. Rebuild with `npm run build` and `npm run tauri dev` on Windows.
+
+## Import regression fix during Commit 1 testing
+
+Native image requests previously advertised AVIF and APNG despite having
+only JPEG/PNG/WebP decoders enabled. This could cause Pexels and other CDNs
+to deliver unsupported bytes even though WebView2 displayed a preview.
+Requests now advertise only the supported image codecs.
+
+When native Inspect successfully verifies an original, it retains those
+exact bytes for up to 20 minutes in a bounded, process-local cache (maximum
+six images and 96 MB). Saving a matching URL and publisher page reuses the
+verified original, then runs the same Library import rules, rights checks,
+quality checks and deduplication. No original bytes are persisted in Review.
+
+Find Images also preserves same-site photo detail links as publisher source
+pages on supported photo-grid URL patterns such as Pexels /photo/.
+
+### Test
+1. Visit Pexels, use Find Images, Inspect a selected image until it explicitly
+   says "Verified downloaded source". Add it to Review, then Save to Library.
+   It should save without a second request when in the cache.
+2. Without inspecting first, select a new Pexels image and Save. The supported
+   Accept header should avoid requesting AVIF from content-negotiating servers.
+3. Restart the app. Review metadata persists, inspected original bytes do not.
+4. Verify blocked/unsupported/low-resolution images still fail honestly and
+   no incorrect photo is imported.
+5. Run the Windows Tauri build before treating this follow-up as verified.
