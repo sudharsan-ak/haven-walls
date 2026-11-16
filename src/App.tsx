@@ -7,10 +7,21 @@ import BrowserPage from "./components/BrowserPage";
 import SettingsPage from "./components/SettingsPage";
 import LibraryPage from "./components/LibraryPage";
 import LibraryImportDialog from "./components/LibraryImportDialog";
+import type { ImportItemResult } from "./components/LibraryImportDialog";
 import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
 import type { CatalogImage } from "./lib/native";
 import type { LibraryWallpaper } from "./lib/wallpaperLibrary";
 import "./App.css";
+
+type ImportRequest = {
+  images: CatalogImage[];
+  origin: "browser" | "other";
+};
+
+type BrowserImportCompletion = {
+  sequence: number;
+  completedIds: string[];
+};
 
 type HostState =
   | { kind: "checking" }
@@ -31,7 +42,31 @@ export default function App() {
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
-  const [importCandidates, setImportCandidates] = useState<CatalogImage[] | null>(null);
+  const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
+  const [browserImportCompletion, setBrowserImportCompletion] =
+    useState<BrowserImportCompletion | null>(null);
+
+  function beginOtherImport(images: CatalogImage[]) {
+    setImportRequest({ images, origin: "other" });
+  }
+
+  function beginBrowserImport(images: CatalogImage[]) {
+    if (images.length === 0) return;
+    setImportRequest({ images, origin: "browser" });
+  }
+
+  function completedImport(results: ImportItemResult[]) {
+    if (importRequest?.origin !== "browser") return;
+    const completedIds = [...new Set(results
+      .filter((result) => result.status === "saved" || result.status === "duplicate")
+      .map((result) => result.imageId))];
+    if (completedIds.length > 0) {
+      setBrowserImportCompletion((previous) => ({
+        sequence: (previous?.sequence ?? 0) + 1,
+        completedIds,
+      }));
+    }
+  }
   const [applyCandidate, setApplyCandidate] = useState<LibraryWallpaper | null>(null);
   const [libraryRevision, setLibraryRevision] = useState(0);
 
@@ -112,14 +147,17 @@ export default function App() {
         </aside>
 
         <main className={"content" + (page === "browser" ? " content-browser" : "")}>
-          <BrowserPage active={page === "browser"} />
+          <BrowserPage active={page === "browser"}
+            blockingDialogOpen={importRequest !== null || applyCandidate !== null}
+            onSaveToLibrary={beginBrowserImport}
+            importCompletion={browserImportCompletion} />
           {page === "browser" ? null : page === "settings" ? (
             <SettingsPage />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               onDiscover={() => openGallery("discover")}
               onReverseSearch={reverseSearchSavedImage}
-              onSaveToLibrary={setImportCandidates} />
+              onSaveToLibrary={beginOtherImport} />
           ) : page === "gallery" ? (
             <OnlineGallery
               source={gallerySource}
@@ -130,8 +168,8 @@ export default function App() {
               googleSearchSeed={googleSearchSeed}
               lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}
-              onSaveToLibrary={setImportCandidates}
-              blockingDialogOpen={importCandidates !== null || applyCandidate !== null}
+              onSaveToLibrary={beginOtherImport}
+              blockingDialogOpen={importRequest !== null || applyCandidate !== null}
             />
           ) : page === "sources" ? (
             <section className="sources-page">
@@ -227,17 +265,18 @@ export default function App() {
           )}
         </main>
       </div>
-      {importCandidates && (
+      {importRequest && (
         <LibraryImportDialog
-          images={importCandidates}
-          onClose={() => setImportCandidates(null)}
+          images={importRequest.images}
+          onClose={() => setImportRequest(null)}
+          onFinished={completedImport}
           onImported={() => setLibraryRevision((count) => count + 1)}
           onSetNow={(image) => {
-            setImportCandidates(null);
+            setImportRequest(null);
             setApplyCandidate(image);
           }}
           onOpenLibrary={() => {
-            setImportCandidates(null);
+            setImportRequest(null);
             setPage("library");
           }}
         />

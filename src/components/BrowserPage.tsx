@@ -90,7 +90,17 @@ function mergeReviewSelections(
   return result;
 }
 
-export default function BrowserPage({ active }: { active: boolean }) {
+interface Props {
+  active: boolean;
+  /** Hide the native child WebView2 while a global Library dialog is visible. */
+  blockingDialogOpen: boolean;
+  onSaveToLibrary: (images: CatalogImage[]) => void;
+  importCompletion: { sequence: number; completedIds: string[] } | null;
+}
+
+export default function BrowserPage({
+  active, blockingDialogOpen, onSaveToLibrary, importCompletion,
+}: Props) {
   const [tabs, setTabs] = useState<Tab[]>(() => [defaultTab()]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [address, setAddress] = useState(BROWSER_HOME);
@@ -131,7 +141,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
   const inspectRef = useRef(inspect);
   const scanRequestRef = useRef<string | null>(null);
   tabsRef.current = tabs;
-  activeRef.current = active;
+  activeRef.current = active && !blockingDialogOpen;
   selectedRef.current = selectedId;
   readyRef.current = ready;
   panelRef.current = panel;
@@ -235,6 +245,18 @@ export default function BrowserPage({ active }: { active: boolean }) {
       .catch((problem: unknown) => setError("Could not save Review: " + message(problem)));
   }, [reviewReady, review]);
 
+  // A Library import may finish with a mixture of saved, duplicate and
+  // failed entries. Remove only the IDs reported as saved or exact duplicates;
+  // any failed selection remains in SQLite-backed Review for a later retry.
+  useEffect(() => {
+    if (!importCompletion || importCompletion.completedIds.length === 0) return;
+    const completed = new Set(importCompletion.completedIds);
+    setReview((previous) => {
+      const remaining = previous.filter((image) => !completed.has(image.id));
+      return remaining.length === previous.length ? previous : remaining;
+    });
+  }, [importCompletion]);
+
   const current = tabs.find((tab) => tab.id === selectedId) ?? tabs[0];
   const lastScan = selectedId ? scansByTab[selectedId] : undefined;
   const scanData = lastScan?.pageUrl === current?.url ? lastScan : null;
@@ -289,7 +311,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
 
   useEffect(() => {
     syncNative();
-  }, [active, selectedId, ready, panel, inspect]);
+  }, [active, blockingDialogOpen, selectedId, ready, panel, inspect]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -552,8 +574,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
   }
 
 
-  // Native image selection is only metadata; originals are checked through
-  // the existing FullResolutionPreview before any future Library import.
+  // Native image selection is metadata only. The existing Library importer
+  // verifies and downloads originals after explicit Save to Library.
   function makeImage(
     url: string, pageUrl: string, title: string, width: number, height: number,
     original?: string | null,
@@ -681,7 +703,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
           <h1>Browse &amp; discover</h1>
           <p>Browse websites and compare their images in the Found / Review panel.</p>
         </div>
-        <span className="hw-browser-stage">PR #5 · Commit 3</span>
+        <span className="hw-browser-stage">PR #6 · Commit 2</span>
       </header>
       <div className="hw-browser-frame">
         <nav className="hw-browser-tabs" aria-label="Website tabs">
@@ -850,9 +872,14 @@ export default function BrowserPage({ active }: { active: boolean }) {
             <div className="hw-browser-review-bottom">
               {review.length > 0 && <button type="button" className="hw-browser-review-clear"
                 onClick={() => setReview([])}>Clear selection</button>}
-              <button type="button" disabled>Save selected to Library</button>
+              <button type="button"
+                className="hw-browser-save-to-library"
+                disabled={!reviewReady || review.length === 0}
+                onClick={() => onSaveToLibrary(review.map((image) => ({ ...image })))}>
+                Save {review.length} {review.length === 1 ? "image" : "images"} to Library
+              </button>
               <small>{reviewReady
-                ? "Pending selections persist across restarts. Library import follows in Commit 2."
+                ? "Saved images and exact duplicates leave Review. Failed items stay for retry."
                 : "Restoring your saved Review selection…"}</small>
             </div>
               </>

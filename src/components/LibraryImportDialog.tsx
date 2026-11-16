@@ -8,12 +8,19 @@ import {
 } from "../lib/wallpaperLibrary";
 import "./LibraryImportDialog.css";
 
+export interface ImportItemResult {
+  imageId: string;
+  status: "saved" | "duplicate" | "error";
+}
+
 interface Props {
   images: CatalogImage[];
   onClose: () => void;
   onImported: () => void;
   onOpenLibrary: () => void;
   onSetNow: (image: LibraryWallpaper) => void;
+  /** Called after an import attempt completes, including Quick Save and retries. */
+  onFinished?: (results: ImportItemResult[]) => void;
 }
 
 interface ImportLog {
@@ -26,7 +33,7 @@ const fileCandidate = (image: CatalogImage): string | undefined =>
   [image.originalUrl, image.previewUrl].find((value) => value?.startsWith("blob:")) || undefined;
 
 export default function LibraryImportDialog({
-  images, onClose, onImported, onOpenLibrary, onSetNow,
+  images, onClose, onImported, onOpenLibrary, onSetNow, onFinished,
 }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [quickMode, setQuickMode] = useState<boolean | null>(null);
@@ -110,6 +117,7 @@ export default function LibraryImportDialog({
     setLogs([]);
     setLastSaved(null);
     let imported = false;
+    const outcomes: ImportItemResult[] = [];
     for (let i = 0; i < distinct.length; i++) {
       const image = distinct[i];
       setIndex(i + 1);
@@ -160,6 +168,7 @@ export default function LibraryImportDialog({
         }
 
         if (!result.alreadySaved) imported = true;
+        outcomes.push({ imageId: image.id, status: result.alreadySaved ? "duplicate" : "saved" });
         setLastSaved(result.wallpaper);
         setLogs((entries) => [...entries, {
           name: image.title,
@@ -167,6 +176,7 @@ export default function LibraryImportDialog({
           status: result.alreadySaved ? "duplicate" : "saved",
         }]);
       } catch (problem) {
+        outcomes.push({ imageId: image.id, status: "error" });
         setLogs((entries) => [...entries, {
           name: image.title,
           message: problem instanceof Error ? problem.message : String(problem),
@@ -175,6 +185,9 @@ export default function LibraryImportDialog({
       }
     }
     if (imported) onImported();
+    // Report only settled outcomes. The caller decides whether to update
+    // a Browser Review queue; Gallery and Library callers are unchanged.
+    onFinished?.(outcomes);
     setComplete(true);
     setBusy(false);
   }
@@ -329,8 +342,11 @@ export default function LibraryImportDialog({
             </div>
           )}
           {complete && <p className="lidi-status" role="status">
-            Finished processing {distinct.length} images. Check individual results above.
-          </p>}
+            Import finished: {logs.filter((item) => item.status === "saved").length} saved,
+            {" "}{logs.filter((item) => item.status === "duplicate").length} exact duplicates,
+            {" "}{logs.filter((item) => item.status === "error").length} failed.
+            Check individual results above.
+          </p>
           {minimumResolutionRejected && (
             <div className="lidi-minimum-retry" role="group"
               aria-label="Retry image below minimum resolution">

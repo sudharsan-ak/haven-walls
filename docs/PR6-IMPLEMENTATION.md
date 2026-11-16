@@ -4,7 +4,7 @@ Branch: feature/pr6-persistent-browser-review
 Base: main (after PR #5, merge commit b99f334)
 Status: Draft. Do not merge until Windows build and functionality are approved.
 
-## Commit 1: Persist the Browser Review selection (this commit)
+## Commit 1: Persist the Browser Review selection (user-tested and approved)
 
 - Store the Review queue in Haven Walls' existing SQLite database as a
   single, transactionally replaced JSON snapshot. The new browser_review
@@ -56,7 +56,7 @@ Status: Draft. Do not merge until Windows build and functionality are approved.
   This commit is NOT a verified Windows build until that workflow
   or the user's local compiler runs it.
 
-## Commit 2: Reuse the existing Library importer (not yet implemented)
+## Commit 2: Reuse the existing Library importer (implemented; awaiting Windows testing)
 
 - Wire Browser's Save selected to Library to the existing shared
   LibraryImportDialog, with the normal rights/quality confirmation,
@@ -67,6 +67,45 @@ Status: Draft. Do not merge until Windows build and functionality are approved.
   Review queue. Failed/blocked items remain for retries.
 - Refresh Library immediately after any successful import, with the
   existing preview/apply workflow untouched.
+- The shared LibraryImportDialog reports per-image results back to App after
+  each batch, including auto Quick Save and retries. Browser imports remove
+  only IDs with a successful save or a backend-confirmed exact duplicate.
+  Failed imports remain in the persistent Review queue with their metadata.
+- The native browser child is hidden while any global import/apply dialog is
+  visible, so it cannot overlap or intercept dialog controls. React's Browser
+  workspace remains mounted and restores the child after closing the dialog.
+- Existing Gallery and Library callers continue using the same importer;
+  their source images never trigger Browser Review removal.
+
+### Windows test checklist for Commit 2
+
+1. Run `npm run build`, then `npm run tauri dev` on the PR #6 branch.
+2. Open Browser, add 2–3 images to Review, click **Save N images to
+   Library**. The shared import dialog must appear ABOVE the webpage.
+3. With Quick Save disabled, review rights and save. With Quick Save enabled,
+   verify the existing preference continues to govern automatic saving.
+4. Save a valid large image: the dialog reports saved, Library shows the
+   image immediately, and the item disappears from Browser Review.
+5. Add the same exact image back into Review and save it: it should report
+   "Exact duplicate" and leave Review. Re-importing should not duplicate
+   the Library entry.
+6. Include a broken/unavailable source, a below-minimum image, or an image
+   triggering similarity rejection in a mixed batch. Failed entries must
+   remain in Review. Successful entries and exact duplicates must leave.
+7. Close the modal, switch to Gallery / Library / Browser. Verify the
+   website returns and Found/Review remains usable.
+8. Restart Haven Walls. Review should contain only failures/pending entries,
+   while previously imported wallpapers remain available in Library.
+9. Test the importer from Gallery and from Library: neither source should
+   remove pending Browser Review images.
+10. Check manual original inspection, source metadata, image rights,
+    resolution thresholds, duplicate checks, and per-image failure messages.
+
+### Verification status
+
+Source-level wiring and result-state review completed. The Windows build,
+Rust native import, and WebView2 layering require local Windows testing.
+Do NOT merge the draft PR before those checks succeed.
 
 ## PR merge acceptance
 
