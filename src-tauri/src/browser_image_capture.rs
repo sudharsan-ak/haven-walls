@@ -229,7 +229,32 @@ pub const SCAN_JS: &str = r#"
     } catch {}
     return '';
   };
-  const add = (src, original, title, width, height) => {
+  // A Google result can point at its publisher via imgrefurl even when
+  // its visible <img> has only Google's cached thumbnail.
+  const publisherFromLink = (element) => {
+    const href = element.closest('a[href]')?.href;
+    if (!href) return '';
+    try {
+      const link = new URL(href);
+      const host = link.hostname.toLowerCase();
+      const google = host === 'google.com' || host === 'www.google.com'
+        || host === 'images.google.com';
+      if (google) {
+        for (const key of link.pathname === '/url'
+          ? ['imgrefurl', 'imgref', 'refurl', 'url', 'q']
+          : ['imgrefurl', 'imgref', 'refurl']) {
+          const page = acceptable(link.searchParams.get(key));
+          if (page && !/^https:\/\/(?:www\.|images\.)?google\.com\//i.test(page)) return page;
+        }
+        return '';
+      }
+      const onGoogle = ['google.com', 'www.google.com', 'images.google.com']
+        .includes(location.hostname.toLowerCase());
+      const directFile = /\.(?:jpe?g|png|webp|avif)$/i.test(link.pathname);
+      return onGoogle && !directFile ? acceptable(href) : '';
+    } catch { return ''; }
+  };
+  const add = (src, original, title, width, height, publisher = '', alternates = []) => {
     const url = acceptable(src);
     if (!url || seen.has(url)) return;
     const best = acceptable(original);
@@ -240,6 +265,10 @@ pub const SCAN_JS: &str = r#"
     if (hits.length >= 160) return;
     seen.add(url);
     hits.push({ url, originalUrl: best && best !== url ? best : null,
+      sourcePageUrl: acceptable(publisher) || null,
+      candidateUrls: [...new Set(alternates.map(acceptable).filter(
+        candidate => candidate && candidate !== url && candidate !== best
+      ))].slice(0, 8),
       title: String(title || 'Website image').slice(0, 150),
       width: w, height: h });
   };
@@ -251,8 +280,13 @@ pub const SCAN_JS: &str = r#"
       || acceptable(img.getAttribute('data-original'))
       || acceptable(img.getAttribute('data-full'))
       || source;
+    const alternatives = [
+      bestSrcset(img.srcset), bestSrcset(img.getAttribute('data-srcset')),
+      img.getAttribute('data-original'), img.getAttribute('data-full'),
+      img.getAttribute('data-src'), source,
+    ];
     add(source || original, original, img.alt || img.title || document.title,
-      img.naturalWidth, img.naturalHeight);
+      img.naturalWidth, img.naturalHeight, publisherFromLink(img), alternatives);
   });
   Array.from(document.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"]'))
     .slice(0, 6).forEach(meta => add(meta.content, meta.content,
@@ -273,6 +307,10 @@ pub const SCAN_JS: &str = r#"
 pub struct ScannedImage {
     url: String,
     original_url: Option<String>,
+    #[serde(default)]
+    source_page_url: Option<String>,
+    #[serde(default)]
+    candidate_urls: Vec<String>,
     title: String,
     width: u32,
     height: u32,
@@ -321,9 +359,22 @@ fn parse_scan(raw: &str, tab_id: String) -> Result<PageScanResponse, String> {
             if seen.insert(url.clone()) {
                 let original_url = entry.original_url.as_deref()
                     .and_then(validated_web_url).filter(|original| original != &url);
+                let source_page_url = entry.source_page_url.as_deref()
+                    .and_then(validated_web_url);
+                let mut candidate_urls = Vec::new();
+                for candidate in entry.candidate_urls.into_iter().take(8) {
+                    if let Some(address) = validated_web_url(&candidate) {
+                        if address != url && original_url.as_deref() != Some(address.as_str())
+                            && !candidate_urls.contains(&address) {
+                            candidate_urls.push(address);
+                        }
+                    }
+                }
                 images.push(ScannedImage {
                     url,
                     original_url,
+                    source_page_url,
+                    candidate_urls,
                     title: entry.title.chars().take(150).collect(),
                     width: entry.width.min(20000),
                     height: entry.height.min(20000),
@@ -384,6 +435,24 @@ pub fn browser_scan_images(app: AppHandle, tab_id: String) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scan_keeps_publisher_page_and_safe_original_candidates() {
+        let raw = r#"{"pageUrl":"https://www.google.com/search?q=wallpaper","images":[
+          {"url":"https://thumb.example.com/a.jpg",
+           "originalUrl":"https://cdn.example.com/a.jpg",
+           "sourcePageUrl":"https://publisher.example.com/photo/1",
+           "candidateUrls":["https://cdn.example.com/big.jpg",
+             "https://127.0.0.1/private.jpg","https://cdn.example.com/big.jpg"],
+           "title":"A","width":500,"height":300}
+        ]}"#;
+        let result = parse_scan(raw, "t-1".into()).expect("valid metadata");
+        assert_eq!(result.images.len(), 1);
+        let item = &result.images[0];
+        assert_eq!(item.source_page_url.as_deref(),
+            Some("https://publisher.example.com/photo/1"));
+        assert_eq!(item.candidate_urls, vec!["https://cdn.example.com/big.jpg"]);
+    }
+
     #[test]
     fn scan_filters_bad_urls_and_duplicate_entries() {
         let raw = r#"{"pageUrl":"https://example.com/", "images":[

@@ -107,6 +107,38 @@ Source-level wiring and result-state review completed. The Windows build,
 Rust native import, and WebView2 layering require local Windows testing.
 Do NOT merge the draft PR before those checks succeed.
 
+## Follow-up: Browser publisher-image handoff fix (awaiting Windows testing)
+
+- Scanning a Google image result now preserves a publisher URL from its
+  image link (such as `imgrefurl`) when exposed, rather than treating the
+  Google results page as the image's original source.
+- Native right-click selections likewise retain the publisher page exposed
+  by a Google image result link.
+- Find Images captures a bounded set of the selected element's other
+  image candidates from srcset/data-original/data-full, revalidates them on
+  the native side, and keeps them in the existing Review metadata queue.
+- The shared importer checks direct candidates first, then eligible image
+  links/standard metadata on the publisher page before spending its budget
+  on speculative resized URLs. One bad URL cannot cancel all other links.
+- No automatic Library writes, extra importer, change to quality/licensing
+  rules, local file scraping, remote telemetry, or changes to protected
+  wallpaper files.
+
+### Retest
+
+1. In Browser, use Google Images to find the same Vestrahorn stock-photo
+   result. Select it using Find Images (and separately native right-click).
+2. Inspect, Add to Review, Save to Library. Verify correct full-size photo is
+   selected, or a truthful failure if that publisher blocks requests.
+3. Test an image on a publisher website with standard og:image / direct
+   download links; confirm it can import after initial thumbnail URL fails.
+4. Verify an unavailable/forbidden image remains in Review and no unrelated
+   publisher image is silently imported.
+5. Confirm persistence after restart, exact duplicate handling, Quick Save
+   and manual confirmation, Gallery and Library imports remain unchanged.
+6. Run `npm run build`, `npm run tauri dev`, and native tests on Windows
+   before approving PR #6. There has been no Windows build in this session.
+
 ## PR merge acceptance
 
 Only merge after: Windows Rust + TypeScript build passes; Review restoration

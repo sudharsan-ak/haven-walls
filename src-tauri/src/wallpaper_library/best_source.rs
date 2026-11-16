@@ -422,10 +422,20 @@ async fn find_best_source(
         return Err("Select 1–12 candidate URLs for this image.".into());
     }
     let mut urls = Vec::new();
+    let mut invalid_reason = String::new();
     for value in candidate_urls {
-        let (parsed, _) = secure_url(&value)?;
-        let canonical = parsed.to_string();
-        if !urls.contains(&canonical) { urls.push(canonical); }
+        // A stale or invalid thumbnail must not abort other known originals
+        // or the selected publisher page's permitted metadata.
+        match secure_url(&value) {
+            Ok((parsed, _)) => {
+                let canonical = parsed.to_string();
+                if !urls.contains(&canonical) { urls.push(canonical); }
+            }
+            Err(reason) => { invalid_reason = reason; }
+        }
+    }
+    if urls.is_empty() {
+        return Err(format!("No valid public HTTPS image candidates. {invalid_reason}"));
     }
     // The original source page is inspected only for standard public metadata
     // supplied with this specific user-selected image. Never scrape Google.
@@ -449,14 +459,16 @@ async fn find_best_source(
     // endpoints return HTML/deny hotlinking, do not discard all publisher
     // metadata merely because none of the explicit links could be decoded.
     // Only metadata from the selected publisher page is eligible as fallback.
+    // Try the two most direct choices first. Do not spend the entire
+    // 48-second limit on guessed resize URLs before checking the publisher's
+    // actual download links and standard image metadata.
     let mut selected = urls.into_iter();
-    let first = selected.next();
-    let remaining = selected;
-    let order = first.into_iter().map(|url| (url, false, false, 0u64))
-        .chain(remaining.map(|url| (url, false, false, 0u64)))
+    let primary: Vec<_> = selected.by_ref().take(2).collect();
+    let order = primary.into_iter().map(|url| (url, false, false, 0u64))
         .chain(resolution_downloads.into_iter()
             .map(|link| (link.url, true, link.verified_same_wallpaper, link.advertised_pixels)))
-        .chain(site_candidates.into_iter().map(|url| (url, true, false, 0u64)));
+        .chain(site_candidates.into_iter().map(|url| (url, true, false, 0u64)))
+        .chain(selected.map(|url| (url, false, false, 0u64)));
     for (url, from_page, same_wallpaper_id, advertised_pixels) in order {
         if tried >= MAX_CANDIDATES || start.elapsed() >= TOTAL_PROBE_TIME { break; }
         // Once a verified 4K file is found, no need to download the site's

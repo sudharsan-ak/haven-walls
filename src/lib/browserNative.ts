@@ -140,6 +140,10 @@ export async function browserClearHistory(): Promise<void> {
 export interface BrowserScannedImage {
   url: string;
   originalUrl: string | null;
+  /** Actual publisher page, if the search-result link exposes it. */
+  sourcePageUrl?: string | null;
+  /** Alternative large/preview image URLs from the selected image element. */
+  candidateUrls?: string[];
   title: string;
   width: number;
   height: number;

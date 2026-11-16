@@ -389,7 +389,10 @@ export default function BrowserPage({
               || "Website image").slice(0, 120);
           } catch { return "Website image"; }
         })();
-        const item = makeImage(imageUrl || best, selected.pageUrl, title, 0, 0, best);
+        // Google imgres links can identify the real publisher page. Passing
+        // Google's results page to Rust hides its source image metadata.
+        const item = makeImage(imageUrl || best, resolved.sourcePage ||
+          selected.pageUrl, title, 0, 0, best);
         if (item) {
           addReview([item]);
           setSideTab("review");
@@ -578,7 +581,7 @@ export default function BrowserPage({
   // verifies and downloads originals after explicit Save to Library.
   function makeImage(
     url: string, pageUrl: string, title: string, width: number, height: number,
-    original?: string | null,
+    original?: string | null, alternates: string[] = [],
   ): CatalogImage | null {
     const direct = validRemoteUrl(url);
     if (!direct) return null;
@@ -592,7 +595,9 @@ export default function BrowserPage({
       title: label,
       previewUrl: direct,
       originalUrl: best,
-      candidateUrls: direct !== best ? [direct] : [],
+      candidateUrls: [...new Set([direct, ...alternates]
+        .map((value) => validRemoteUrl(value))
+        .filter((value): value is string => Boolean(value && value !== best)))].slice(0, 12),
       pageUrl: page,
       credit: "Image hosted by " + new URL(best).hostname + " · Creator unverified",
       rights: "Found on a website. Image rights and attribution have not been verified.",
@@ -601,8 +606,12 @@ export default function BrowserPage({
   }
 
   function fromScanned(item: BrowserScannedImage): CatalogImage | null {
-    return makeImage(item.url, scanData?.pageUrl || current?.url || "",
-      item.title, item.width, item.height, item.originalUrl);
+    // Prefer the clicked image's publisher over the Google results page.
+    // The native importer uses this to find the site's full-size image links.
+    return makeImage(item.url, item.sourcePageUrl ||
+      scanData?.pageUrl || current?.url || "",
+      item.title, item.width, item.height, item.originalUrl,
+      item.candidateUrls || []);
   }
 
   function addReview(candidates: CatalogImage[]) {
