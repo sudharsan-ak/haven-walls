@@ -346,7 +346,7 @@ export default function LibraryImportDialog({
             {" "}{logs.filter((item) => item.status === "duplicate").length} exact duplicates,
             {" "}{logs.filter((item) => item.status === "error").length} failed.
             Check individual results above.
-          </p>
+          </p>}
           {minimumResolutionRejected && (
             <div className="lidi-minimum-retry" role="group"
               aria-label="Retry image below minimum resolution">
