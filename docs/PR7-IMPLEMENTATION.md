@@ -125,3 +125,66 @@ pages on supported photo-grid URL patterns such as Pexels /photo/.
 4. Verify blocked/unsupported/low-resolution images still fail honestly and
    no incorrect photo is imported.
 5. Run the Windows Tauri build before treating this follow-up as verified.
+
+## Commit 2: Automatic discovery and protected offline reserve
+
+- **Default source:** Wikimedia Commons, limited to individual images whose
+  machine-readable metadata explicitly reports public-domain / CC0 and no
+  copyright claim. Unknown rights, attribution-licensed, and provider-restricted
+  images are not automatically downloaded.
+- Reuse existing quality thresholds, image format checks, blocked keywords,
+  blocked sources, exact SHA-256 checks and perceptual similarity screening.
+- Successful downloads are stored as owned, hash-named original files under
+  `reserve/`, with `storage_class='reserve'` metadata. They are not added to
+  the permanent Library grid. The ten-file reserve is excluded from normal
+  discovery cache cleanup and protected from deletion.
+- The existing Windows apply function accepts a verified reserve image as
+  well as a managed Library original. It still generates a protected active
+  copy and records the apply event/history. No second Windows apply route.
+- Rotation tries eligible Library images first, then reserve images. An
+  empty Library can discover, cache and apply an approved image automatically
+  while the Haven Walls process is running.
+- Replenishment is separate from the wallpaper-change interval: one approved
+  file per attempt, initially every ~60 seconds, with a 15-minute backoff on
+  provider failure. Offline network failures never clear the desktop wallpaper.
+- The Library rotation panel exposes automatic discovery On/Off, a limited
+  Nature/Space/Cities topic choice, reserve count and discovery errors.
+  The main rotation switch is **off by default**. Disabled rotation never
+  initiates network discovery.
+- Bing Daily and Unsplash remain manual discovery providers for now.
+  Their feeds or licenses do not automatically authorize unattended
+  third-party wallpaper-app distribution/usage; enable only if a compliant
+  integration is established.
+- Removed the unused `base64::Engine` import and obsolete browser image
+  menu event constant that generated harmless Rust warnings.
+
+### Windows regression checklist for Commit 2
+
+1. Update PR #7 branch, run `npm run build` and `npm run tauri dev`.
+2. In Library, enable rotation and automatic discovery. Confirm reserve
+   count begins replenishing from 0 toward 10, without adding entries to
+   the permanent Library. The existing wallpapers/favorites remain intact.
+3. With **no managed Library wallpapers**, use Next wallpaper. It should
+   discover an eligible public-domain/CC0 image, apply it, and preserve the
+   protected reserve original (provided Commons is reachable).
+4. With a managed Library item and a reserve image, verify rotation selects
+   Library first; it can use reserve when no different managed image is
+   eligible.
+5. Enable Favorites only: reserve images must not be used automatically.
+6. Disable automatic discovery: no new source network calls while still
+   permitting rotation from already saved Library and reserve images.
+7. Disconnect internet: available reserve images still rotate; if the pool
+   is empty or has no alternate item, retain the Windows desktop and show
+   a noncritical failure.
+8. Confirm managed Library imports, exact duplicates, browser preview/Review
+   saving, Windows apply, and blue current wallpaper badge still work.
+9. Try 4K minimum or blocked source/keyword. Discovery must not bypass
+   settings or save unknown-license material.
+10. Restart: reserved originals, source records and next-discovery state
+    must persist, but ongoing network requests must stop when the app exits.
+
+### Remaining in PR #7
+
+Commit 3 adds the keep-running system tray and full scheduling UI.
+Commit 4 handles stronger sleep/wake, external changes, retry diagnostics
+and end-to-end Windows regression checks. No direct changes to `main`.

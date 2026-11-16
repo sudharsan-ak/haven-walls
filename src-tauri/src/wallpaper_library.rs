@@ -156,7 +156,7 @@ fn validate_source_exclusions(metadata: &ImportMetadata, settings: &AppSettings)
     Ok(())
 }
 
-fn image_format(bytes: &[u8]) -> Result<(DynamicImage, String), String> {
+pub(crate) fn image_format(bytes: &[u8]) -> Result<(DynamicImage, String), String> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format().map_err(|e| format!("Could not determine image format: {e}"))?;
     let format = reader.format().ok_or_else(|| "This is not a supported image".to_string())?;
@@ -179,7 +179,7 @@ fn image_format(bytes: &[u8]) -> Result<(DynamicImage, String), String> {
     Ok((image, extension.into()))
 }
 
-fn perceptual_hash(image: &DynamicImage) -> u64 {
+pub(crate) fn perceptual_hash(image: &DynamicImage) -> u64 {
     let strip = image.resize_exact(9, 8, FilterType::Triangle).to_luma8();
     let mut hash = 0u64;
     for y in 0..8 {
@@ -193,7 +193,7 @@ fn perceptual_hash(image: &DynamicImage) -> u64 {
     hash
 }
 
-fn min_dimensions(quality: &str) -> (u32, u32) {
+pub(crate) fn min_dimensions(quality: &str) -> (u32, u32) {
     match quality {
         "4K" => (3840, 2160),
         "1440p" => (2560, 1440),
@@ -243,7 +243,10 @@ fn list_items(conn: &Connection, paths: &DataPaths) -> Result<Vec<LibraryWallpap
         "SELECT w.id, w.title, w.source, COALESCE(w.source_page, ''),
                 COALESCE(w.original_url, ''), COALESCE(w.creator, ''),
                 w.rights_status, w.width, w.height, w.favorite, w.created_at
-         FROM wallpapers w ORDER BY w.created_at DESC, w.id DESC LIMIT 500"
+         FROM wallpapers w
+         WHERE EXISTS(SELECT 1 FROM wallpaper_files f
+                      WHERE f.wallpaper_id=w.id AND f.storage_class='managed')
+         ORDER BY w.created_at DESC, w.id DESC LIMIT 500"
     ).map_err(|e| format!("Could not read wallpaper library: {e}"))?;
     let iterator = statement.query_map([], |row| {
         Ok((
@@ -357,16 +360,76 @@ fn import_bytes(
     ).optional().map_err(|e| format!("Could not check exact duplicates: {e}"))?;
     if let Some(existing_id) = existing {
         let entries = list_items(&conn, &paths)?;
-        let entry = entries.into_iter().find(|item| item.id == existing_id)
-            .ok_or_else(|| "Existing duplicate was found but its record could not be loaded.".to_string())?;
+        if let Some(entry) = entries.into_iter().find(|item| item.id == existing_id) {
+            return Ok(ImportOutcome {
+                wallpaper: entry,
+                already_saved: true,
+                note: if verified_upgrade {
+                    "This matching higher-resolution file is already in your Library. No new file was written.".into()
+                } else {
+                    "Exact duplicate already exists in your managed Library. No new file was written.".into()
+                },
+            });
+        }
+        // The bytes may exist only in the protected automatic reserve.
+        // Explicit user Save promotes that same original into the managed
+        // Library without creating a second wallpaper metadata row.
+        let reserved: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM wallpaper_files
+             WHERE wallpaper_id=?1 AND storage_class='reserve')",
+            params![existing_id], |row| row.get(0),
+        ).map_err(|e| format!("Could not check reserve duplicate: {e}"))?;
+        if !reserved {
+            return Err("Existing image metadata is missing its managed file.".into());
+        }
+        let filename = safe_filename(&digest, &format)?;
+        let destination = paths.library().join(&filename);
+        let staging = paths.library().join(format!("{digest}.importing"));
+        let thumbnail = encode_thumbnail(&image)?;
+        let thumbnail_file = thumb_path(&paths, &digest)?;
+        if destination.exists() {
+            return Err("An unmanaged destination file already exists; refusing to overwrite it.".into());
+        }
+        {
+            let mut output = fs::OpenOptions::new().write(true).create_new(true)
+                .open(&staging)
+                .map_err(|e| format!("Could not stage saved reserve photo: {e}"))?;
+            if let Err(e) = output.write_all(&bytes).and_then(|_| output.sync_all()) {
+                let _ = fs::remove_file(&staging);
+                return Err(format!("Could not save reserve photo: {e}"));
+            }
+        }
+        if let Err(e) = fs::rename(&staging, &destination) {
+            let _ = fs::remove_file(&staging);
+            return Err(format!("Could not finalize reserve photo: {e}"));
+        }
+        if let Err(e) = fs::write(&thumbnail_file, &thumbnail) {
+            let _ = fs::remove_file(&destination);
+            return Err(format!("Could not create Library thumbnail: {e}"));
+        }
+        // wallpaper_files.id is globally unique; the reserve record already
+        // uses the digest as its ID, so give the new managed file its own ID.
+        let managed_record = format!("{:x}", Sha256::digest(
+            format!("managed:{digest}").as_bytes()
+        ));
+        let result = conn.execute(
+            "INSERT INTO wallpaper_files
+             (id,wallpaper_id,relative_path,storage_class,bytes,checksum_sha256)
+             VALUES (?1,?2,?3,'managed',?4,?2)",
+            params![managed_record,digest,filename,bytes.len() as i64],
+        );
+        if let Err(e) = result {
+            let _ = fs::remove_file(&destination);
+            let _ = fs::remove_file(&thumbnail_file);
+            return Err(format!("Could not complete Library promotion: {e}"));
+        }
+        let entry = list_items(&conn, &paths)?.into_iter()
+            .find(|item| item.id == digest)
+            .ok_or_else(|| "Reserve original was saved but its Library card is missing.".to_string())?;
         return Ok(ImportOutcome {
             wallpaper: entry,
-            already_saved: true,
-            note: if verified_upgrade {
-                "This matching higher-resolution file is already in your Library. No new file was written.".into()
-            } else {
-                "Exact duplicate already exists in your managed Library. No new file was written.".into()
-            },
+            already_saved: false,
+            note: "Saved the approved reserve original permanently in Library; the reserve and active copies remain protected.".into(),
         });
     }
 

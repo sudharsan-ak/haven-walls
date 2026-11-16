@@ -2,7 +2,6 @@
 //! Only explicitly selected image URLs and a bounded set of image metadata URLs
 //! from the recorded original page are considered. Never scrape Google search.
 use super::*;
-use base64::Engine as _;
 use std::time::{Duration, Instant};
 use std::sync::Mutex;
 
@@ -68,7 +67,7 @@ fn take_inspected_original(
     Some(entries.remove(index).probe)
 }
 
-async fn fetch_public_bytes(
+pub(crate) async fn fetch_public_bytes(
     url_str: &str,
     max_bytes: usize,
     expect_html: bool,

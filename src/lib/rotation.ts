@@ -8,6 +8,8 @@ export interface RotationPreferences {
   intervalMinutes: number;
   favoritesOnly: boolean;
   cooldownDays: number;
+  discoveryEnabled: boolean;
+  discoveryTopic: "nature" | "space" | "cities";
 }
 export interface RotationStatus {
   preferences: RotationPreferences;
@@ -16,6 +18,9 @@ export interface RotationStatus {
   lastWallpaperId: string | null;
   lastError: string | null;
   eligibleCount: number;
+  reserveCount: number;
+  nextDiscoveryUnix: number | null;
+  lastDiscoveryError: string | null;
 }
 function desktopOnly(): void {
   if (!isTauri()) throw new Error("Wallpaper rotation requires Haven Walls for Windows.");

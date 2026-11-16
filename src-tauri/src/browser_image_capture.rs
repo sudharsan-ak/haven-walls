@@ -21,7 +21,6 @@ use windows::{
 
 pub const IMAGE_PICKED_EVENT: &str = "haven-browser-image-picked";
 pub const CONTEXT_MENU_ERROR_EVENT: &str = "haven-browser-image-error";
-pub const CONTEXT_MENU_STATUS_EVENT: &str = "haven-browser-image-status";
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

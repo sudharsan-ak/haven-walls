@@ -5,6 +5,7 @@ mod configuration;
 mod wallpaper_library;
 mod windows_wallpaper;
 mod rotation;
+mod rotation_discovery;
 mod google_images;
 mod category_discovery;
 mod api_credentials;

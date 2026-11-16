@@ -91,8 +91,8 @@ export default function RotationPanel({ onApplied }: Props) {
     <section className="hwr-panel" aria-label="Library rotation controls">
       <div className="hwr-heading">
         <div>
-          <strong>Automatic Library rotation</strong>
-          <p>Rotate saved wallpapers while Haven Walls is open. Online discovery and the system tray are coming in later PR #7 commits.</p>
+          <strong>Automatic wallpaper rotation</strong>
+          <p>Rotate saved Library wallpapers first, then approved offline reserve images. Automatic public-domain discovery fills the reserve while Haven Walls is running.</p>
         </div>
         <span className={"hwr-indicator" + (prefs?.enabled && !prefs.paused && !prefs.pinned ? " on" : "")}>
           {!prefs ? "Loading…" : !prefs.enabled ? "Off" : prefs.pinned ? "Pinned" : prefs.paused ? "Paused" : "On"}
@@ -149,6 +149,22 @@ export default function RotationPanel({ onApplied }: Props) {
                 onChange={(e) => void savePatch({ favoritesOnly: e.target.checked })} />
               Favorites only
             </label>
+            <label className="hwr-check">
+              <input type="checkbox" checked={prefs.discoveryEnabled} disabled={busy}
+                onChange={(e) => void savePatch({ discoveryEnabled: e.target.checked })} />
+              Discover approved public-domain images automatically
+            </label>
+            <label>
+              <span>Auto-discovery topic</span>
+              <select value={prefs.discoveryTopic} disabled={busy || !prefs.discoveryEnabled}
+                onChange={(e) => void savePatch({
+                  discoveryTopic: e.target.value as RotationPreferences["discoveryTopic"],
+                })}>
+                <option value="nature">Nature</option>
+                <option value="space">Space</option>
+                <option value="cities">Cities</option>
+              </select>
+            </label>
           </div>
           <div className="hwr-actions">
             <button type="button" disabled={busy} className={prefs.enabled ? "hwr-secondary" : "hwr-primary"}
@@ -163,16 +179,25 @@ export default function RotationPanel({ onApplied }: Props) {
               onClick={() => void savePatch({ pinned: !prefs.pinned })}>
               {prefs.pinned ? "Unpin current" : "Pin current"}
             </button>
-            <button type="button" disabled={busy || prefs.pinned || status.eligibleCount === 0} className="hwr-primary"
+            <button type="button" disabled={busy || prefs.pinned ||
+                (status.eligibleCount === 0 &&
+                  (!prefs.enabled || !prefs.discoveryEnabled || prefs.favoritesOnly))}
+              className="hwr-primary"
               onClick={() => void next()}>
               {busy ? "Working…" : "Next wallpaper"}
             </button>
           </div>
           <div className="hwr-meta">
-            <span>{status.eligibleCount} eligible Library image{status.eligibleCount === 1 ? "" : "s"}</span>
-            <span>Next: {prefs.enabled && !prefs.paused && !prefs.pinned
+            <span>{status.eligibleCount} eligible rotation image{status.eligibleCount === 1 ? "" : "s"}</span>
+            <span>Offline reserve: {status.reserveCount}/10</span>
+            <span>Next rotation: {prefs.enabled && !prefs.paused && !prefs.pinned
               ? localDate(status.nextDueUnix) : "Not actively rotating"}</span>
+            {prefs.enabled && prefs.discoveryEnabled && !prefs.favoritesOnly && (
+              <span>Next discovery: {localDate(status.nextDiscoveryUnix)}</span>
+            )}
           </div>
+          <p className="hwr-note">Automatic source: verified public-domain/CC0 Wikimedia Commons images. Bing Daily and Unsplash remain available for manual selection while unattended provider use is reviewed. Offline reserve files are separate from your permanent Library. Favorites-only does not use the reserve.</p>
+          {status.lastDiscoveryError && <p className="hwr-note">Discovery: {status.lastDiscoveryError}</p>}
           {status.lastError && <p className="hwr-note">{status.lastError}</p>}
         </>
       )}

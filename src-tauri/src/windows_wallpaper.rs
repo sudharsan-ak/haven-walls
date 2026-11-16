@@ -176,18 +176,24 @@ pub(crate) fn apply_sync(
     if wallpaper_id.len() != 64 || !wallpaper_id.bytes().all(|ch| ch.is_ascii_hexdigit()) {
         return Err("Invalid Library wallpaper ID.".into());
     }
-    let data: Option<(String,String)> = conn.query_row(
-        "SELECT f.relative_path,w.title FROM wallpapers w
+    // Rotation may use verified protected reserve files without adding them
+    // permanently to the Library. Manual Library originals take priority.
+    let data: Option<(String,String,String)> = conn.query_row(
+        "SELECT f.relative_path,w.title,f.storage_class FROM wallpapers w
          JOIN wallpaper_files f ON f.wallpaper_id=w.id
-         WHERE w.id=?1 AND f.storage_class='managed' LIMIT 1",
-        params![wallpaper_id], |row| Ok((row.get(0)?,row.get(1)?))
+         WHERE w.id=?1 AND f.storage_class IN ('managed','reserve')
+         ORDER BY CASE f.storage_class WHEN 'managed' THEN 0 ELSE 1 END LIMIT 1",
+        params![wallpaper_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))
     ).optional().map_err(|e| format!("Could not find wallpaper: {e}"))?;
-    let (file_name,title) = data.ok_or_else(|| "Wallpaper not found in your local Library.".to_string())?;
+    let (file_name,title,source_class) =
+        data.ok_or_else(|| "Wallpaper was not found in the Library or approved reserve.".to_string())?;
     if !["jpg","png","webp"].iter().any(|ext| file_name == format!("{wallpaper_id}.{ext}")) {
-        return Err("Unexpected managed wallpaper filename.".into());
+        return Err("Unexpected wallpaper filename.".into());
     }
-    let bytes = fs::read(paths.library().join(file_name))
-        .map_err(|e| format!("Could not read managed wallpaper: {e}"))?;
+    let source_path = if source_class == "reserve" { paths.offline_reserve() }
+        else { paths.library() };
+    let bytes = fs::read(source_path.join(file_name))
+        .map_err(|e| format!("Could not read approved wallpaper file: {e}"))?;
     let jpeg = if let Some(encoded) = overlay { decode_overlay(&encoded)? }
         else { encode_original(&bytes)? };
     let dimensions = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg)
@@ -278,7 +284,11 @@ pub(crate) fn apply_sync(
     let _ = crate::rotation::note_successful_apply(&conn, &wallpaper_id);
     Ok(ApplyResult {
         target_id, wallpaper_id,
-        notice: format!("Applied {title} to Windows. Your saved Library original remains unchanged."),
+        notice: if source_class == "reserve" {
+            format!("Applied approved offline wallpaper {title}. The protected reserve original is unchanged.")
+        } else {
+            format!("Applied {title} to Windows. Your saved Library original remains unchanged.")
+        },
     })
 }
 
