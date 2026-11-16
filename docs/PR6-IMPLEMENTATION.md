@@ -177,3 +177,27 @@ regression checks pass. Never merge automatically.
    the protected assignment is not silently deleted.
 6. Check build (`npm run build`, `npm run tauri dev`) and Rust Windows
    compilation. PR #6 remains draft until user testing approves it.
+
+## Follow-up: Instant Library highlight after Apply
+
+- The Apply dialog now provides the successful native `ApplyResult` to its caller.
+- Library updates the current wallpaper card and protected assignment immediately
+  when the Windows apply and database write succeed, without waiting for a
+  potentially stale `GetWallpaper` response. The modal still closes only on
+  success; failure continues to show the error without changing the highlight.
+- Applying to All displays clears prior local assignments; applying to one
+  display updates only that display while preserving the other recorded ones.
+- In-flight older activity reads cannot overwrite the just-applied selection.
+  Library Refresh and re-entry still verify current wallpaper paths against Windows.
+
+### Final UI regression checks
+
+1. Apply A from Library. The dialog closes and A gets the Current wallpaper
+   badge immediately, without leaving/re-entering Library.
+2. Apply B on the same target. A loses the badge and B gains it immediately.
+3. If using multiple monitors, apply to one monitor and confirm unaffected
+   display assignments stay highlighted; All displays replaces them.
+4. A failed apply leaves the modal open and the prior active card unchanged.
+5. After changing wallpaper externally in Windows Settings, click Refresh and
+   confirm the current badge follows the OS rather than old local state.
+6. Build with `npm run build` and `npm run tauri dev` on Windows before merge.

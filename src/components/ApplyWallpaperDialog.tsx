@@ -5,7 +5,7 @@ import { getConfiguration, type MinimumResolution, type WallpaperFit } from "../
 import { belowResolution, minimumPixels, qualityTier, resolutionLongShort } from "../lib/imageQuality";
 import {
   applyLibraryWallpaper, FIT_OPTIONS, listWindowsMonitors,
-  renderWallpaperOverlay, type WindowsMonitor,
+  renderWallpaperOverlay, type WindowsMonitor, type WallpaperApplyResult,
 } from "../lib/windowsWallpaper";
 import "./ApplyWallpaperDialog.css";
 
@@ -13,7 +13,7 @@ interface Props {
   image: LibraryWallpaper;
   imageDataUrl?: string;
   onClose: () => void;
-  onApplied: () => void;
+  onApplied: (result: WallpaperApplyResult) => void;
 }
 
 export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onApplied }: Props) {
@@ -103,7 +103,7 @@ export default function ApplyWallpaperDialog({ image, imageDataUrl, onClose, onA
       const result = await applyLibraryWallpaper(image.id, targetId, fit, overlay);
       setApplied(true);
       setNotice(result.notice);
-      onApplied();
+      onApplied(result);
       // Close only after Windows confirms the wallpaper was applied.
       onClose();
     } catch (reason) {

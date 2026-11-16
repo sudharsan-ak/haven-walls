@@ -8,7 +8,8 @@ import {
 import { formattedBytes } from "../lib/configuration";
 import { qualityTier } from "../lib/imageQuality";
 import {
-  getWallpaperActivity, formatWallpaperLocalTime, type WallpaperActivity,
+  getWallpaperActivity, formatWallpaperLocalTime,
+  type WallpaperActivity, type WallpaperApplyResult,
 } from "../lib/windowsWallpaper";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
@@ -44,6 +45,8 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
   const [betterSourceUrl, setBetterSourceUrl] = useState("");
   const objectUrls = useRef(new Set<string>());
   const selectedId = useRef<string | null>(null);
+  // Discard activity reads started before a successful wallpaper change.
+  const activityReadVersion = useRef(0);
   useEffect(() => () => {
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
@@ -90,11 +93,17 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     } finally {
       setLoading(false);
     }
+    const version = ++activityReadVersion.current;
     try {
-      setActivity(await getWallpaperActivity());
-      setActivityError("");
+      const latest = await getWallpaperActivity();
+      if (version === activityReadVersion.current) {
+        setActivity(latest);
+        setActivityError("");
+      }
     } catch (problem) {
-      setActivityError(problem instanceof Error ? problem.message : String(problem));
+      if (version === activityReadVersion.current) {
+        setActivityError(problem instanceof Error ? problem.message : String(problem));
+      }
     }
   }
 
@@ -111,25 +120,43 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
 
   useEffect(() => {
     let active = true;
+    const version = ++activityReadVersion.current;
     void getWallpaperActivity().then((result) => {
-      if (active) {
+      if (active && version === activityReadVersion.current) {
         setActivity(result);
         setActivityError("");
       }
     }).catch((error: unknown) => {
-      if (active) setActivityError(error instanceof Error ? error.message : String(error));
+      if (active && version === activityReadVersion.current) {
+        setActivityError(error instanceof Error ? error.message : String(error));
+      }
     });
     return () => { active = false; };
   }, [revision]);
 
-  async function afterApply() {
+  function afterApply(result: WallpaperApplyResult) {
+    // The native Apply command returns only after Windows accepted the
+    // wallpaper and its new assignment was committed. Update immediately
+    // instead of racing an OS status query while the modal closes.
+    ++activityReadVersion.current;
+    const appliedAt = new Date().toISOString();
+    const title = items.find((item) => item.id === result.wallpaperId)?.title || applyItem?.title || "Wallpaper";
+    setActivity((previous) => ({
+      history: previous?.history ?? [],
+      current: [
+        ...(result.targetId === "all" ? [] :
+          (previous?.current ?? []).filter((item) => item.targetId !== result.targetId)),
+        {
+          wallpaperId: result.wallpaperId,
+          targetId: result.targetId,
+          title,
+          appliedAt,
+          isCurrent: true,
+        },
+      ],
+    }));
+    setActivityError("");
     setNotice("Windows desktop wallpaper changed. The active working copy is protected.");
-    try {
-      setActivity(await getWallpaperActivity());
-      setActivityError("");
-    } catch (problem) {
-      setActivityError(problem instanceof Error ? problem.message : String(problem));
-    }
   }
 
   // Current appearance is verified against Windows; deletion protection is
@@ -641,7 +668,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
         <ApplyWallpaperDialog image={applyItem}
           imageDataUrl={selected?.id === applyItem.id ? openedOriginal : undefined}
           onClose={() => setApplyItem(null)}
-          onApplied={() => void afterApply()} />
+          onApplied={afterApply} />
       )}
       {pendingRemoval && (
         <ConfirmDialog tone="danger"
