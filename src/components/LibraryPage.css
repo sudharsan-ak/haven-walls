@@ -489,3 +489,40 @@
   .hwl-viewer-content h2 { font-size: 17px; }
   .hwl-viewer-tool-buttons { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+
+/* PR #6: distinguish a verified Windows desktop wallpaper from a Favorite. */
+.hwl-card.hwl-card-current {
+  border-color: #2584c4;
+  box-shadow: 0 0 0 2px #2584c42b;
+}
+.hwl-card-image > .hwl-current-indicator {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #1269a3ed;
+  color: #fff;
+  font-weight: 750;
+  font-size: 11px;
+  line-height: 1.2;
+  max-width: calc(100% - 108px);
+  white-space: normal;
+  text-align: right;
+}
+.hwl-protected-message {
+  margin: 8px 0 13px;
+  padding: 10px 12px;
+  border: 1px solid #d7e7f4;
+  background: #edf6fd;
+  border-radius: 8px;
+  color: #2a607f;
+  line-height: 1.5;
+  font-size: 11px;
+}
+.hwl-viewer-actions .hwl-danger:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}

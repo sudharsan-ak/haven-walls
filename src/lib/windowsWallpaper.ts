@@ -16,6 +16,8 @@ export interface CurrentWallpaper {
   title: string;
   targetId: string;
   appliedAt: string;
+  /** Verified against the OS wallpaper path, not only prior Haven Walls history. */
+  isCurrent: boolean;
 }
 export interface WallpaperHistory {
   wallpaperId: string | null;

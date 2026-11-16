@@ -145,3 +145,35 @@ Only merge after: Windows Rust + TypeScript build passes; Review restoration
 survives process restart and normal rebuild; Library import handles mixed
 saved/duplicate/failed batches correctly; existing Gallery and Library
 regression checks pass. Never merge automatically.
+
+## Follow-up commit: Highlight and protect current Library wallpaper
+
+- Match Haven Walls' managed active-copy path to each monitor's actual
+  `IDesktopWallpaper::GetWallpaper` path before adding the **Current wallpaper**
+  badge and blue outline to Library cards. An external Windows wallpaper
+  change must not leave a false current badge.
+- Keep the existing "Last applied by Haven Walls" history panel. Its records
+  remain even if Windows wallpaper has since changed.
+- Active assignments are deletion-protected independently of what Windows
+  currently displays, consistent with the native Library deletion safeguard.
+  Disable Remove in the detail viewer and explain how to release the image by
+  applying another wallpaper through Haven Walls.
+- Refresh checks the OS current wallpaper state as well as Library items.
+  Favorite remains an independent user choice. No changes to managed image
+  bytes, background rotation or import behavior.
+
+### Windows regression checks
+
+1. Apply wallpaper A through Haven Walls. The A card shows a blue border
+   and Current wallpaper label; Favorite count is unchanged.
+2. Apply B through Haven Walls. A loses current status; B gains it. A can be
+   removed unless another display still has it assigned.
+3. On a multi-monitor setup, set separate wallpapers and verify each current
+   wallpaper is marked.
+4. Try Remove on an assigned Library image; the button is disabled with an
+   explanation. Deleting a nonassigned image remains possible.
+5. Change wallpaper from Windows Settings and click Library Refresh. The old
+   image loses the Current badge; last-applied history still remains, and
+   the protected assignment is not silently deleted.
+6. Check build (`npm run build`, `npm run tauri dev`) and Rust Windows
+   compilation. PR #6 remains draft until user testing approves it.
