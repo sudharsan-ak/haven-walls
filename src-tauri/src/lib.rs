@@ -10,6 +10,7 @@ mod api_credentials;
 mod google_browser;
 mod internal_browser;
 mod browser_storage;
+mod browser_review;
 #[cfg(windows)]
 mod google_context_menu;
 #[cfg(windows)]
@@ -77,6 +78,8 @@ pub fn run() {
             internal_browser::browser_close_tab,
             browser_image_capture::browser_scan_images,
             browser_storage::browser_load_data,
+            browser_review::browser_load_review,
+            browser_review::browser_save_review,
             browser_storage::browser_save_session,
             browser_storage::browser_add_bookmark,
             browser_storage::browser_remove_bookmark,

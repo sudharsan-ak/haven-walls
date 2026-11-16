@@ -5,6 +5,7 @@ import {
   BROWSER_HOME, BROWSER_MAX_TABS, browserAddress, browserCloseTab,
   browserNavigateTab, browserOpenTab, browserShowTab, browserTabAction,
   browserTabState, browserLoadData, browserSaveSession, browserScanImages, browserSetZoom,
+  browserLoadReview, browserSaveReview,
   isBrowserPageUrl,
   type BrowserBounds, type BrowserNavigationEvent,
   type BrowserPopupEvent, type BrowserTabState, type BrowserAction,
@@ -41,6 +42,54 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Canonical browser Review metadata. A native preview may return a data:
+ * thumbnail for display, but only HTTPS candidates persist in the Review.
+ * Downloaded pixel data is never written into this queue.
+ */
+function prepareReviewImage(image: CatalogImage): CatalogImage | null {
+  if (image.kind !== "image") return null;
+  const previewUrl = validRemoteUrl(image.previewUrl);
+  if (!previewUrl) return null;
+  const originalUrl = validRemoteUrl(image.originalUrl);
+  const candidateUrls = [...new Set((image.candidateUrls || [])
+    .map((url) => validRemoteUrl(url)).filter((url): url is string => Boolean(url)))].slice(0, 12);
+  return {
+    id: image.id.slice(0, 4250),
+    source: image.source.slice(0, 140),
+    title: (image.title || "Website image").slice(0, 150),
+    previewUrl,
+    originalUrl,
+    candidateUrls,
+    pageUrl: validRemoteUrl(image.pageUrl) || "",
+    credit: image.credit.slice(0, 500),
+    rights: image.rights.slice(0, 900),
+    width: Number.isFinite(image.width) ? Math.max(0, Math.min(20000, Math.trunc(image.width))) : 0,
+    height: Number.isFinite(image.height) ? Math.max(0, Math.min(20000, Math.trunc(image.height))) : 0,
+    kind: "image",
+  };
+}
+
+function mergeReviewSelections(
+  saved: CatalogImage[], incoming: CatalogImage[],
+): CatalogImage[] {
+  const result: CatalogImage[] = [];
+  for (const raw of [...saved, ...incoming]) {
+    const image = prepareReviewImage(raw);
+    if (!image) continue;
+    const key = image.originalUrl || image.previewUrl;
+    const index = result.findIndex((item) => item.id === image.id
+      || item.previewUrl === image.previewUrl
+      || (item.originalUrl || item.previewUrl) === key);
+    if (index >= 0) {
+      // Replace the existing selection with the newer, inspected metadata.
+      result[index] = image;
+    } else if (result.length < 30) {
+      result.push(image);
+    }
+  }
+  return result;
+}
+
 export default function BrowserPage({ active }: { active: boolean }) {
   const [tabs, setTabs] = useState<Tab[]>(() => [defaultTab()]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -58,6 +107,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
   // They are not persisted, and are never automatically reused for a new URL.
   const [scansByTab, setScansByTab] = useState<Record<string, BrowserScanResponse>>({});
   const [review, setReview] = useState<CatalogImage[]>([]);
+  // Do not write an initial empty queue over a saved Review before loading it.
+  const [reviewReady, setReviewReady] = useState(false);
   const [inspect, setInspect] = useState<CatalogImage | null>(null);
   const [captureNote, setCaptureNote] = useState("");
   const slotRef = useRef<HTMLDivElement>(null);
@@ -71,6 +122,7 @@ export default function BrowserPage({ active }: { active: boolean }) {
   // create from tab A can cover tab B after rapid tab switching.
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const reviewQueueRef = useRef<Promise<void>>(Promise.resolve());
   const tabsRef = useRef(tabs);
   const activeRef = useRef(active);
   const selectedRef = useRef(selectedId);
@@ -149,6 +201,39 @@ export default function BrowserPage({ active }: { active: boolean }) {
         ? "" : previous))
       .catch((problem: unknown) => setError("Could not save browser tabs: " + message(problem)));
   }, [ready, selectedId, tabs]);
+
+  // Restore pending Review selections independently of website tabs. Keep
+  // any selections captured during startup instead of replacing them.
+  useEffect(() => {
+    if (!isTauri()) {
+      setReviewReady(true);
+      return;
+    }
+    let mounted = true;
+    void browserLoadReview().then((saved) => {
+      if (!mounted) return;
+      setReview((current) => mergeReviewSelections(saved, current));
+      setReviewReady(true);
+    }).catch((problem: unknown) => {
+      if (!mounted) return;
+      // Preserve the existing saved queue on disk. If loading fails, do not
+      // permit a new empty snapshot to overwrite it.
+      setError("Could not restore saved Review: " + message(problem));
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  // Serialize Review snapshots in user-action order. Each write is an
+  // atomic SQLite replacement and never downloads or imports an image.
+  useEffect(() => {
+    if (!reviewReady || !isTauri()) return;
+    const snapshot = review.map(prepareReviewImage).filter((item): item is CatalogImage => item !== null);
+    reviewQueueRef.current = reviewQueueRef.current
+      .then(() => browserSaveReview(snapshot))
+      .then(() => setError((previous) => previous.startsWith("Could not save Review:")
+        ? "" : previous))
+      .catch((problem: unknown) => setError("Could not save Review: " + message(problem)));
+  }, [reviewReady, review]);
 
   const current = tabs.find((tab) => tab.id === selectedId) ?? tabs[0];
   const lastScan = selectedId ? scansByTab[selectedId] : undefined;
@@ -499,20 +584,8 @@ export default function BrowserPage({ active }: { active: boolean }) {
   }
 
   function addReview(candidates: CatalogImage[]) {
-    setReview((previous) => {
-      const seen = new Set(previous.map((item) => item.originalUrl || item.previewUrl));
-      const next = [...previous];
-      for (const candidate of candidates) {
-        const key = candidate.originalUrl || candidate.previewUrl;
-        if (next.length >= 30) break;
-        if (!seen.has(key)) {
-          seen.add(key);
-          next.push(candidate);
-        }
-      }
-      return next;
-    });
-    setCaptureNote("Image selection updated. Inspect your candidates before saving.");
+    setReview((previous) => mergeReviewSelections(previous, candidates));
+    setCaptureNote("Review selection updated; saving locally.");
   }
 
   function scanPage() {
@@ -778,7 +851,9 @@ export default function BrowserPage({ active }: { active: boolean }) {
               {review.length > 0 && <button type="button" className="hw-browser-review-clear"
                 onClick={() => setReview([])}>Clear selection</button>}
               <button type="button" disabled>Save selected to Library</button>
-              <small>Library import arrives in Commit 4. Inspect and image selection work now.</small>
+              <small>{reviewReady
+                ? "Pending selections persist across restarts. Library import follows in Commit 2."
+                : "Restoring your saved Review selection…"}</small>
             </div>
               </>
             )}

@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { CatalogImage } from "./native";
 
 export const BROWSER_HOME = "https://www.google.com/";
 export const BROWSER_MAX_TABS = 12;
@@ -191,4 +192,17 @@ export function isBrowserPageUrl(value: string | null | undefined): value is str
   } catch {
     return false;
   }
+}
+
+
+/** A pending Review stores remote image references and metadata only.
+ * No file contents or images are downloaded until explicit Library import.
+ */
+export async function browserLoadReview(): Promise<CatalogImage[]> {
+  nativeOnly();
+  return invoke<CatalogImage[]>("browser_load_review");
+}
+export async function browserSaveReview(images: CatalogImage[]): Promise<void> {
+  nativeOnly();
+  return invoke<void>("browser_save_review", { images });
 }
