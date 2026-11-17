@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invalidateDashboardWallpaperCache } from "./lib/dashboardPreviewCache";
 import { type CatalogSourceId } from "./lib/native";
 import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
@@ -25,6 +27,21 @@ type BrowserImportCompletion = {
 };
 
 export default function App() {
+  // This subscription remains active across page navigation, including when
+  // Dashboard is unmounted. A timed/tray rotation invalidates its cache before
+  // the user returns to the Dashboard.
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen("rotation:applied", () => {
+      if (active) invalidateDashboardWallpaperCache();
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    }).catch(() => { /* Dashboard still verifies the OS on navigation. */ });
+    return () => { active = false; unlisten?.(); };
+  }, []);
+
   const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "sources" | "settings">("dashboard");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("automation");
   const [libraryFocusId, setLibraryFocusId] = useState<string | null>(null);

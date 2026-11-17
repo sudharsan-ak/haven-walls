@@ -7,6 +7,11 @@ import {
 } from "../lib/windowsWallpaper";
 import { listLibraryWallpapers, type LibraryWallpaper } from "../lib/wallpaperLibrary";
 import { getRotationStatus, rotateNextWallpaper, type RotationStatus } from "../lib/rotation";
+import {
+  cachedWallpaperPreview, invalidateDashboardWallpaperCache, lastDashboardPreview,
+  lastDashboardTarget, previousWallpaperActivity, rememberDashboardTarget,
+  rememberVerifiedWallpaperActivity, rememberWallpaperPreview,
+} from "../lib/dashboardPreviewCache";
 import "./DashboardPage.css";
 
 interface Props {
@@ -25,13 +30,23 @@ function nextDate(unix: number | null): string {
 export default function DashboardPage({
   onOpenAutomation, onOpenLibrary, onBrowseWallpapers, onOpenSources,
 }: Props) {
-  const [activity, setActivity] = useState<WallpaperActivity | null>(null);
+  // React unmounts Dashboard when another workspace page opens. Restoring
+  // the last verified image avoids repeatedly decoding the same 4K/8K file.
+  const [activity, setActivity] = useState<WallpaperActivity | null>(
+    () => previousWallpaperActivity()
+  );
   const [monitors, setMonitors] = useState<WindowsMonitor[]>([]);
   const [saved, setSaved] = useState<LibraryWallpaper[]>([]);
   const [rotation, setRotation] = useState<RotationStatus | null>(null);
-  const [target, setTarget] = useState("");
-  const [preview, setPreview] = useState<ActiveWallpaperPreview | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(true);
+  const [target, setTarget] = useState(() => lastDashboardTarget());
+  const [preview, setPreview] = useState<ActiveWallpaperPreview | null>(
+    () => lastDashboardPreview()
+  );
+  const [previewBusy, setPreviewBusy] = useState(() => !lastDashboardPreview());
+  // A cached image can paint instantly, but a new visit only claims
+  // "Windows confirmed" after the background OS verification succeeds.
+  const [verifiedThisVisit, setVerifiedThisVisit] = useState(false);
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [previewError, setPreviewError] = useState("");
   const [actionError, setActionError] = useState("");
   const [nextBusy, setNextBusy] = useState(false);
@@ -46,8 +61,15 @@ export default function DashboardPage({
         getRotationStatus(), listWindowsMonitors(),
       ]);
     if (!live.current) return;
-    if (wallpaperResult.status === "fulfilled") setActivity(wallpaperResult.value);
-    else setPreviewError(message(wallpaperResult.reason));
+    if (wallpaperResult.status === "fulfilled") {
+      rememberVerifiedWallpaperActivity(wallpaperResult.value);
+      setActivity(wallpaperResult.value);
+      setVerifiedThisVisit(true);
+      setPreviewError("");
+    } else {
+      setVerifiedThisVisit(false);
+      setPreviewError(message(wallpaperResult.reason));
+    }
     if (libraryResult.status === "fulfilled") setSaved(libraryResult.value);
     if (rotationResult.status === "fulfilled") setRotation(rotationResult.value);
     if (monitorResult.status === "fulfilled") setMonitors(monitorResult.value);
@@ -62,8 +84,11 @@ export default function DashboardPage({
     let unlisten: (() => void) | null = null;
     void listen<WallpaperApplyResult>("rotation:applied", () => {
       if (live.current) {
+        invalidateDashboardWallpaperCache();
+        setVerifiedThisVisit(false);
         setPreview(null);
         setPreviewBusy(true);
+        setPreviewRevision((revision) => revision + 1);
         void refresh();
       }
     }).then((stop) => { if (live.current) unlisten = stop; else stop(); })
@@ -81,6 +106,12 @@ export default function DashboardPage({
   [activity]);
   const selected = current.find((record) => record.targetId === target) || current[0] || null;
   const selectedTarget = selected?.targetId || "";
+  // Never show a cached photo alongside a different display assignment,
+  // even for one render while React schedules the preview effect.
+  const shownPreview = preview && selected &&
+    preview.targetId === selected.targetId &&
+    preview.wallpaperId === selected.wallpaperId &&
+    preview.appliedAt === selected.appliedAt ? preview : null;
   const applied = saved.find((item) => item.id === selected?.wallpaperId);
   const monitorName = (id: string) => id === "all" ? "All displays" :
     monitors.find((monitor) => monitor.id === id)?.name || "Selected display";
@@ -92,11 +123,19 @@ export default function DashboardPage({
       setPreviewBusy(false);
       return;
     }
+    const cached = cachedWallpaperPreview(selected);
+    if (cached) {
+      setPreview(cached);
+      setPreviewBusy(false);
+      setPreviewError("");
+      return; // OS activity is still checked by the independent refresh.
+    }
     setPreview(null);
     setPreviewBusy(true);
     setPreviewError("");
     void getActiveWallpaperPreview(selectedTarget).then((image) => {
       if (live.current && id === requestId.current) {
+        rememberWallpaperPreview(image);
         setPreview(image);
         setPreviewBusy(false);
       }
@@ -107,7 +146,7 @@ export default function DashboardPage({
         setPreviewBusy(false);
       }
     });
-  }, [selectedTarget, selected?.wallpaperId, selected?.appliedAt]);
+  }, [selectedTarget, selected?.wallpaperId, selected?.appliedAt, previewRevision]);
 
   async function nextWallpaper() {
     if (nextBusy) return;
@@ -115,6 +154,7 @@ export default function DashboardPage({
     setActionError("");
     try {
       const applied = await rotateNextWallpaper();
+      rememberDashboardTarget(applied.targetId);
       setTarget(applied.targetId);
       setPreviewBusy(true);
       // Read the same Windows-confirmed working copy that was just applied,
@@ -122,6 +162,7 @@ export default function DashboardPage({
       try {
         const current = await getActiveWallpaperPreview(applied.targetId);
         if (live.current) {
+          rememberWallpaperPreview(current);
           setPreview(current);
           setPreviewError("");
           setPreviewBusy(false);
@@ -141,10 +182,10 @@ export default function DashboardPage({
   const prefs = rotation?.preferences;
   const rotationLabel = !prefs ? "Checking…" : !prefs.enabled ? "Off" :
     prefs.pinned ? "Pinned" : prefs.paused ? "Paused" : "Running";
-  const wallpaperTitle = preview?.title || selected?.title || "";
+  const wallpaperTitle = shownPreview?.title || selected?.title || "";
   const wallpaperDescription = applied?.source ||
     (selected ? "Approved offline reserve or previously saved wallpaper" : "");
-  const displayedTime = preview?.appliedAt || selected?.appliedAt;
+  const displayedTime = shownPreview?.appliedAt || selected?.appliedAt;
 
   return (
     <section className="hwd-dashboard">
@@ -154,8 +195,8 @@ export default function DashboardPage({
 
       <div className="hwd-current-card">
         <div className="hwd-current-image">
-          {preview?.dataUrl ? (
-            <img src={preview.dataUrl} alt={"Active Windows wallpaper: " + wallpaperTitle} />
+          {shownPreview?.dataUrl ? (
+            <img src={shownPreview.dataUrl} alt={"Active Windows wallpaper: " + wallpaperTitle} />
           ) : (
             <div className="hwd-image-placeholder" role="status">
               <span aria-hidden="true">▧</span>
@@ -166,7 +207,7 @@ export default function DashboardPage({
           )}
           <span className="hwd-image-top">● &nbsp; Current wallpaper</span>
           <span className="hwd-image-display">{selected ? monitorName(selected.targetId) : "Windows desktop"}</span>
-          {preview && (
+          {shownPreview && (
             <>
               <div className="hwd-image-caption">
                 <small>Desktop preview</small><strong>{wallpaperTitle}</strong>
@@ -178,14 +219,20 @@ export default function DashboardPage({
         </div>
         <div className="hwd-current-details">
           <div className="hwd-overline">Now on your desktop</div>
-          <div className="hwd-state"><span className="hwd-dot"/> {selected ? "Windows confirmed" : "Not confirmed"}</div>
+          <div className="hwd-state"><span className="hwd-dot"/> {selected
+            ? verifiedThisVisit ? "Windows confirmed"
+              : previewError ? "Windows status unavailable" : "Checking Windows status…"
+            : "Not confirmed"}</div>
           <h2>{wallpaperTitle || "Your Windows desktop"}</h2>
           <p className="hwd-source">{wallpaperDescription ||
             "Set an image from your Library to start managing this desktop."}</p>
           {current.length > 1 && (
             <label className="hwd-monitor-picker">
               <span>Display</span>
-              <select value={selectedTarget} onChange={(event) => setTarget(event.target.value)}>
+              <select value={selectedTarget} onChange={(event) => {
+                rememberDashboardTarget(event.target.value);
+                setTarget(event.target.value);
+              }}>
                 {current.map((entry) => <option key={entry.targetId} value={entry.targetId}>
                   {monitorName(entry.targetId)}
                 </option>)}
@@ -194,8 +241,8 @@ export default function DashboardPage({
           )}
           <div className="hwd-details-grid">
             <div><small>Applied to</small><strong>{selected ? monitorName(selected.targetId) : "Not assigned"}</strong></div>
-            <div><small>Resolution</small><strong>{preview ? preview.width + " × " + preview.height : "—"}</strong></div>
-            <div><small>Format</small><strong>{preview ? "JPG working copy" : "—"}</strong></div>
+            <div><small>Resolution</small><strong>{shownPreview ? shownPreview.width + " × " + shownPreview.height : "—"}</strong></div>
+            <div><small>Format</small><strong>{shownPreview ? "JPG working copy" : "—"}</strong></div>
             <div><small>Last changed</small><strong>{displayedTime ? formatWallpaperLocalTime(displayedTime) : "—"}</strong></div>
           </div>
           <div className="hwd-actions">
@@ -210,7 +257,9 @@ export default function DashboardPage({
           </div>
           {actionError && <p className="hwd-error" role="alert">{actionError}</p>}
           {previewError && <p className="hwd-context">{previewError}</p>}
-          <p className="hwd-context">▣ Protected local working copy · Confirmed against Windows</p>
+          <p className="hwd-context">▣ Protected local working copy · {verifiedThisVisit
+            ? "Confirmed against Windows"
+            : previewError ? "Windows verification unavailable" : "Verifying Windows status"}</p>
         </div>
       </div>
 
@@ -248,13 +297,13 @@ export default function DashboardPage({
           <span><strong>Sources</strong><small>Manage wallpaper providers</small></span><span>→</span>
         </button>
       </div>
-      {expanded && preview && (
+      {expanded && shownPreview && (
         <div className="hwd-lightbox" role="presentation" onMouseDown={() => setExpanded(false)}>
           <div className="hwd-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Current desktop wallpaper preview"
             onMouseDown={(event) => event.stopPropagation()}>
             <button type="button" aria-label="Close expanded preview" onClick={() => setExpanded(false)}>×</button>
-            <img src={preview.dataUrl} alt={wallpaperTitle}/>
-            <p>{wallpaperTitle} · {monitorName(preview.targetId)} · {preview.width} × {preview.height}</p>
+            <img src={shownPreview.dataUrl} alt={wallpaperTitle}/>
+            <p>{wallpaperTitle} · {monitorName(shownPreview.targetId)} · {shownPreview.width} × {shownPreview.height}</p>
           </div>
         </div>
       )}

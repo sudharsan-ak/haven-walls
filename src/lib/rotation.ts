@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { invalidateDashboardWallpaperCache } from "./dashboardPreviewCache";
 import type { WallpaperApplyResult } from "./windowsWallpaper";
 
 export type DiscoveryTopic =
@@ -44,5 +45,7 @@ export async function saveRotationPreferences(preferences: RotationPreferences):
 }
 export async function rotateNextWallpaper(): Promise<WallpaperApplyResult> {
   desktopOnly();
-  return invoke<WallpaperApplyResult>("rotation_next");
+  const applied = await invoke<WallpaperApplyResult>("rotation_next");
+  invalidateDashboardWallpaperCache();
+  return applied;
 }

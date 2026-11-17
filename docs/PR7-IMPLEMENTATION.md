@@ -466,3 +466,56 @@ Reference: Haven-Walls-Dashboard-and-Settings-Revamp-Interactive.html
 No auto-generated or sample wallpaper should ship in the real Dashboard.
 As with earlier PR #7 source checkpoints, local Windows Rust compilation
 and actual desktop runtime tests must pass before merging the draft PR.
+
+## Commit 5 follow-up: Cache the current Dashboard wallpaper across tabs
+
+Problem reported during local Windows testing: after Dashboard successfully
+loads the current wallpaper, switching to another sidebar destination and
+returning causes the full native preview to download/decode again and flashes
+"Loading current desktop wallpaper...", even when Windows hasn't changed it.
+
+- Added a bounded **process-only** memory cache holding a maximum of four
+  Windows-confirmed preview JPEG data URLs, keyed by monitor/target ID,
+  wallpaper ID and applied timestamp. No disk persistence and no new
+  background network requests.
+- Dashboard initializes its image and last verified assignment from the
+  cache when remounted, displaying it on the very first paint without a
+  loading placeholder. Native preview retrieval is skipped on a cache hit.
+- On every return to Dashboard, Windows activity is still verified
+  asynchronously. During that check, the status says "Checking Windows"
+  instead of falsely claiming a new OS confirmation. If Windows has changed
+  the wallpaper externally, the stale cached entry is removed and the UI
+  reflects the verified new/unknown state. If verification fails, cached
+  imagery remains but the confirmation label clearly says unavailable.
+- Successful manual Library Set Now, Dashboard Next, and rotation Next
+  invalidate stale previews; the app-level rotation event listener also
+  invalidates the cache during scheduled/tray changes while Dashboard is
+  not mounted. Native preview successes warm the cache again.
+- Previously selected monitor is remembered during the app session so
+  navigating away and back restores the right monitor's own cached image.
+  Rendering strictly compares target, wallpaper ID and timestamp to avoid
+  briefly showing another display's or an outdated image.
+- A restart naturally clears this cache because it lives only in memory.
+  The existing Windows/SQLite wallpaper application and background scheduler
+  paths are unchanged.
+
+### Windows tests
+
+1. Load Dashboard once and confirm the real wallpaper appears.
+2. Navigate Dashboard > Library > Settings > Dashboard repeatedly. On
+   return the photo should be shown immediately, without a loading block.
+3. Use Library Set Now while Dashboard is unmounted, then reopen Dashboard.
+   The old photo must not be reused; the actual new desktop photo should load.
+4. Use Dashboard Next, scheduled rotation, and tray Next. The preview
+   should update and the old cached preview must never return on navigation.
+5. Change wallpaper externally using Windows personalization, then return.
+   Cached imagery may appear while Windows status is being checked, but
+   must be removed when the OS reports it is no longer current. The
+   "Windows confirmed" label must not appear until re-verification succeeds.
+6. With two monitors, switch display previews and navigate away/back.
+   The selected/active monitor preview must correspond to its exact
+   target+wallpaper+timestamp, never a different monitor's image.
+7. Restart Haven Walls. One fresh native preview fetch is expected; no
+   wallpaper image is persisted in the browser cache on disk.
+8. Build with `npm run build` and `npm run tauri dev`. PR #7 remains
+   draft until local Windows regression checks pass and user approves.
