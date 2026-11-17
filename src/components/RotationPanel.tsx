@@ -283,7 +283,13 @@ export default function RotationPanel({ onApplied }: Props) {
               {status.lastDiscoveryUnix ? ` · ${localDate(status.lastDiscoveryUnix)}` : ""}
             </p>
           )}
-          {status.lastDiscoveryError && <p className="hwr-error">Discovery error: {status.lastDiscoveryError}</p>}
+          {status.lastDiscoveryError && (
+            <p className={status.lastDiscoveryError.includes("429") ? "hwr-note" : "hwr-error"}>
+              {status.lastDiscoveryError.includes("429")
+                ? "Wikimedia is temporarily limiting requests. Haven Walls will retry after its cooldown without interrupting offline rotation."
+                : `Discovery error: ${status.lastDiscoveryError}`}
+            </p>
+          )}
           {status.lastError && <p className="hwr-note">{status.lastError}</p>}
         </>
       )}

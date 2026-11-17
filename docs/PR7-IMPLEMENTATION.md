@@ -302,3 +302,86 @@ and end-to-end Windows regression checks. No direct changes to `main`.
   with full Windows regression. Do not merge PR #7 before these tests.
 - This authoring environment does not have the Windows Rust toolchain.
   The native build and tray behavior must be validated locally by the user.
+
+
+## Commit 4: Reliability, single instance, discovery backoff and final polish
+
+### Native process and rotation reliability
+- A named Windows session-scoped mutex is acquired **before** Tauri
+  creates any windows or starts its Rust rotation worker. If the same
+  Windows user starts Haven Walls again, the second instance signals the
+  existing window to reopen and exits. A duplicate background login
+  launch exits quietly without interrupting the open application.
+- The mutex and activation event are held only by the running process
+  and disappear when it quits. No administrator privileges, file locks,
+  external services or telemetry are involved.
+- The native rotation worker checks the persisted absolute next-due
+  timestamp every 15 seconds, including after Windows wakes. An overdue
+  interval triggers at most one change; a successful apply computes the
+  next future rotation rather than replaying every missed interval.
+- A future daily local-time deadline is recalculated after a time-zone
+  or clock adjustment. **Overdue** daily deadlines are not silently moved
+  to tomorrow; they can run once on resumption. Daily retry deadlines are
+  preserved rather than overwritten by a timezone reconciliation.
+- Paused/pinned/off states still prohibit scheduled changes, and
+  user-triggered Next retains its existing semantics.
+
+### Wikimedia Commons / HTTP 429 improvements
+- Parse the provider's `Retry-After` header in seconds or HTTP-date form
+  on HTTP 429/503, with a bounded upper limit of 48 hours.
+- Automatically cap source requests by spacing successful replenishment
+  at least 30 minutes apart and empty searches at least 60 minutes apart.
+  Consecutive failures use persisted exponential backoff up to 24 hours.
+  A provider-specified Retry-After is a **minimum**, not ignored.
+- The same backoff is used after restarting the app. Manual Next with
+  an empty pool may attempt discovery **only if its deadline permits it**,
+  so it cannot repeatedly evade a Commons 429 limit.
+- If an image CDN signals HTTP 429, stop the remaining requests in that
+  discovery attempt instead of requesting two more files immediately.
+- Rate limits never erase stored reserve images or stop existing offline
+  Library/reserve rotation. The Library UI presents 429 as a temporary
+  provider cooldown rather than implying Haven Walls crashed.
+
+### UI polish
+- Replaces the obsolete Dashboard `Milestone 2 · PR #3` copy with a
+  neutral Haven Walls label. No other navigation or Library changes.
+
+### Windows final regression checklist
+
+1. Pull the PR #7 branch, run `npm run build`, `npm run tauri dev`
+   and `npm run tauri build`. Confirm there are no Rust compile errors.
+2. **Single instance:** Leave Haven Walls in the tray, start its executable
+   again and verify that the existing window opens and only one Haven Walls
+   process/tray icon remains. Do the same with the window already visible.
+3. **Background login:** With installed release startup enabled, sign in
+   and confirm it appears hidden in the system tray. Starting the EXE
+   again should open that instance, not start a second scheduler.
+4. **Background operation:** Enable rotation and close the window;
+   rotation remains active in tray. Tray Next, Pause/Resume, Pin/Unpin
+   and Quit still work. Quit fully stops discovery and rotation.
+5. **Sleep/wake:** Configure a short rotation interval, let the PC sleep
+   past its deadline, and resume. Confirm a *single* overdue apply, never
+   one apply per missed interval. Verify the next due time is in the future.
+6. **Daily schedule:** Confirm a daily local time changes wallpaper once,
+   then advances the deadline to the next applicable local day. Test
+   pause, pin, manually applying a wallpaper and switching back to interval.
+7. **Discovery backoff:** With Commons returning HTTP 429, verify the
+   next discovery time is well in the future, remains persisted after
+   app restart, and manual Next cannot force another source request
+   before that deadline. Existing saved images should still rotate.
+8. **Normal replenishment:** If Commons accepts requests, a saved
+   reserve image should be followed by a 30-minute cooldown. A
+   no-result search should be followed by a 60-minute cooldown.
+9. **Library/Browser regressions:** Review → Library, Inspect original
+   reuse, Favorites-only, active wallpaper highlighting and protection,
+   exact duplicate handling and Set Now all still work.
+10. **External Windows wallpaper changes:** Library Refresh must reflect
+    the actual Windows current status. Configurable external-change
+    policy and independent per-monitor schedules are separate future
+    features; do not claim those are implemented in this PR.
+
+### Final acceptance
+This commit is a **source checkpoint**, not a claim of a completed Windows
+release. The authoring environment has no Windows Rust toolchain; local build,
+sleep/wake, tray, login startup, and HTTP 429 runtime behavior require user
+verification. Do not merge PR #7 without explicit user approval.

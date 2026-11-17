@@ -8,6 +8,7 @@ use rusqlite::params;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{fs, io::Write, time::Duration};
+use chrono::{DateTime, Utc};
 use tauri::{AppHandle, Manager};
 
 pub const RESERVE_TARGET: usize = 10;
@@ -19,6 +20,29 @@ pub const DISCOVERY_TOPICS: [&str; 8] = [
 ];
 const MAX_SOURCE_BYTES: usize = 768 * 1024;
 const MAX_FILE_BYTES: usize = 32 * 1024 * 1024;
+
+/// Preserve Commons' rate-limit hint instead of losing it in a string.
+#[derive(Debug)]
+pub struct DiscoveryFailure {
+    pub message: String,
+    pub retry_after_seconds: Option<u64>,
+    pub rate_limited: bool,
+}
+impl From<String> for DiscoveryFailure {
+    fn from(message: String) -> Self {
+        let rate_limited = message.contains("HTTP 429") || message.contains("HTTP 503");
+        Self { message, retry_after_seconds: None, rate_limited }
+    }
+}
+fn retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(seconds.min(172_800));
+    }
+    let deadline = DateTime::parse_from_rfc2822(value).ok()?;
+    let remaining = (deadline.timestamp() - Utc::now().timestamp()).max(0) as u64;
+    Some(remaining.min(172_800))
+}
 
 #[derive(Clone, Debug)]
 struct ApprovedImage {
@@ -113,7 +137,7 @@ fn query_for_topic(topic: &str) -> &'static str {
 }
 
 async fn commons_options(topic: &str, page: u32,
-    min_width: u32, min_height: u32) -> Result<Vec<ApprovedImage>, String> {
+    min_width: u32, min_height: u32) -> Result<Vec<ApprovedImage>, DiscoveryFailure> {
     let offset = ((page % 20) * 24).to_string();
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(14))
@@ -132,15 +156,24 @@ async fn commons_options(topic: &str, page: u32,
             ("format", "json"), ("formatversion", "2"),
         ]).send().await.map_err(|_| "Wikimedia Commons is unreachable.".to_string())?;
     if !response.status().is_success() {
-        return Err(format!("Commons discovery returned HTTP {}.", response.status()));
+        let status = response.status();
+        let limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS ||
+            status == reqwest::StatusCode::SERVICE_UNAVAILABLE;
+        return Err(DiscoveryFailure {
+            message: format!("Commons discovery returned HTTP {status}."),
+            retry_after_seconds: if limited {
+                retry_after_seconds(response.headers())
+            } else { None },
+            rate_limited: limited,
+        });
     }
     if response.content_length().is_some_and(|size| size > MAX_SOURCE_BYTES as u64) {
-        return Err("Commons metadata exceeded the response limit.".into());
+        return Err("Commons metadata exceeded the response limit.".to_string().into());
     }
     let bytes = response.bytes().await
         .map_err(|_| "Commons metadata transfer failed.".to_string())?;
     if bytes.len() > MAX_SOURCE_BYTES {
-        return Err("Commons metadata exceeded the response limit.".into());
+        return Err("Commons metadata exceeded the response limit.".to_string().into());
     }
     let data: Value = serde_json::from_slice(&bytes)
         .map_err(|_| "Commons returned invalid image metadata.".to_string())?;
@@ -278,7 +311,7 @@ fn save_approved(app: &AppHandle, source: &ApprovedImage,
 /// adds at most one approved file, and never silently accepts rights-unknown
 /// provider material.
 pub fn replenish_once(app: &AppHandle, topic: &str, page: u32)
-    -> Result<bool, String> {
+    -> Result<bool, DiscoveryFailure> {
     let settings = {
         let state = app.state::<StorageLock>();
         let _guard = state.0.lock().map_err(|_| "Storage is busy".to_string())?;
@@ -294,7 +327,7 @@ pub fn replenish_once(app: &AppHandle, topic: &str, page: u32)
     )?;
     let known = known_pages(app)?;
     let mut attempted = 0usize;
-    let mut last_error = String::new();
+    let mut last_error: Option<DiscoveryFailure> = None;
     for candidate in options {
         if known.contains(&candidate.page_url) { continue; }
         let title = candidate.title.to_lowercase();
@@ -314,14 +347,24 @@ pub fn replenish_once(app: &AppHandle, topic: &str, page: u32)
             Ok(bytes) => match save_approved(app, &candidate, bytes) {
                 Ok(true) => return Ok(true),
                 Ok(false) => {},
-                Err(error) => last_error = error,
+                Err(error) => last_error = Some(DiscoveryFailure::from(error)),
             },
-            Err(error) => last_error = error,
+            Err(error) => {
+                let failure = DiscoveryFailure::from(error);
+                if failure.rate_limited {
+                    // Do not send another upload CDN request after HTTP 429.
+                    return Err(failure);
+                }
+                last_error = Some(failure);
+            },
         }
         if attempted >= 3 { break; }
     }
-    if !last_error.is_empty() {
-        Err(format!("No eligible Commons image saved: {last_error}"))
+    if let Some(error) = last_error {
+        Err(DiscoveryFailure {
+            message: format!("No eligible Commons image saved: {}", error.message),
+            ..error
+        })
     } else {
         Ok(false)
     }
@@ -330,6 +373,16 @@ pub fn replenish_once(app: &AppHandle, topic: &str, page: u32)
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retry_after_seconds_supports_delta_and_http_date() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::RETRY_AFTER,
+            reqwest::header::HeaderValue::from_static("1200"));
+        assert_eq!(retry_after_seconds(&headers), Some(1200));
+        headers.insert(reqwest::header::RETRY_AFTER,
+            reqwest::header::HeaderValue::from_static("Wed, 21 Oct 2099 07:28:00 GMT"));
+        assert_eq!(retry_after_seconds(&headers), Some(172800));
+    }
     #[test]
     fn public_domain_requires_explicit_non_copyright_metadata() {
         let allowed = serde_json::json!({"extmetadata": {

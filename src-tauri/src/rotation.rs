@@ -104,6 +104,8 @@ struct StoredRotation {
     last_discovery_outcome: Option<String>,
     /// Cursor across topic × result-page combinations.
     discovery_page: u32,
+    /// Consecutive failed attempts, persisted across app restarts.
+    discovery_failures: u32,
 }
 impl Default for StoredRotation {
     fn default() -> Self {
@@ -119,6 +121,7 @@ impl Default for StoredRotation {
             last_discovery_unix: None,
             last_discovery_outcome: None,
             discovery_page: 0,
+            discovery_failures: 0,
         }
     }
 }
@@ -197,6 +200,21 @@ fn schedule_next(now: i64, preferences: &RotationPreferences) -> i64 {
     }
     next_due(now, 1440)
 }
+/// When the Windows clock or timezone moves, a future daily deadline may
+/// belong to the *old* timezone. Realign it once, but never discard a past
+/// deadline: after sleep/wake, an overdue change should still occur once.
+fn adjusted_daily_due(
+    now: i64, due: Option<i64>, prefs: &RotationPreferences, last_error: Option<&str>,
+) -> Option<i64> {
+    if !prefs.enabled || prefs.schedule_mode != "daily" || last_error.is_some() {
+        return None;
+    }
+    let deadline = due?;
+    if deadline <= now { return None; }
+    let expected = schedule_next(now, prefs);
+    if expected.abs_diff(deadline) > 60 { Some(expected) } else { None }
+}
+
 fn ensure_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS rotation_settings (
@@ -417,6 +435,7 @@ pub fn save_rotation_preferences(
             || before.discovery_topics != preferences.discovery_topics {
             state.next_discovery_unix = Some(now);
             state.discovery_page = 0;
+            state.discovery_failures = 0;
             state.last_discovery_error = None;
         }
         state.preferences = preferences;
@@ -451,9 +470,28 @@ fn discovery_turn(topics: &[String], cursor: u32) -> (String, u32) {
     (topics[(cursor % count) as usize].clone(), (cursor / count) % 20)
 }
 
+/// Limit unattended source traffic. Successes and empty searches are routine,
+/// not reasons to hammer the provider. Consecutive errors use exponential
+/// backoff, and a Retry-After response is a mandatory minimum.
+fn discovery_delay(result: &Result<bool, rotation_discovery::DiscoveryFailure>,
+    failures: u32) -> i64 {
+    match result {
+        Ok(true) => 1800,  // one approved wallpaper every 30 minutes at most
+        Ok(false) => 3600, // a normal empty search: move to another topic hourly
+        Err(failure) => {
+            let base = if failure.rate_limited { 3600i64 } else { 1800i64 };
+            let shift = failures.saturating_sub(1).min(6);
+            let exponential = base.saturating_mul(1i64 << shift).min(86400);
+            exponential.max(
+                failure.retry_after_seconds.unwrap_or(0).min(172800) as i64
+            )
+        }
+    }
+}
+
 // Replenishment and manual Next share RotationGate to avoid concurrent
 // duplicate downloads; downloads do NOT hold StorageLock.
-fn maybe_replenish(app: &AppHandle, now: i64, force: bool) -> Result<(), String> {
+fn maybe_replenish(app: &AppHandle, now: i64) -> Result<(), String> {
     let action = with_storage(app, |conn, paths| {
         let state = load(conn)?;
         if !state.preferences.enabled || !state.preferences.discovery_enabled ||
@@ -461,7 +499,8 @@ fn maybe_replenish(app: &AppHandle, now: i64, force: bool) -> Result<(), String>
             reserve_candidates(conn, paths)?.len() >= rotation_discovery::RESERVE_TARGET {
             return Ok(None);
         }
-        if !force && state.next_discovery_unix.is_some_and(|due| due > now) {
+        // A manual Next must not bypass a provider's Retry-After deadline.
+        if state.next_discovery_unix.is_some_and(|due| due > now) {
             return Ok(None);
         }
         // Visit page zero of each selected topic before moving to page one.
@@ -478,13 +517,15 @@ fn maybe_replenish(app: &AppHandle, now: i64, force: bool) -> Result<(), String>
     with_storage(app, |conn, _| {
         let mut state = load(conn)?;
         state.discovery_page = (cursor + 1) % (topic_count * 20);
-        state.next_discovery_unix = Some(finished.saturating_add(match &result {
-            Ok(true) => 60, // one source file at a time to avoid API bursts
-            Ok(false) => 300,
-            Err(_) => 900, // back off on rate limits and failures
-        }));
+        state.discovery_failures = if result.is_err() {
+            state.discovery_failures.saturating_add(1)
+        } else { 0 };
+        // Record the wait even when a server error occurs or the app closes.
+        state.next_discovery_unix = Some(finished.saturating_add(
+            discovery_delay(&result, state.discovery_failures)
+        ));
         state.last_discovery_error = match &result {
-            Err(message) => Some(message.clone()),
+            Err(failure) => Some(failure.message.clone()),
             _ => None,
         };
         state.last_discovery_topic = Some(topic);
@@ -526,6 +567,21 @@ fn select_candidate(app: &AppHandle, now: i64, force: bool)
     })
 }
 
+/// Recalculate only *future* daily deadlines after Windows timezone/clock
+/// changes. Overdue work is deliberately not moved forward or replayed.
+fn reconcile_daily_deadline(app: &AppHandle, now: i64) -> Result<(), String> {
+    with_storage(app, |conn, _| {
+        let mut state = load(conn)?;
+        if let Some(expected) = adjusted_daily_due(
+            now, state.next_due_unix, &state.preferences, state.last_error.as_deref()
+        ) {
+            state.next_due_unix = Some(expected);
+            save(conn, &state)?;
+        }
+        Ok(())
+    })
+}
+
 /// Native tray quick actions use the same serialized preference updates as
 /// the Library controls. No second rotation worker is started by the tray.
 pub fn is_enabled(app: &AppHandle) -> Result<bool, String> {
@@ -548,15 +604,16 @@ fn rotate_sync(app: &AppHandle, force: bool) -> Result<Option<ApplyResult>, Stri
     let gate = app.state::<RotationGate>();
     let _gate = gate.0.lock().map_err(|_| "Rotation is busy".to_string())?;
     let now = now_unix();
+    if !force { let _ = reconcile_daily_deadline(app, now); }
     // Background polling refills the reserve independently of rotation.
     // A manual Next with no eligible item makes one immediate attempt below,
     // not two redundant Commons requests for the same image.
-    if !force { let _ = maybe_replenish(app, now, false); }
+    if !force { let _ = maybe_replenish(app, now); }
     let mut choice = select_candidate(app, now, force);
     // Next with an empty pool can try discovery immediately instead of
     // asking the user to wait for the next scheduled source refresh.
     if force && choice.is_err() {
-        let _ = maybe_replenish(app, now, true);
+        let _ = maybe_replenish(app, now);
         choice = select_candidate(app, now, force);
     }
     let selected = match choice {
@@ -606,11 +663,11 @@ pub async fn rotation_next(app: AppHandle) -> Result<ApplyResult, String> {
         .and_then(|result| result.ok_or_else(|| "No wallpaper was selected.".to_string()))
 }
 
-/// One scheduler per app process. Commit 3 will keep the process alive in
-/// the system tray; this initial version only runs while Haven Walls is open.
+/// One native scheduler per process; after sleep/wake, it handles at most
+/// one overdue rotation and advances the saved next due time on success.
+/// App startup uses the same persisted schedule rather than replaying missed
+/// intervals from every day the machine was offline.
 pub fn start(app: AppHandle) {
-    // The Rust worker runs independently of the React window and never
-    // performs network requests. Commit 3 adds the keep-running tray behavior.
     let _ = std::thread::Builder::new()
         .name("haven-rotation".into())
         .spawn(move || loop {
@@ -633,6 +690,50 @@ mod tests {
         assert_eq!(defaults.cooldown_days, 30);
         assert_eq!(defaults.schedule_mode, "interval");
         assert_eq!(defaults.daily_time, "09:00");
+    }
+    #[test]
+    fn sleep_wake_keeps_overdue_daily_rotation_due_once() {
+        let now = now_unix();
+        let mut prefs = RotationPreferences::default();
+        prefs.enabled = true;
+        prefs.schedule_mode = "daily".into();
+        let previous_due = now - 5 * 86400; // machine asleep/off for 5 days
+        assert_eq!(adjusted_daily_due(now, Some(previous_due), &prefs, None), None);
+        let after_apply = schedule_next(now, &prefs);
+        assert!(after_apply > now);
+        assert!(after_apply - now <= 90000);
+    }
+    #[test]
+    fn clock_shift_rebases_future_daily_schedule_but_not_failure_retries() {
+        let now = now_unix();
+        let mut prefs = RotationPreferences::default();
+        prefs.enabled = true;
+        prefs.schedule_mode = "daily".into();
+        let proper = schedule_next(now, &prefs);
+        assert_eq!(adjusted_daily_due(now, Some(proper), &prefs, None), None);
+        assert_eq!(adjusted_daily_due(now, Some(proper + 3600), &prefs, None), Some(proper));
+        assert_eq!(adjusted_daily_due(now, Some(proper + 3600), &prefs, Some("retry")), None);
+    }
+    #[test]
+    fn respects_provider_retry_after_and_exponential_backoff() {
+        use rotation_discovery::DiscoveryFailure;
+        let limited = Err(DiscoveryFailure {
+            message: "HTTP 429".into(),
+            retry_after_seconds: Some(7200),
+            rate_limited: true,
+        });
+        assert_eq!(discovery_delay(&limited, 1), 7200);
+        assert_eq!(discovery_delay(&limited, 3), 14400);
+        assert!(discovery_delay(&limited, 10) >= 86400);
+        let network = Err(DiscoveryFailure {
+            message: "Network offline".into(),
+            retry_after_seconds: None,
+            rate_limited: false,
+        });
+        assert_eq!(discovery_delay(&network, 1), 1800);
+        assert_eq!(discovery_delay(&network, 3), 7200);
+        assert_eq!(discovery_delay(&Ok(true), 0), 1800);
+        assert_eq!(discovery_delay(&Ok(false), 0), 3600);
     }
     #[test]
     fn topics_default_to_all_and_reject_empty_duplicates_unknown() {

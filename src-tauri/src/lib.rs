@@ -7,6 +7,8 @@ mod windows_wallpaper;
 mod rotation;
 mod rotation_discovery;
 mod desktop_background;
+#[cfg(windows)]
+mod desktop_single_instance;
 mod google_images;
 mod category_discovery;
 mod api_credentials;
@@ -49,6 +51,19 @@ fn get_host_info() -> HostInfo {
 }
 
 pub fn run() {
+    // Acquire before Tauri creates any windows, browser sessions or workers.
+    // Launching Haven Walls again signals the existing window instead of
+    // creating duplicate schedulers and background source requests.
+    #[cfg(windows)]
+    let _process_guard = match desktop_single_instance::acquire() {
+        Ok(Some(guard)) => guard,
+        Ok(None) => return,
+        Err(problem) => {
+            eprintln!("Haven Walls could not start safely: {problem}");
+            return;
+        }
+    };
+
     tauri::Builder::default()
         // Preserve the opener service for trusted commands such as
         // "Open wallpaper source" while allowing native WebView2 new-tab
@@ -65,6 +80,8 @@ pub fn run() {
         .setup(|app| {
             configuration::initialize(app.handle()).map_err(std::io::Error::other)?;
             desktop_background::setup(app)?;
+            #[cfg(windows)]
+            desktop_single_instance::watch_activation(app.handle().clone());
             rotation::start(app.handle().clone());
             Ok(())
         })

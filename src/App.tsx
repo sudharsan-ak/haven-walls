@@ -223,7 +223,7 @@ export default function App() {
 
           <section className="hero" aria-labelledby="foundation-title">
             <div className="hero-content">
-              <span className="hero-kicker">Milestone 2 · PR #3</span>
+              <span className="hero-kicker">Haven Walls · Desktop wallpapers</span>
               <h2 id="foundation-title">Find your next desktop background.</h2>
               <p>
                 Discover wallpapers by Nature, Space, Animals, Cities, Sports and more.
