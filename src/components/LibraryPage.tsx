@@ -40,6 +40,8 @@ export default function LibraryPage({
   const [pendingRemoval, setPendingRemoval] = useState<LibraryWallpaper | null>(null);
   const [removalError, setRemovalError] = useState("");
   const [search, setSearch] = useState("");
+  const [openCardMenu, setOpenCardMenu] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
   const [applyItem, setApplyItem] = useState<LibraryWallpaper | null>(null);
@@ -57,6 +59,24 @@ export default function LibraryPage({
   // Keep the native rotation event handler up-to-date without repeatedly
   // removing and reinstalling its event subscription.
   const onRotationApplied = useRef<(result: WallpaperApplyResult) => void>(() => {});
+  // The card menu closes on outside clicks and Escape. No global listener
+  // remains installed when all menus are closed.
+  useEffect(() => {
+    if (!openCardMenu) return;
+    const outside = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) ||
+        !event.target.closest(".hwl-card-menu")) setOpenCardMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setOpenCardMenu(null); event.preventDefault(); }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [openCardMenu]);
   useEffect(() => () => {
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
@@ -301,6 +321,7 @@ export default function LibraryPage({
   }, [focusWallpaperId, loading, items, onFocusHandled]);
 
   async function open(image: LibraryWallpaper) {
+    setOpenCardMenu(null);
     selectedId.current = image.id;
     setSelected(image);
     setOpenedOriginal("");
@@ -414,7 +435,7 @@ export default function LibraryPage({
         <div><span>Favorites</span><strong>{items.filter((item) => item.favorite).length}</strong></div>
         <div><span>Original files</span><strong>{formattedBytes(totalBytes)}</strong></div>
         <div className="hwl-import-actions">
-          <input id="hwl-file-picker" type="file" multiple
+          <input id="hwl-file-picker" ref={fileInputRef} type="file" multiple
             accept="image/jpeg,image/png,image/webp"
             onChange={importLocalFiles} />
           <label htmlFor="hwl-file-picker" className="hwl-secondary hwl-file-label">
@@ -462,21 +483,37 @@ export default function LibraryPage({
       {loading && <div className="hwl-empty" role="status">Loading saved wallpapers…</div>}
       {!loading && !error && visible.length === 0 && (
         <div className="hwl-empty">
-          <strong>{items.length ? "No wallpapers match those filters." : "Your wallpaper Library is empty."}</strong>
+          <span className="hwl-empty-symbol" aria-hidden="true">{items.length ? "⌕" : "▧"}</span>
+          <strong>{items.length ? "Nothing matches your search" : "Start your wallpaper collection"}</strong>
           <p>{items.length
-            ? "Try another search, or view all saved wallpapers."
-            : "Find a wallpaper in Gallery, inspect it, and choose Add to Library."}</p>
-          <button type="button" className="hwl-primary" onClick={onDiscover}>Browse Gallery</button>
+            ? "Clear your search and filters to see the wallpapers you've saved."
+            : "Discover wallpapers in Gallery or import photos already saved on your computer."}</p>
+          <div className="hwl-empty-actions">
+            {items.length ? (
+              <button type="button" className="hwl-primary" onClick={() => {
+                setSearch(""); setFilter("all");
+              }}>Clear filters</button>
+            ) : (
+              <>
+                <button type="button" className="hwl-primary" onClick={onDiscover}>Explore Gallery</button>
+                <button type="button" className="hwl-secondary"
+                  onClick={() => fileInputRef.current?.click()}>Import from computer</button>
+              </>
+            )}
+          </div>
         </div>
       )}
       {!loading && visible.length > 0 && (
         <div className="hwl-grid" aria-label="Saved wallpapers">
           {visible.map((item) => (
             <article key={item.id}
-              className={"hwl-card" + (currentIds.has(item.id) ? " hwl-card-current" : "")}>
-              <button type="button" className="hwl-card-image"
+              className={"hwl-card" + (currentIds.has(item.id) ? " hwl-card-current" : "") +
+                (openCardMenu === item.id ? " hwl-card-menu-open" : "")}>
+              <button type="button" className="hwl-card-open-overlay"
                 title={"Inspect " + item.title}
-                onClick={() => void open(item)}>
+                aria-label={"Inspect wallpaper: " + item.title}
+                onClick={() => void open(item)}></button>
+              <div className="hwl-card-image">
                 {item.thumbnailDataUrl
                   ? <img src={item.thumbnailDataUrl} alt={item.title} loading="lazy" />
                   : <span>Preview unavailable</span>}
@@ -487,21 +524,47 @@ export default function LibraryPage({
                 <span className={"hwl-quality hwl-quality-" + (qualityTier(item.width, item.height) === "Below 1080p" ? "low" : "ok")}>
                   {qualityTier(item.width, item.height)}
                 </span>
-              </button>
+              </div>
               <div className="hwl-card-info">
                 <strong title={item.title}>{item.title}</strong>
                 <span>{item.source} · {item.format.toUpperCase()} · {formattedBytes(item.bytes)}</span>
                 <div className="hwl-card-actions">
-                  <button type="button" className={item.favorite ? "favorite" : ""}
+                  <button type="button"
+                    className={"hwl-card-heart" + (item.favorite ? " favorite" : "")}
                     disabled={Boolean(busyId)}
                     onClick={() => void toggleFavorite(item)}
+                    aria-pressed={item.favorite}
                     aria-label={(item.favorite ? "Remove favorite " : "Favorite ") + item.title}>
-                    {item.favorite ? "♥ Favorite" : "♡ Favorite"}
+                    {item.favorite ? "♥" : "♡"}
                   </button>
-                  <button type="button" onClick={() => void open(item)}>Inspect</button>
-                  <button type="button" onClick={() => setApplyItem(item)}>
-                    Set Now
-                  </button>
+                  <button type="button" className="hwl-set-now"
+                    disabled={Boolean(busyId)}
+                    onClick={() => { setOpenCardMenu(null); setApplyItem(item); }}>Set Now</button>
+                  <div className="hwl-card-menu">
+                    <button type="button" className="hwl-card-more"
+                      aria-label={"More actions for " + item.title}
+                      aria-haspopup="menu" aria-expanded={openCardMenu === item.id}
+                      aria-controls={"hwl-menu-" + item.id}
+                      disabled={Boolean(busyId)}
+                      onClick={() => setOpenCardMenu((id) => id === item.id ? null : item.id)}>⋯</button>
+                    {openCardMenu === item.id && (
+                      <div className="hwl-card-menu-popup" role="menu"
+                        id={"hwl-menu-" + item.id} aria-label={"Actions for " + item.title}>
+                        <button type="button" role="menuitem"
+                          onClick={() => void open(item)}>Inspect details</button>
+                        <button type="button" role="menuitem"
+                          disabled={!canVerifyRemoval || assignedIds.has(item.id) || Boolean(busyId)}
+                          title={assignedIds.has(item.id)
+                            ? "Set a different wallpaper before removing this one."
+                            : !canVerifyRemoval ? "Waiting for Windows wallpaper status." : "Remove from Library"}
+                          onClick={() => {
+                            setOpenCardMenu(null);
+                            setRemovalError("");
+                            setPendingRemoval(item);
+                          }}>Remove from Library</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </article>
@@ -511,7 +574,7 @@ export default function LibraryPage({
 
       <p className="hwl-footer">
         Manual Set Now and your enabled rotation schedule can apply saved wallpapers to Windows.
-        Automatic rotation and background downloading are not enabled.
+        Automatic rotation and approved discovery can be configured under Settings → Automation.
         Active working copies stay separate from saved Library originals.
       </p>
       {activityError && <p className="hwl-error" role="alert">

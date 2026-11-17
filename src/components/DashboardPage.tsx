@@ -200,21 +200,27 @@ export default function DashboardPage({
           ) : (
             <div className="hwd-image-placeholder" role="status">
               <span aria-hidden="true">▧</span>
-              {previewBusy ? "Loading current desktop wallpaper…" :
-                current.length === 0 ? "No Haven Walls wallpaper is currently active in Windows." :
-                  "The current Windows wallpaper preview is unavailable."}
+              {previewBusy ? (
+                <span>Loading current desktop wallpaper…</span>
+              ) : !selected ? (
+                <>
+                  <strong>Make your desktop yours</strong>
+                  <p>Choose a wallpaper from Library or discover a new one in Gallery.</p>
+                  <div className="hwd-empty-actions">
+                    <button type="button" onClick={() => onOpenLibrary()}>Open Library</button>
+                    <button type="button" onClick={onBrowseWallpapers}>Browse Gallery</button>
+                  </div>
+                </>
+              ) : (
+                <span>The current Windows wallpaper preview is unavailable.</span>
+              )}
             </div>
           )}
-          <span className="hwd-image-top">● &nbsp; Current wallpaper</span>
+          <span className="hwd-image-top">● &nbsp; {selected ? "Current wallpaper" : "Wallpaper preview"}</span>
           <span className="hwd-image-display">{selected ? monitorName(selected.targetId) : "Windows desktop"}</span>
           {shownPreview && (
-            <>
-              <div className="hwd-image-caption">
-                <small>Desktop preview</small><strong>{wallpaperTitle}</strong>
-              </div>
-              <button type="button" className="hwd-expand" aria-label="Expand wallpaper preview"
-                onClick={() => setExpanded(true)}>⤢</button>
-            </>
+            <button type="button" className="hwd-expand" aria-label="Expand wallpaper preview"
+              title="Expand current wallpaper" onClick={() => setExpanded(true)}>⤢</button>
           )}
         </div>
         <div className="hwd-current-details">
@@ -223,7 +229,7 @@ export default function DashboardPage({
             ? verifiedThisVisit ? "Windows confirmed"
               : previewError ? "Windows status unavailable" : "Checking Windows status…"
             : "Not confirmed"}</div>
-          <h2>{wallpaperTitle || "Your Windows desktop"}</h2>
+          <h2 title={wallpaperTitle || undefined}>{wallpaperTitle || "Your Windows desktop"}</h2>
           <p className="hwd-source">{wallpaperDescription ||
             "Set an image from your Library to start managing this desktop."}</p>
           {current.length > 1 && (
@@ -280,6 +286,13 @@ export default function DashboardPage({
             <small>Available without internet</small></div>
           <button type="button" className="hwd-secondary" onClick={onOpenAutomation}>Manage rotation →</button>
         </div>
+        {rotation && rotation.eligibleCount === 0 && (
+          <div className="hwd-rotation-empty" role="status">
+            <span>No wallpapers available for rotation yet. Add images to Library or turn on approved discovery.</span>
+            <button type="button" onClick={() => onOpenLibrary()}>Open Library</button>
+            <button type="button" onClick={onOpenAutomation}>Discovery settings</button>
+          </div>
+        )}
       </section>
 
       <div className="hwd-quick-heading"><h2>Quick access</h2><p>Jump straight into wallpaper management.</p></div>

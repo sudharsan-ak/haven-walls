@@ -61,3 +61,20 @@
   border: 1px solid #cadae7; border-radius: 8px; padding: 8px 10px;
   font: inherit; font-size: 12px; color: #2b4d68; background: #fff;
 }
+
+/* PR #8: concise discovery health, with technical details on demand. */
+.hwr-discovery-status{margin-top:16px;padding:15px;border:1px solid #dce9f1;background:#f9fcff;border-radius:11px}
+.hwr-discovery-status-head{display:flex;align-items:start;justify-content:space-between;gap:12px}
+.hwr-discovery-status-head>div{display:flex;flex-direction:column;gap:5px}
+.hwr-discovery-status-head strong{font-size:12px;color:#284b65}
+.hwr-discovery-status-head>div span{font-size:11px;color:#687f92}
+.hwr-discovery-state{border:1px solid #cfe2ee;border-radius:99px;background:#edf5fa;color:#316984;padding:6px 9px;font-size:10px;font-weight:750;white-space:nowrap}
+.hwr-discovery-state.is-limited{background:#fff5e4;border-color:#eed7b0;color:#976b2b}
+.hwr-discovery-status progress{display:block;width:100%;height:9px;border:0;border-radius:99px;margin:12px 0 13px;accent-color:#2c88c0;overflow:hidden}
+.hwr-discovery-status progress::-webkit-progress-bar{background:#e2eaf2;border-radius:99px}
+.hwr-discovery-status progress::-webkit-progress-value{background:#2c88c0;border-radius:99px}
+.hwr-discovery-details{display:flex;flex-wrap:wrap;gap:8px 20px;color:#71899c;font-size:11px;line-height:1.5}
+.hwr-discovery-advice{font-size:11px;line-height:1.6;color:#826a3b;margin:10px 0 0}
+.hwr-tech-details{margin-top:12px;border-top:1px solid #e2ebf3;padding-top:11px;font-size:11px;color:#71899c;line-height:1.6}
+.hwr-tech-details summary{cursor:pointer;color:#286a9b;font-weight:700}
+.hwr-tech-details p{margin:9px 0 0;overflow-wrap:anywhere}

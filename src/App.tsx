@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invalidateDashboardWallpaperCache } from "./lib/dashboardPreviewCache";
 import { type CatalogSourceId } from "./lib/native";
 import WindowChrome from "./components/WindowChrome";
+import SidebarIcon from "./components/SidebarIcon";
 import OnlineGallery from "./components/OnlineGallery";
 import BrowserPage from "./components/BrowserPage";
 import SettingsPage, { type SettingsTab } from "./components/SettingsPage";
@@ -116,22 +117,22 @@ export default function App() {
           <nav className="nav">
             <button type="button" onClick={() => setPage("dashboard")}
               className={"nav-item " + (page === "dashboard" ? "current" : "")}
-              aria-current={page === "dashboard" ? "page" : undefined}>⌂ <span>Dashboard</span></button>
+              aria-current={page === "dashboard" ? "page" : undefined}><SidebarIcon name="dashboard" /> <span>Dashboard</span></button>
             <button type="button" onClick={() => {
               setLensRequest(null);
               setPage("gallery");
             }}
               className={"nav-item " + (page === "gallery" ? "current" : "")}
-              aria-current={page === "gallery" ? "page" : undefined}>▧ <span>Gallery</span></button>
+              aria-current={page === "gallery" ? "page" : undefined}><SidebarIcon name="gallery" /> <span>Gallery</span></button>
             <button type="button" onClick={() => setPage("browser")}
               className={"nav-item " + (page === "browser" ? "current" : "")}
-              aria-current={page === "browser" ? "page" : undefined}>◎ <span>Browser</span></button>
+              aria-current={page === "browser" ? "page" : undefined}><SidebarIcon name="browser" /> <span>Browser</span></button>
             <button type="button" onClick={() => setPage("library")}
               className={"nav-item " + (page === "library" ? "current" : "")}
-              aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
+              aria-current={page === "library" ? "page" : undefined}><SidebarIcon name="library" /> <span>Library</span></button>
             <button type="button" onClick={() => setPage("settings")}
               className={"nav-item " + (page === "settings" ? "current" : "")}
-              aria-current={page === "settings" ? "page" : undefined}>⚙ <span>Settings</span></button>
+              aria-current={page === "settings" ? "page" : undefined}><SidebarIcon name="settings" /> <span>Settings</span></button>
           </nav>
           <div className="sidebar-footer">Local-first. No accounts or telemetry.</div>
         </aside>
@@ -142,7 +143,9 @@ export default function App() {
             onSaveToLibrary={beginBrowserImport}
             importCompletion={browserImportCompletion} />
           {page === "browser" ? null : page === "settings" ? (
-            <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab} />
+            <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab}
+              onBrowseWallpapers={() => openGallery(gallerySource)}
+              onOpenLibrary={() => openLibrary()} />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               focusWallpaperId={libraryFocusId}
