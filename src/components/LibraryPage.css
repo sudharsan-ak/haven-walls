@@ -526,3 +526,26 @@
   opacity: .45;
   cursor: not-allowed;
 }
+
+/* PR #8: full-card Inspect affordance with compact primary actions. */
+.hwl-card{position:relative;overflow:visible;transition:border-color .15s ease,box-shadow .15s ease}
+.hwl-card:hover{border-color:#9fc4dd;box-shadow:0 6px 20px #1c426116}
+.hwl-card.hwl-card-menu-open{z-index:10}
+.hwl-card-image{overflow:hidden;border-radius:12px 12px 0 0;cursor:pointer}
+.hwl-card-open-overlay{position:absolute;inset:0;z-index:1;width:100%;height:100%;border:0;border-radius:12px;background:transparent;cursor:pointer}
+.hwl-card-open-overlay:focus-visible{outline:3px solid #1b81c0;outline-offset:2px}
+.hwl-card-info{position:relative;pointer-events:none}
+.hwl-card-actions{position:relative;z-index:2;pointer-events:auto;display:flex;align-items:center;flex-wrap:nowrap;gap:7px}
+.hwl-card-actions button{flex:0 0 auto}
+.hwl-card-actions .hwl-set-now{flex:1;background:#edf7fd;border-color:#b4d5e9;color:#16699f}
+.hwl-card-actions .hwl-set-now:hover{background:#dff0fc}
+.hwl-card-actions .hwl-card-heart,.hwl-card-actions .hwl-card-more{width:36px;min-width:36px;min-height:35px;padding:6px 2px;font-size:19px;line-height:1}
+.hwl-card-actions .hwl-card-heart.favorite{color:#ac3661;background:#fff1f5}
+.hwl-card-menu{position:relative;flex:0 0 auto}
+.hwl-card-menu-popup{position:absolute;bottom:calc(100% + 8px);right:0;z-index:15;display:flex;flex-direction:column;min-width:192px;padding:5px;border:1px solid #d5e4ee;border-radius:9px;background:#fff;box-shadow:0 10px 30px #18375336}
+.hwl-card-menu-popup button{flex:none;width:100%;border:0;border-radius:6px;padding:10px;text-align:left;background:transparent;color:#365e78;font-size:11px}
+.hwl-card-menu-popup button:hover:not(:disabled){background:#eaf5fc}
+.hwl-card-menu-popup button:last-child{color:#a33f3f}
+.hwl-card-menu-popup button:disabled{opacity:.46;cursor:not-allowed}
+.hwl-empty-symbol{font-size:35px;color:#3b87b8;line-height:1.2}
+.hwl-empty-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}

@@ -100,3 +100,15 @@
 .hws-automation .hwr-background-options label{background:#fbfdff}
 @media(max-width:1080px){.hws-automation .hwr-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hws-settings-tabs button{padding:13px 12px}}
 @media(max-width:800px){.hws-automation .hwr-summary-grid{grid-template-columns:1fr 1fr}.hws-automation .hwr-fields{gap:10px}.hws-settings-tabs button{font-size:11px}}
+
+/* PR #8: more visible persistence feedback and easy navigation on long tabs. */
+.hws-settings-tabs{position:sticky;top:0;z-index:25;background:#f4f7fa;padding-top:7px;box-shadow:0 6px 10px #f4f7faed}
+.hws-settings-feedback{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border:1px solid #d5e7dc;border-radius:10px;margin:-7px 0 17px;background:#f7fcf9;color:#276b4d}
+.hws-settings-feedback.has-changes{border-color:#e7d5af;background:#fffbf2;color:#825b26}
+.hws-settings-feedback.has-error{border-color:#edcbc8;background:#fff8f6;color:#a63f38}
+.hws-settings-feedback>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.hws-settings-feedback strong{font-size:12px}
+.hws-settings-feedback span{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.hws-settings-feedback button{flex:none;min-width:0}
+.hws-settings-actions{bottom:0;z-index:15;padding:12px 0}
+@media(max-width:780px){.hws-settings-feedback{flex-wrap:wrap}.hws-settings-tabs{top:0}}

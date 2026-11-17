@@ -142,7 +142,9 @@ export default function App() {
             onSaveToLibrary={beginBrowserImport}
             importCompletion={browserImportCompletion} />
           {page === "browser" ? null : page === "settings" ? (
-            <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab} />
+            <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab}
+              onBrowseWallpapers={() => openGallery(gallerySource)}
+              onOpenLibrary={() => openLibrary()} />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               focusWallpaperId={libraryFocusId}

@@ -28,6 +28,8 @@ export type SettingsTab = "wallpaper" | "automation" | "library" | "sources" | "
 interface SettingsPageProps {
   selectedTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
+  onBrowseWallpapers: () => void;
+  onOpenLibrary: () => void;
 }
 const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "wallpaper", label: "Wallpaper & Display" },
@@ -36,7 +38,9 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "sources", label: "Sources" },
   { key: "storage", label: "Storage & Privacy" },
 ];
-export default function SettingsPage({ selectedTab, onTabChange }: SettingsPageProps) {
+export default function SettingsPage({
+  selectedTab, onTabChange, onBrowseWallpapers, onOpenLibrary,
+}: SettingsPageProps) {
   const [snapshot, setSnapshot] = useState<ConfigurationSnapshot | null>(null);
   const [form, setForm] = useState<AppSettings | null>(null);
   const [storageChoice, setStorageChoice] = useState<StorageMode>("appData");
@@ -68,6 +72,7 @@ export default function SettingsPage({ selectedTab, onTabChange }: SettingsPageP
   function field<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     setForm((existing) => existing ? { ...existing, [key]: value } : existing);
     setNotice("");
+    setError("");
   }
 
   const changed = Boolean(snapshot && form &&
@@ -173,7 +178,25 @@ export default function SettingsPage({ selectedTab, onTabChange }: SettingsPageP
             onClick={() => onTabChange(tab.key)}>{tab.label}</button>
         ))}
       </nav>
-      {changed && <p className="hws-pending-indicator">You have unsaved configuration changes. Save before leaving Settings.</p>}
+      {(changed || error || notice) && (
+        <div className={"hws-settings-feedback" + (changed ? " has-changes" :
+          error ? " has-error" : " is-saved")}
+          role={error ? "alert" : "status"} aria-live="polite">
+          <div>
+            <strong>{error ? "Could not save changes" :
+              changed ? "Unsaved changes" : "Settings updated"}</strong>
+            <span>{error || (changed
+              ? "Your edits are not saved until you select Save settings."
+              : notice)}</span>
+          </div>
+          {changed && (
+            <button type="button" className="hws-settings-primary"
+              disabled={busy} onClick={() => void save()}>
+              {busy ? "Saving…" : "Save changes"}
+            </button>
+          )}
+        </div>
+      )}
       {selectedTab === "wallpaper" && (
         <div id="hws-panel-wallpaper" role="tabpanel" aria-labelledby="hws-tab-wallpaper">
       <section className="hws-settings-panel" aria-labelledby="hws-wallpaper">
@@ -225,7 +248,7 @@ export default function SettingsPage({ selectedTab, onTabChange }: SettingsPageP
       )}
       {selectedTab === "automation" && (
         <div id="hws-panel-automation" role="tabpanel" aria-labelledby="hws-tab-automation">
-          <AutomationSettings />
+          <AutomationSettings onBrowseWallpapers={onBrowseWallpapers} onOpenLibrary={onOpenLibrary} />
         </div>
       )}
       {selectedTab === "library" && (

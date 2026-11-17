@@ -8,7 +8,11 @@ import "./RotationPage.css";
 function date(unix: number | null): string {
   return unix === null ? "Not scheduled" : new Date(unix * 1000).toLocaleString();
 }
-export default function AutomationSettings() {
+interface Props {
+  onBrowseWallpapers: () => void;
+  onOpenLibrary: () => void;
+}
+export default function AutomationSettings({ onBrowseWallpapers, onOpenLibrary }: Props) {
   const [status, setStatus] = useState<RotationStatus | null>(null);
   useEffect(() => {
     let active = true;
@@ -38,6 +42,22 @@ export default function AutomationSettings() {
         <div><small>Available images</small><strong>{status?.eligibleCount ?? "—"}</strong></div>
         <div><small>Offline reserve</small><strong>{status ? String(status.reserveCount) + " / 10" : "—"}</strong></div>
       </div>
+      {status && status.eligibleCount === 0 && (
+        <div className="hwr-empty-pool" role="status">
+          <div>
+            <strong>{status.preferences.favoritesOnly
+              ? "No favorite wallpapers ready to rotate"
+              : "Your rotation pool is empty"}</strong>
+            <p>{status.preferences.favoritesOnly
+              ? "Favorite a saved wallpaper in Library, or switch off Favorites only."
+              : "Save a wallpaper in Library or enable approved discovery to build an offline reserve."}</p>
+          </div>
+          <div className="hwr-empty-pool-actions">
+            <button type="button" onClick={onOpenLibrary}>Open Library</button>
+            <button type="button" onClick={onBrowseWallpapers}>Browse Gallery</button>
+          </div>
+        </div>
+      )}
       <RotationPanel onStatusChange={setStatus} />
       <BackgroundPanel />
       <p className="hws-settings-footnote">Library wallpapers are preferred. Only verified public-domain/CC0 images can enter the unattended reserve. Existing Windows wallpaper files and Library originals remain protected.</p>

@@ -115,6 +115,18 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
   const lastTopicName = DISCOVERY_TOPICS.find((topic) =>
     topic.id === status?.lastDiscoveryTopic)?.label || status?.lastDiscoveryTopic;
   const isPreset = PRESETS.some((p) => p.minutes === prefs?.intervalMinutes);
+  const rateLimited = Boolean(status?.lastDiscoveryError &&
+    (status.lastDiscoveryError.includes("429") ||
+      status.lastDiscoveryError.includes("503")));
+  const discoveryState = !prefs?.enabled || !prefs.discoveryEnabled
+    ? "Discovery off"
+    : prefs.favoritesOnly ? "Favorites only"
+    : (status?.reserveCount ?? 0) >= 10 ? "Reserve full"
+    : rateLimited ? "Cooling down"
+    : status?.lastDiscoveryOutcome === "error" ? "Source unavailable"
+    : status?.lastDiscoveryOutcome === "saved" ? "Image saved"
+    : status?.lastDiscoveryOutcome === "no_match" ? "No eligible result"
+    : "Ready to discover";
   return (
     <section className="hwr-panel" aria-label="Automatic wallpaper rotation settings">
       <div className="hwr-heading">
@@ -280,29 +292,53 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
           </div>
           <div className="hwr-meta">
             <span>{status.eligibleCount} eligible rotation image{status.eligibleCount === 1 ? "" : "s"}</span>
-            <span>Offline reserve: {status.reserveCount}/10</span>
             <span>Next rotation: {prefs.enabled && !prefs.paused && !prefs.pinned
               ? localDate(status.nextDueUnix) : "Not actively rotating"}</span>
-            {prefs.enabled && prefs.discoveryEnabled && !prefs.favoritesOnly && (
-              <span>Next discovery: {localDate(status.nextDiscoveryUnix)}</span>
-            )}
           </div>
-          <p className="hwr-note">Automatic source: verified public-domain/CC0 Wikimedia Commons images. Bing Daily and Unsplash remain available for manual selection while unattended provider use is reviewed. Offline reserve files are separate from your permanent Library. Favorites-only does not use the reserve.</p>
-          {lastDiscoveryLabel && (
-            <p className="hwr-note">
-              Last discovery: {lastDiscoveryLabel}
-              {lastTopicName ? ` · ${lastTopicName}` : ""}
-              {status.lastDiscoveryUnix ? ` · ${localDate(status.lastDiscoveryUnix)}` : ""}
-            </p>
-          )}
-          {status.lastDiscoveryError && (
-            <p className={status.lastDiscoveryError.includes("429") ? "hwr-note" : "hwr-error"}>
-              {status.lastDiscoveryError.includes("429")
-                ? "Wikimedia is temporarily limiting requests. Haven Walls will retry after its cooldown without interrupting offline rotation."
-                : `Discovery error: ${status.lastDiscoveryError}`}
-            </p>
-          )}
-          {status.lastError && <p className="hwr-note">{status.lastError}</p>}
+          <section className="hwr-discovery-status" aria-label="Automatic discovery status">
+            <div className="hwr-discovery-status-head">
+              <div>
+                <strong>Offline reserve</strong>
+                <span>{status.reserveCount} / 10 wallpapers</span>
+              </div>
+              <span className={"hwr-discovery-state" + (rateLimited ? " is-limited" : "")}>
+                {discoveryState}
+              </span>
+            </div>
+            <progress value={Math.min(status.reserveCount, 10)} max={10}
+              aria-label="Approved offline reserve filled" />
+            <div className="hwr-discovery-details">
+              {lastDiscoveryLabel && (
+                <span>Last attempt: {lastDiscoveryLabel}
+                  {lastTopicName ? ` · ${lastTopicName}` : ""}
+                  {status.lastDiscoveryUnix ? ` · ${localDate(status.lastDiscoveryUnix)}` : ""}
+                </span>
+              )}
+              {prefs.enabled && prefs.discoveryEnabled && !prefs.favoritesOnly && (
+                <span>Next check: {status.reserveCount >= 10
+                  ? "Reserve is full" : localDate(status.nextDiscoveryUnix)}</span>
+              )}
+            </div>
+            {rateLimited && (
+              <p className="hwr-discovery-advice" role="status">
+                Wikimedia is temporarily limiting requests. Existing saved wallpapers
+                can still rotate; Haven Walls will retry after the provider cooldown.
+              </p>
+            )}
+            {status.lastDiscoveryError && !rateLimited && (
+              <p className="hwr-discovery-advice">The last source request did not complete.
+                Saved Library and reserve images remain available.</p>
+            )}
+            <details className="hwr-tech-details">
+              <summary>Source policy &amp; technical details</summary>
+              <p>Automatic discovery uses individually verified public-domain/CC0 Wikimedia Commons images.
+                Bing Daily and Unsplash are available for manual discovery only.
+                Favorites-only never uses the offline reserve.</p>
+              {status.lastDiscoveryError && <p>Last provider response: {status.lastDiscoveryError}</p>}
+              {status.lastError && <p>Rotation issue: {status.lastError}</p>}
+            </details>
+          </section>
+          {status.lastError && <p className="hwr-error" role="alert">{status.lastError}</p>}
         </>
       )}
       {error && <p className="hwr-error" role="alert">{error}</p>}
