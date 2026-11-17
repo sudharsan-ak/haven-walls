@@ -141,6 +141,7 @@ pub fn run() {
             wallpaper_library::open_wallpaper_source,
             windows_wallpaper::list_wallpaper_monitors,
             windows_wallpaper::get_wallpaper_activity,
+            windows_wallpaper::get_active_wallpaper_preview,
             windows_wallpaper::apply_library_wallpaper,
             rotation::get_rotation_status,
             rotation::save_rotation_preferences,

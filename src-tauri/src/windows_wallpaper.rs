@@ -107,6 +107,85 @@ pub fn get_wallpaper_activity(app: AppHandle) -> Result<Activity, String> {
     Ok(Activity { current, history })
 }
 
+/// Read-only preview of the *Windows-confirmed* protected active wallpaper.
+ /// This also works for approved offline reserve images, which are deliberately
+ /// absent from the permanent Library list. Never serve arbitrary filesystem paths.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ActiveWallpaperPreview {
+    pub target_id: String,
+    pub wallpaper_id: String,
+    pub title: String,
+    pub applied_at: String,
+    pub data_url: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn get_active_wallpaper_preview(
+    app: AppHandle, target_id: String,
+) -> Result<ActiveWallpaperPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || active_preview_sync(&app, &target_id))
+        .await.map_err(|_| "Active wallpaper preview was interrupted.".to_string())?
+}
+
+fn active_preview_sync(app: &AppHandle, target_id: &str) -> Result<ActiveWallpaperPreview, String> {
+    if target_id.len() > 256 || target_id.is_empty() { return Err("Invalid display selection.".into()); }
+    let state = app.state::<StorageLock>();
+    let _lock = state.0.lock().map_err(|_| "Wallpaper storage is busy.".to_string())?;
+    let paths = local_storage::current_paths(app)?;
+    let conn = app_settings::open_database(&paths)?;
+    ensure_schema(&conn)?;
+    let current: Option<(String, String, String, String)> = conn.query_row(
+        "SELECT a.wallpaper_id,w.title,a.applied_at,a.relative_path
+         FROM active_assignments a JOIN wallpapers w ON w.id=a.wallpaper_id
+         WHERE a.target_id=?1",
+        params![target_id],
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))
+    ).optional().map_err(|e| format!("Could not read current wallpaper: {e}"))?;
+    let (wallpaper_id,title,applied_at,filename) =
+        current.ok_or("There is no Haven Walls wallpaper assigned to this display.")?;
+    if !filename.ends_with(".jpg") ||
+        !filename.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '.') {
+        return Err("The active wallpaper filename is not valid.".into());
+    }
+    let active_path = paths.active().join(&filename);
+    let expected = active_path.to_string_lossy();
+    let matches_windows = platform::current_wallpaper_paths()?
+        .iter().any(|(monitor, actual)| {
+            (target_id == "all" || monitor == target_id) &&
+                !actual.is_empty() && expected.eq_ignore_ascii_case(actual)
+        });
+    if !matches_windows {
+        return Err("The Windows wallpaper has changed outside Haven Walls.".into());
+    }
+    let metadata = fs::metadata(&active_path)
+        .map_err(|e| format!("Could not inspect active wallpaper file: {e}"))?;
+    if metadata.len() == 0 || metadata.len() > 32 * 1024 * 1024 {
+        return Err("Active wallpaper is too large for a preview.".into());
+    }
+    let bytes = fs::read(active_path)
+        .map_err(|e| format!("Could not read active wallpaper preview: {e}"))?;
+    let photo = image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)
+        .map_err(|e| format!("Could not decode active wallpaper: {e}"))?;
+    let (width,height) = (photo.width(),photo.height());
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 90_000_000 {
+        return Err("Active wallpaper dimensions are invalid.".into());
+    }
+    // Thumbnail only: bound WebView memory and avoid transferring full 4K/8K files.
+    let preview = photo.thumbnail(1700, 1000);
+    let mut encoded = Vec::new();
+    preview.write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+        &mut encoded, 82
+    )).map_err(|e| format!("Could not encode active wallpaper preview: {e}"))?;
+    Ok(ActiveWallpaperPreview {
+        target_id: target_id.to_string(), wallpaper_id, title, applied_at,
+        data_url: format!("data:image/jpeg;base64,{}", BASE64.encode(encoded)),
+        width, height,
+    })
+}
+
 fn encode_original(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let photo = image::load_from_memory(bytes)
         .map_err(|e| format!("Could not decode saved wallpaper: {e}"))?;

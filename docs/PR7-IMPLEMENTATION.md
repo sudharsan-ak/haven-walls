@@ -385,3 +385,84 @@ This commit is a **source checkpoint**, not a claim of a completed Windows
 release. The authoring environment has no Windows Rust toolchain; local build,
 sleep/wake, tray, login startup, and HTTP 429 runtime behavior require user
 verification. Do not merge PR #7 without explicit user approval.
+
+
+## Commit 5: Approved Dashboard and Settings UI revamp
+
+Reference: Haven-Walls-Dashboard-and-Settings-Revamp-Interactive.html
+(the user-approved interactive prototype in the Haven Walls project).
+
+- Replace the oversized Dashboard welcome hero and repeated Get Started
+  cards with the approved current-wallpaper preview, compact rotation
+  summary and Browse/Library/Sources quick actions.
+- Preview is the actual **Windows-confirmed** protected working wallpaper,
+  not an online sample, a potentially expired discovery thumbnail, or a
+  guessed Library image. The read-only native command confirms Windows is
+  still using Haven Walls' recorded working file before it decodes a
+  bounded JPEG thumbnail. Images originally sourced from the approved
+  offline reserve are supported as well as permanently saved wallpapers.
+- An external Windows wallpaper override displays a truthful empty
+  state. Current Windows wallpaper files from unrelated applications
+  are never read through arbitrary filesystem paths.
+- Multi-monitor active assignments can be selected independently from
+  a display picker. Metadata shows the source, original resolution,
+  applied time and working-copy format. Expand displays a larger preview.
+- Dashboard Next uses the existing Rust rotation command. View in Library
+  opens the actual saved wallpaper's details, when the photo has a
+  permanent managed Library entry. For reserve-only images, View in
+  Library is disabled and explains why; Change Wallpaper opens Library.
+- Add five Settings tabs based on the approved prototype:
+  Wallpaper & Display, Automation, Library & Quality, Sources,
+  and Storage & Privacy. Existing storage migration, API credentials,
+  duplicate/quality checks, source exclusions and privacy controls
+  are preserved.
+- Move the existing native-backed rotation, discovery and system tray
+  controls under Settings > Automation. Keep their persisted SQLite
+  values and original commands unchanged, with an immediate status
+  summary after actions.
+- Remove the separate Schedule sidebar destination and the large
+  duplicate rotation controls from Library. Dashboard's Manage Rotation
+  opens Settings > Automation directly; Library remains for saved
+  wallpapers, Inspect, Favorites and Set Now.
+- Keep the current wallpaper label and activity data in Library.
+
+### Commit 5 Windows regression checklist
+
+1. Fetch PR #7 and run npm run build, npm run tauri dev. There must be
+   no TypeScript, JSX or Rust errors.
+2. Dashboard: with a managed Library wallpaper applied, verify the
+   **actual** Windows image is shown, including correct title, source,
+   original resolution, last applied time and display label.
+3. Apply an eligible wallpaper sourced from the protected offline
+   reserve using automatic Next. Dashboard must preview that active
+   working copy too, while the reserve does not appear as permanent
+   Library entries.
+4. Change the desktop wallpaper outside Haven Walls through Windows
+   Settings. Dashboard should not claim the old Haven Walls wallpaper
+   is current; Library's verified indicator must agree.
+5. Next Wallpaper on Dashboard should change the Windows wallpaper and
+   refresh both its active photo preview and the Library indicator.
+   If rotation is pinned or no eligible alternative exists, show
+   the real failure rather than a fake success.
+6. Dashboard View in Library opens the saved image's detail viewer;
+   Change Wallpaper and all three quick shortcuts navigate correctly.
+   Reserve-only wallpapers explain why View in Library is unavailable.
+7. Settings tabs: test all five tabs; change one normal AppSettings
+   preference, save, restart and verify it persisted. Repeat for
+   Automation and verify the rotation schedule is unchanged.
+8. Existing Quick Save, allowed image types, resolution, similar
+   duplicates, source exclusion, credentials, storage migration
+   confirmation and cache clear confirmation still render correctly
+   and invoke the same existing commands.
+9. Sidebar no longer has Schedule and Library no longer has a second
+   rotation panel. Dashboard Manage Rotation should select Settings >
+   Automation, while manually clicking Settings continues to work.
+10. Tray Next/Pause/Pin, close-to-tray and startup controls still operate
+    after the UI move. Check multiple monitors if available.
+11. Resize the window to a relatively narrow desktop width. Dashboard
+    wallpaper, Settings tabs and controls should remain usable without
+    content clipping or horizontal overflow.
+
+No auto-generated or sample wallpaper should ship in the real Dashboard.
+As with earlier PR #7 source checkpoints, local Windows Rust compilation
+and actual desktop runtime tests must pass before merging the draft PR.

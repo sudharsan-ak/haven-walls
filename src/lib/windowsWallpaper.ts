@@ -36,6 +36,17 @@ export interface WallpaperApplyResult {
   wallpaperId: string;
 }
 
+/** Decoded, bounded thumbnail from the protected Windows-confirmed active copy. */
+export interface ActiveWallpaperPreview {
+  targetId: string;
+  wallpaperId: string;
+  title: string;
+  appliedAt: string;
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 /**
  * SQLite's legacy CURRENT_TIMESTAMP values are UTC without an explicit zone.
  * Interpret those values as UTC, then render using the operating system's
@@ -66,6 +77,10 @@ export async function listWindowsMonitors(): Promise<WindowsMonitor[]> {
 export async function getWallpaperActivity(): Promise<WallpaperActivity> {
   requireDesktop();
   return invoke<WallpaperActivity>("get_wallpaper_activity");
+}
+export async function getActiveWallpaperPreview(targetId: string): Promise<ActiveWallpaperPreview> {
+  requireDesktop();
+  return invoke<ActiveWallpaperPreview>("get_active_wallpaper_preview", { targetId });
 }
 export async function applyLibraryWallpaper(
   id: string,

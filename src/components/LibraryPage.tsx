@@ -13,7 +13,6 @@ import {
 } from "../lib/windowsWallpaper";
 import { listen } from "@tauri-apps/api/event";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
-import RotationPanel from "./RotationPanel";
 import ConfirmDialog from "./ConfirmDialog";
 import "./LibraryPage.css";
 
@@ -21,12 +20,18 @@ type Filter = "all" | "favorites" | "4k" | "portrait";
 
 interface Props {
   revision: number;
+  /** Optional Dashboard deep-link: open the selected wallpaper's details. */
+  focusWallpaperId?: string | null;
+  onFocusHandled?: () => void;
   onDiscover: () => void;
   onReverseSearch: (image: LibraryWallpaper) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
 }
 
-export default function LibraryPage({ revision, onDiscover, onReverseSearch, onSaveToLibrary }: Props) {
+export default function LibraryPage({
+  revision, focusWallpaperId, onFocusHandled,
+  onDiscover, onReverseSearch, onSaveToLibrary,
+}: Props) {
   const [items, setItems] = useState<LibraryWallpaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -287,6 +292,14 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     } finally { setBusyId(""); }
   }
 
+  // Deep links from Dashboard work even while the Library loads asynchronously.
+  useEffect(() => {
+    if (!focusWallpaperId || loading) return;
+    const image = items.find((item) => item.id === focusWallpaperId);
+    onFocusHandled?.();
+    if (image) void open(image);
+  }, [focusWallpaperId, loading, items, onFocusHandled]);
+
   async function open(image: LibraryWallpaper) {
     selectedId.current = image.id;
     setSelected(image);
@@ -425,7 +438,6 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
           </div>
         </section>
       )}
-      <RotationPanel onApplied={afterApply} />
       <div className="hwl-controls">
         <input type="search" value={search}
           placeholder="Search title, provider, or photographer…"
@@ -498,7 +510,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
       )}
 
       <p className="hwl-footer">
-        Wallpapers are applied only when you click Set Now or Apply to Windows.
+        Manual Set Now and your enabled rotation schedule can apply saved wallpapers to Windows.
         Automatic rotation and background downloading are not enabled.
         Active working copies stay separate from saved Library originals.
       </p>

@@ -32,8 +32,9 @@ function localDate(unix: number | null): string {
 }
 interface Props {
   onApplied?: (result: WallpaperApplyResult) => void;
+  onStatusChange?: (status: RotationStatus) => void;
 }
-export default function RotationPanel({ onApplied }: Props) {
+export default function RotationPanel({ onApplied, onStatusChange }: Props) {
   const [status, setStatus] = useState<RotationStatus | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -73,6 +74,7 @@ export default function RotationPanel({ onApplied }: Props) {
     try {
       const updated = await saveRotationPreferences({ ...status.preferences, ...patch });
       setStatus(updated);
+      onStatusChange?.(updated);
       setCustomMinutes(String(updated.preferences.intervalMinutes));
       setCustomDays(String(updated.preferences.cooldownDays));
       setDailyDraft(updated.preferences.dailyTime);
@@ -91,7 +93,9 @@ export default function RotationPanel({ onApplied }: Props) {
     try {
       const result = await rotateNextWallpaper();
       onApplied?.(result);
-      setStatus(await getRotationStatus());
+      const updated = await getRotationStatus();
+      setStatus(updated);
+      onStatusChange?.(updated);
       setNotice("Wallpaper changed.");
     } catch (reason) {
       setError(errorMessage(reason));
@@ -112,7 +116,7 @@ export default function RotationPanel({ onApplied }: Props) {
     topic.id === status?.lastDiscoveryTopic)?.label || status?.lastDiscoveryTopic;
   const isPreset = PRESETS.some((p) => p.minutes === prefs?.intervalMinutes);
   return (
-    <section className="hwr-panel" aria-label="Library rotation controls">
+    <section className="hwr-panel" aria-label="Automatic wallpaper rotation settings">
       <div className="hwr-heading">
         <div>
           <strong>Automatic wallpaper rotation</strong>
@@ -196,6 +200,34 @@ export default function RotationPanel({ onApplied }: Props) {
                 onChange={(e) => void savePatch({ favoritesOnly: e.target.checked })} />
               Favorites only
             </label>
+          </div>
+          <div className="hwr-actions">
+            <button type="button" disabled={busy} className={prefs.enabled ? "hwr-secondary" : "hwr-primary"}
+              onClick={() => void savePatch({ enabled: !prefs.enabled })}>
+              {prefs.enabled ? "Turn rotation off" : "Enable rotation"}
+            </button>
+            <button type="button" disabled={busy || !prefs.enabled} className="hwr-secondary"
+              onClick={() => void savePatch({ paused: !prefs.paused })}>
+              {prefs.paused ? "Resume" : "Pause"}
+            </button>
+            <button type="button" disabled={busy || !prefs.enabled} className="hwr-secondary"
+              onClick={() => void savePatch({ pinned: !prefs.pinned })}>
+              {prefs.pinned ? "Unpin current" : "Pin current"}
+            </button>
+            <button type="button" disabled={busy || prefs.pinned ||
+                (status.eligibleCount === 0 &&
+                  (!prefs.enabled || !prefs.discoveryEnabled || prefs.favoritesOnly))}
+              className="hwr-primary"
+              onClick={() => void next()}>
+              {busy ? "Working…" : "Next wallpaper"}
+            </button>
+          </div>
+          <div className="hwr-discovery-block">
+            <div className="hwr-discovery-heading">
+              <strong>Automatic discovery &amp; offline reserve</strong>
+              <p>Refill with approved wallpaper images when the saved rotation pool needs more variety.</p>
+            </div>
+            <div className="hwr-discovery-fields">
             <label className="hwr-check">
               <input type="checkbox" checked={prefs.discoveryEnabled} disabled={busy}
                 onChange={(e) => void savePatch({ discoveryEnabled: e.target.checked })} />
@@ -244,27 +276,7 @@ export default function RotationPanel({ onApplied }: Props) {
                 </div>
               )}
             </div>
-          </div>
-          <div className="hwr-actions">
-            <button type="button" disabled={busy} className={prefs.enabled ? "hwr-secondary" : "hwr-primary"}
-              onClick={() => void savePatch({ enabled: !prefs.enabled })}>
-              {prefs.enabled ? "Turn rotation off" : "Enable rotation"}
-            </button>
-            <button type="button" disabled={busy || !prefs.enabled} className="hwr-secondary"
-              onClick={() => void savePatch({ paused: !prefs.paused })}>
-              {prefs.paused ? "Resume" : "Pause"}
-            </button>
-            <button type="button" disabled={busy || !prefs.enabled} className="hwr-secondary"
-              onClick={() => void savePatch({ pinned: !prefs.pinned })}>
-              {prefs.pinned ? "Unpin current" : "Pin current"}
-            </button>
-            <button type="button" disabled={busy || prefs.pinned ||
-                (status.eligibleCount === 0 &&
-                  (!prefs.enabled || !prefs.discoveryEnabled || prefs.favoritesOnly))}
-              className="hwr-primary"
-              onClick={() => void next()}>
-              {busy ? "Working…" : "Next wallpaper"}
-            </button>
+            </div>
           </div>
           <div className="hwr-meta">
             <span>{status.eligibleCount} eligible rotation image{status.eligibleCount === 1 ? "" : "s"}</span>

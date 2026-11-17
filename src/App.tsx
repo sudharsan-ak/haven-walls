@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
-import { readHostInfo, type HostInfo, type CatalogSourceId } from "./lib/native";
+import { useState } from "react";
+import { type CatalogSourceId } from "./lib/native";
 import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
 import BrowserPage from "./components/BrowserPage";
-import SettingsPage from "./components/SettingsPage";
+import SettingsPage, { type SettingsTab } from "./components/SettingsPage";
 import LibraryPage from "./components/LibraryPage";
-import RotationPage from "./components/RotationPage";
-import RotationDashboard from "./components/RotationDashboard";
+import DashboardPage from "./components/DashboardPage";
 import LibraryImportDialog from "./components/LibraryImportDialog";
 import type { ImportItemResult } from "./components/LibraryImportDialog";
 import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
@@ -25,22 +24,19 @@ type BrowserImportCompletion = {
   completedIds: string[];
 };
 
-type HostState =
-  | { kind: "checking" }
-  | { kind: "connected"; info: HostInfo }
-  | { kind: "browser" }
-  | { kind: "error"; message: string };
-
-const upcoming = [
-  { title: "Online gallery", detail: "Explore photography, TV backdrops and team artwork", icon: "▧" },
-  { title: "Wallpaper Library", detail: "Save, favorite and organize images offline", icon: "▣" },
-  { title: "Set wallpaper", detail: "Apply saved images to Windows displays", icon: "▤" },
-  { title: "Rotation", detail: "Automatic schedules and background controls", icon: "↻" },
-];
-
 export default function App() {
-  const [host, setHost] = useState<HostState>({ kind: "checking" });
-  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "rotation" | "sources" | "settings">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "sources" | "settings">("dashboard");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("automation");
+  const [libraryFocusId, setLibraryFocusId] = useState<string | null>(null);
+
+  function openAutomation() {
+    setSettingsTab("automation");
+    setPage("settings");
+  }
+  function openLibrary(wallpaperId?: string) {
+    setLibraryFocusId(wallpaperId ?? null);
+    setPage("library");
+  }
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
@@ -94,27 +90,6 @@ export default function App() {
     setPage("gallery");
   }
 
-  useEffect(() => {
-    let active = true;
-
-    readHostInfo()
-      .then((info) => {
-        if (!active) return;
-        setHost(info ? { kind: "connected", info } : { kind: "browser" });
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setHost({
-          kind: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
   return (
     <div className="app">
       <WindowChrome />
@@ -138,9 +113,6 @@ export default function App() {
             <button type="button" onClick={() => setPage("library")}
               className={"nav-item " + (page === "library" ? "current" : "")}
               aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
-            <button type="button" onClick={() => setPage("rotation")}
-              className={"nav-item " + (page === "rotation" ? "current" : "")}
-              aria-current={page === "rotation" ? "page" : undefined}>↻ <span>Schedule</span></button>
             <button type="button" onClick={() => setPage("sources")}
               className={"nav-item " + (page === "sources" ? "current" : "")}
               aria-current={page === "sources" ? "page" : undefined}>✧ <span>Sources</span></button>
@@ -157,11 +129,11 @@ export default function App() {
             onSaveToLibrary={beginBrowserImport}
             importCompletion={browserImportCompletion} />
           {page === "browser" ? null : page === "settings" ? (
-            <SettingsPage />
-          ) : page === "rotation" ? (
-            <RotationPage />
+            <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab} />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
+              focusWallpaperId={libraryFocusId}
+              onFocusHandled={() => setLibraryFocusId(null)}
               onDiscover={() => openGallery("discover")}
               onReverseSearch={reverseSearchSavedImage}
               onSaveToLibrary={beginOtherImport} />
@@ -183,7 +155,7 @@ export default function App() {
               <div className="eyebrow">Online image providers</div>
               <h1>Sources</h1>
               <p className="subheading">
-                Browse sources individually. Manual browsing is separate from approved public-domain automatic discovery in Schedule.
+                Browse sources individually. Automatic discovery preferences are in Settings → Automation.
               </p>
               <div className="provider-grid">
                 {catalogSources.map((source) => (
@@ -205,7 +177,7 @@ export default function App() {
               <div className="provider-footnote">
                 Wallpaper caption and photo-credit preferences are now in
                 <button type="button" className="gallery-open-link"
-                  onClick={() => setPage("settings")}>Settings</button>.
+                  onClick={() => { setSettingsTab("wallpaper"); setPage("settings"); }}>Settings</button>.
               </div>
               <p className="provider-footnote">
                 These are previews, not rights-cleared wallpaper downloads. External provider
@@ -213,67 +185,12 @@ export default function App() {
               </p>
             </section>
           ) : (
-          <>
-          <div className="eyebrow">Windows app foundation</div>
-          <h1>Welcome to Haven Walls</h1>
-          <p className="subheading">
-            A better way to discover and manage desktop wallpapers.
-            Save wallpapers locally, apply them to Windows, and schedule automatic changes in the background.
-          </p>
-
-          <section className="hero" aria-labelledby="foundation-title">
-            <div className="hero-content">
-              <span className="hero-kicker">Haven Walls · Desktop wallpapers</span>
-              <h2 id="foundation-title">Find your next desktop background.</h2>
-              <p>
-                Discover wallpapers by Nature, Space, Animals, Cities, Sports and more.
-                Inspect real source photos, then save selected images to your offline Library.
-              </p>
-              <div className="host-pill" role="status">
-                <span
-                  className={`status-dot ${host.kind === "connected" ? "good" : ""}`}
-                  aria-hidden="true"
-                />
-                {host.kind === "checking" && "Connecting to Windows host…"}
-                {host.kind === "browser" && "Browser preview (native host unavailable)"}
-                {host.kind === "error" && "Native host connection failed"}
-                {host.kind === "connected" && `${host.info.appName} v${host.info.version} · ${host.info.platform}`}
-              </div>
-              {host.kind === "error" && <p className="host-error">{host.message}</p>}
-            </div>
-            <div className="hero-ornament" aria-hidden="true">
-              <div className="orb orb-one" />
-              <div className="orb orb-two" />
-            </div>
-          </section>
-
-          {host.kind === "connected" && <RotationDashboard onOpen={() => setPage("rotation")} />}
-
-          <div className="section-heading">
-            <h2>Get started</h2>
-            <span>Find, save and apply a wallpaper directly to your Windows desktop.</span>
-          </div>
-          <section className="preview-grid" aria-label="Upcoming features">
-            {upcoming.map((item) => (
-              <article className="preview-card" key={item.title}>
-                <span className="preview-icon" aria-hidden="true">{item.icon}</span>
-                <h3>{item.title}</h3>
-                <p>{item.detail}</p>
-                {item.title === "Online gallery" ? (
-                  <button type="button" className="gallery-open-link" onClick={() => openGallery("discover")}>Open gallery</button>
-                ) : item.title === "Rotation" ? (
-                  <button type="button" className="gallery-open-link"
-                    onClick={() => setPage("rotation")}>Open schedule</button>
-                ) : item.title === "Wallpaper Library" || item.title === "Set wallpaper" ? (
-                  <button type="button" className="gallery-open-link"
-                    onClick={() => setPage("library")}>
-                    {item.title === "Set wallpaper" ? "Set wallpaper" : "Open Library"}
-                  </button>
-                ) : <span className="coming-soon">Planned</span>}
-              </article>
-            ))}
-          </section>
-          </>
+          <DashboardPage
+            onOpenAutomation={openAutomation}
+            onOpenLibrary={openLibrary}
+            onBrowseWallpapers={() => openGallery("discover")}
+            onOpenSources={() => setPage("sources")}
+          />
           )}
         </main>
       </div>
@@ -289,7 +206,7 @@ export default function App() {
           }}
           onOpenLibrary={() => {
             setImportRequest(null);
-            setPage("library");
+            openLibrary();
           }}
         />
       )}
