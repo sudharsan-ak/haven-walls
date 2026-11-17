@@ -188,3 +188,44 @@ pages on supported photo-grid URL patterns such as Pexels /photo/.
 Commit 3 adds the keep-running system tray and full scheduling UI.
 Commit 4 handles stronger sleep/wake, external changes, retry diagnostics
 and end-to-end Windows regression checks. No direct changes to `main`.
+
+## Commit 2 follow-up: Multi-topic automatic discovery
+
+- Replaces the single Nature/Space/Cities dropdown with a checkbox-based
+  multi-select of eight topics: Nature, Space, Cities, Mountains, Oceans,
+  Wildlife, Architecture and Abstract. The **Select all** action enables
+  every topic, and new installations default to all eight.
+- At least one topic must stay selected. Rust validates the full list, rejects
+  duplicates and unknown values and uses only fixed, approved Commons
+  queries. This does not authorize new image providers or arbitrary search.
+- Existing installations with a saved `discoveryTopic` retain their former
+  single selection when reading settings; saving migrates the field to
+  `discoveryTopics` without losing other scheduling preferences.
+- Discovery uses one bounded request per turn, visiting page 0 of each
+  selected topic before page 1, and repeating after page 19. Topic changes
+  reset that cursor and make the next discovery eligible to run immediately.
+- Adds persisted last-discovery status: source topic, local timestamp,
+  whether a verified wallpaper was saved, no eligible image was found, or
+  the source failed. This makes a reserve stuck at 1/10 diagnosable without
+  treating a zero-result search as a network error.
+- The protected offline reserve target remains 10 and all existing
+  license, resolution, source/keyword exclusion, deduplication and network
+  safeguards stay in place.
+
+### Windows validation for multi-topic discovery
+
+1. Update the existing PR #7 branch and build with `npm run build` and
+   `npm run tauri dev`. Open Library > Automatic wallpaper rotation.
+2. Open Auto-discovery topics. Select several, deselect one, select all.
+   An attempt to deselect the last remaining topic must be disabled.
+3. Restart the app; selected topics and rotation interval must persist.
+   Existing users with one previously selected topic should keep it.
+4. With discovery enabled and reserve below ten, watch Last discovery
+   show the topic, outcome and timestamp. Topics should rotate across
+   attempts instead of always showing Nature.
+5. If Commons finds no eligible media, the outcome should say no eligible
+   image rather than incorrectly claiming a download succeeded.
+6. With reserve full, Verify automatic requests stop. Turning rotation
+   or discovery off must also stop new background discovery attempts.
+7. Library and current-wallpaper highlighting remain unchanged; verify
+   automatic Next wallpaper and Browse > Review > Save still work.

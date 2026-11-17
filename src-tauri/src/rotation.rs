@@ -1,5 +1,5 @@
-//! PR #7 / commit 1: opt-in, local Library rotation.
-//! No network discovery, no silent wallpaper download, no tray lifecycle yet.
+//! PR #7: opt-in Library rotation with verified public-domain offline reserve.
+//! Discovery is bounded and never downloads from unapproved search providers.
 use crate::{
     app_settings,
     local_storage::{self, DataPaths, StorageLock},
@@ -30,7 +30,11 @@ pub struct RotationPreferences {
     pub favorites_only: bool,
     pub cooldown_days: u32,
     pub discovery_enabled: bool,
-    pub discovery_topic: String,
+    pub discovery_topics: Vec<String>,
+    /// Read only for migration of the single-topic settings saved by the
+    /// first Commit 2 version. New settings only serialize discoveryTopics.
+    #[serde(rename = "discoveryTopic", default, skip_serializing)]
+    pub legacy_discovery_topic: Option<String>,
 }
 impl Default for RotationPreferences {
     fn default() -> Self {
@@ -42,7 +46,9 @@ impl Default for RotationPreferences {
             favorites_only: false,
             cooldown_days: 30,
             discovery_enabled: true,
-            discovery_topic: "nature".into(),
+            discovery_topics: rotation_discovery::DISCOVERY_TOPICS.iter()
+                .map(|topic| (*topic).to_owned()).collect(),
+            legacy_discovery_topic: None,
         }
     }
 }
@@ -54,8 +60,16 @@ impl RotationPreferences {
         if !(1..=365).contains(&self.cooldown_days) {
             return Err("No-repeat period must be between 1 and 365 days.".into());
         }
-        if !["nature", "space", "cities"].contains(&self.discovery_topic.as_str()) {
-            return Err("Select a supported automatic discovery topic.".into());
+        if self.discovery_topics.is_empty() ||
+            self.discovery_topics.len() > rotation_discovery::DISCOVERY_TOPICS.len() {
+            return Err("Select at least one automatic discovery topic.".into());
+        }
+        let mut seen = HashSet::new();
+        for topic in &self.discovery_topics {
+            if !rotation_discovery::DISCOVERY_TOPICS.contains(&topic.as_str())
+                || !seen.insert(topic) {
+                return Err("Automatic discovery topics contain an unsupported or repeated option.".into());
+            }
         }
         Ok(())
     }
@@ -71,6 +85,10 @@ struct StoredRotation {
     last_error: Option<String>,
     next_discovery_unix: Option<i64>,
     last_discovery_error: Option<String>,
+    last_discovery_topic: Option<String>,
+    last_discovery_unix: Option<i64>,
+    last_discovery_outcome: Option<String>,
+    /// Cursor across topic × result-page combinations.
     discovery_page: u32,
 }
 impl Default for StoredRotation {
@@ -83,6 +101,9 @@ impl Default for StoredRotation {
             last_error: None,
             next_discovery_unix: None,
             last_discovery_error: None,
+            last_discovery_topic: None,
+            last_discovery_unix: None,
+            last_discovery_outcome: None,
             discovery_page: 0,
         }
     }
@@ -100,6 +121,9 @@ pub struct RotationStatus {
     reserve_count: usize,
     next_discovery_unix: Option<i64>,
     last_discovery_error: Option<String>,
+    last_discovery_topic: Option<String>,
+    last_discovery_unix: Option<i64>,
+    last_discovery_outcome: Option<String>,
 }
 impl RotationStatus {
     fn from_store(stored: StoredRotation, eligible_count: usize, reserve_count: usize) -> Self {
@@ -113,6 +137,9 @@ impl RotationStatus {
             reserve_count,
             next_discovery_unix: stored.next_discovery_unix,
             last_discovery_error: stored.last_discovery_error,
+            last_discovery_topic: stored.last_discovery_topic,
+            last_discovery_unix: stored.last_discovery_unix,
+            last_discovery_outcome: stored.last_discovery_outcome,
         }
     }
 }
@@ -144,8 +171,22 @@ fn load(conn: &Connection) -> Result<StoredRotation, String> {
     let json: String = conn.query_row(
         "SELECT json FROM rotation_settings WHERE id=1", [], |row| row.get(0),
     ).map_err(|e| format!("Could not read rotation settings: {e}"))?;
-    let state: StoredRotation = serde_json::from_str(&json)
+    let mut state: StoredRotation = serde_json::from_str(&json)
         .map_err(|e| format!("Saved rotation settings are invalid: {e}"))?;
+    // Previous Commit 2 saved a single discoveryTopic. Preserve that user's
+    // choice instead of silently opting their existing installation into
+    // seven additional categories. New installs default to all eight.
+    let has_topics = serde_json::from_str::<serde_json::Value>(&json).ok()
+        .and_then(|value| value.pointer("/preferences/discoveryTopics").cloned())
+        .is_some();
+    if !has_topics {
+        if let Some(old) = state.preferences.legacy_discovery_topic.as_ref() {
+            if rotation_discovery::DISCOVERY_TOPICS.contains(&old.as_str()) {
+                state.preferences.discovery_topics = vec![old.clone()];
+            }
+        }
+    }
+    state.preferences.legacy_discovery_topic = None;
     state.preferences.validate()?;
     Ok(state)
 }
@@ -323,7 +364,7 @@ pub fn save_rotation_preferences(
         if !preferences.enabled || !preferences.discovery_enabled {
             state.next_discovery_unix = None;
         } else if !before.enabled || !before.discovery_enabled
-            || before.discovery_topic != preferences.discovery_topic {
+            || before.discovery_topics != preferences.discovery_topics {
             state.next_discovery_unix = Some(now);
             state.discovery_page = 0;
             state.last_discovery_error = None;
@@ -353,6 +394,13 @@ pub(crate) fn note_successful_apply(conn: &Connection, id: &str) -> Result<(), S
     save(conn, &state)
 }
 
+/// One page of each selected topic per round, then advance to the next page.
+/// Never send multiple topic requests during a single replenishment attempt.
+fn discovery_turn(topics: &[String], cursor: u32) -> (String, u32) {
+    let count = topics.len() as u32;
+    (topics[(cursor % count) as usize].clone(), (cursor / count) % 20)
+}
+
 // Replenishment and manual Next share RotationGate to avoid concurrent
 // duplicate downloads; downloads do NOT hold StorageLock.
 fn maybe_replenish(app: &AppHandle, now: i64, force: bool) -> Result<(), String> {
@@ -366,14 +414,21 @@ fn maybe_replenish(app: &AppHandle, now: i64, force: bool) -> Result<(), String>
         if !force && state.next_discovery_unix.is_some_and(|due| due > now) {
             return Ok(None);
         }
-        Ok(Some((state.preferences.discovery_topic.clone(), state.discovery_page)))
+        // Visit page zero of each selected topic before moving to page one.
+        // Rotate one provider request per replenishment cycle, not a burst
+        // of concurrent queries or downloads.
+        let topics = &state.preferences.discovery_topics;
+        let topic_count = topics.len() as u32;
+        let (topic, page) = discovery_turn(topics, state.discovery_page);
+        Ok(Some((topic, page, state.discovery_page, topic_count)))
     })?;
-    let Some((topic, page)) = action else { return Ok(()); };
+    let Some((topic, page, cursor, topic_count)) = action else { return Ok(()); };
     let result = rotation_discovery::replenish_once(app, &topic, page);
+    let finished = now_unix();
     with_storage(app, |conn, _| {
         let mut state = load(conn)?;
-        state.discovery_page = (page + 1) % 20;
-        state.next_discovery_unix = Some(now.saturating_add(match &result {
+        state.discovery_page = (cursor + 1) % (topic_count * 20);
+        state.next_discovery_unix = Some(finished.saturating_add(match &result {
             Ok(true) => 60, // one source file at a time to avoid API bursts
             Ok(false) => 300,
             Err(_) => 900, // back off on rate limits and failures
@@ -382,6 +437,13 @@ fn maybe_replenish(app: &AppHandle, now: i64, force: bool) -> Result<(), String>
             Err(message) => Some(message.clone()),
             _ => None,
         };
+        state.last_discovery_topic = Some(topic);
+        state.last_discovery_unix = Some(finished);
+        state.last_discovery_outcome = Some(match &result {
+            Ok(true) => "saved",
+            Ok(false) => "no_match",
+            Err(_) => "error",
+        }.to_owned());
         save(conn, &state)
     })?;
     Ok(())
@@ -501,6 +563,42 @@ mod tests {
         assert!(!defaults.enabled);
         assert_eq!(defaults.interval_minutes, 1440);
         assert_eq!(defaults.cooldown_days, 30);
+    }
+    #[test]
+    fn topics_default_to_all_and_reject_empty_duplicates_unknown() {
+        let mut p = RotationPreferences::default();
+        assert_eq!(p.discovery_topics.len(), rotation_discovery::DISCOVERY_TOPICS.len());
+        p.discovery_topics.clear();
+        assert!(p.validate().is_err());
+        p.discovery_topics = vec!["space".into(), "space".into()];
+        assert!(p.validate().is_err());
+        p.discovery_topics = vec!["sports".into()];
+        assert!(p.validate().is_err());
+        p.discovery_topics = vec!["oceans".into(), "mountains".into()];
+        assert!(p.validate().is_ok());
+    }
+    #[test]
+    fn upgrades_saved_single_topic_preference_without_changing_choice() {
+        let conn = Connection::open_in_memory().unwrap();
+        let _ = load(&conn).unwrap();
+        conn.execute("UPDATE rotation_settings SET json=?1 WHERE id=1",
+            params![r#"{"preferences":{"discoveryTopic":"space","enabled":true}}"#]
+        ).unwrap();
+        let old = load(&conn).unwrap();
+        assert_eq!(old.preferences.discovery_topics, vec!["space"]);
+        save(&conn, &old).unwrap();
+        let new = load(&conn).unwrap();
+        assert_eq!(new.preferences.discovery_topics, vec!["space"]);
+        assert!(!serde_json::to_string(&new).unwrap().contains("\"discoveryTopic\""));
+    }
+    #[test]
+    fn rotates_selected_topics_before_advancing_pages() {
+        let topics = vec!["mountains".to_owned(), "space".to_owned(), "oceans".to_owned()];
+        assert_eq!(discovery_turn(&topics, 0), ("mountains".into(), 0));
+        assert_eq!(discovery_turn(&topics, 1), ("space".into(), 0));
+        assert_eq!(discovery_turn(&topics, 2), ("oceans".into(), 0));
+        assert_eq!(discovery_turn(&topics, 3), ("mountains".into(), 1));
+        assert_eq!(discovery_turn(&topics, 60), ("mountains".into(), 0));
     }
     #[test]
     fn invalid_intervals_and_cooldowns_are_rejected() {

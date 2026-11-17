@@ -11,6 +11,12 @@ use std::{fs, io::Write, time::Duration};
 use tauri::{AppHandle, Manager};
 
 pub const RESERVE_TARGET: usize = 10;
+/// Bounded, approved discovery topics. These labels choose fixed Commons
+/// queries; no arbitrary user-supplied query reaches the remote provider.
+pub const DISCOVERY_TOPICS: [&str; 8] = [
+    "nature", "space", "cities", "mountains",
+    "oceans", "wildlife", "architecture", "abstract",
+];
 const MAX_SOURCE_BYTES: usize = 768 * 1024;
 const MAX_FILE_BYTES: usize = 32 * 1024 * 1024;
 
@@ -95,8 +101,13 @@ fn parse_commons(data: &Value, min_width: u32, min_height: u32) -> Vec<ApprovedI
 
 fn query_for_topic(topic: &str) -> &'static str {
     match topic {
-        "space" => "NASA earth galaxy public domain filetype:bitmap",
+        "space" => "public domain astronomy galaxies nebula stars filetype:bitmap",
         "cities" => "public domain city skyline panorama filetype:bitmap",
+        "mountains" => "public domain mountain landscape peaks filetype:bitmap",
+        "oceans" => "public domain ocean beach coast seascape filetype:bitmap",
+        "wildlife" => "public domain wildlife nature animal photography filetype:bitmap",
+        "architecture" => "public domain architecture building landmark filetype:bitmap",
+        "abstract" => "public domain abstract colorful patterns art filetype:bitmap",
         _ => "public domain landscape mountains nature filetype:bitmap",
     }
 }
@@ -336,6 +347,17 @@ mod tests {
         }});
         assert!(approved_license(&missing).is_none());
     }
+    #[test]
+    fn all_topics_are_supported_by_static_queries() {
+        assert_eq!(DISCOVERY_TOPICS.len(), 8);
+        let mut unique = std::collections::HashSet::new();
+        for topic in DISCOVERY_TOPICS {
+            assert!(unique.insert(topic));
+            assert!(query_for_topic(topic).contains("filetype:bitmap"));
+        }
+        assert_ne!(query_for_topic("oceans"), query_for_topic("cities"));
+    }
+
     #[test]
     fn rejects_untrusted_hosts_and_small_images() {
         let sample = serde_json::json!({"query":{"pages":[

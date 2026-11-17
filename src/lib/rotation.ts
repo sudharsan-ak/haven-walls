@@ -1,6 +1,10 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { WallpaperApplyResult } from "./windowsWallpaper";
 
+export type DiscoveryTopic =
+  | "nature" | "space" | "cities" | "mountains"
+  | "oceans" | "wildlife" | "architecture" | "abstract";
+
 export interface RotationPreferences {
   enabled: boolean;
   paused: boolean;
@@ -9,7 +13,7 @@ export interface RotationPreferences {
   favoritesOnly: boolean;
   cooldownDays: number;
   discoveryEnabled: boolean;
-  discoveryTopic: "nature" | "space" | "cities";
+  discoveryTopics: DiscoveryTopic[];
 }
 export interface RotationStatus {
   preferences: RotationPreferences;
@@ -21,6 +25,9 @@ export interface RotationStatus {
   reserveCount: number;
   nextDiscoveryUnix: number | null;
   lastDiscoveryError: string | null;
+  lastDiscoveryTopic: string | null;
+  lastDiscoveryUnix: number | null;
+  lastDiscoveryOutcome: "saved" | "no_match" | "error" | null;
 }
 function desktopOnly(): void {
   if (!isTauri()) throw new Error("Wallpaper rotation requires Haven Walls for Windows.");

@@ -2,9 +2,20 @@ import { useEffect, useState } from "react";
 import type { WallpaperApplyResult } from "../lib/windowsWallpaper";
 import {
   getRotationStatus, rotateNextWallpaper, saveRotationPreferences,
-  type RotationPreferences, type RotationStatus,
+  type RotationPreferences, type RotationStatus, type DiscoveryTopic,
 } from "../lib/rotation";
 import "./RotationPanel.css";
+
+const DISCOVERY_TOPICS: { id: DiscoveryTopic; label: string }[] = [
+  { id: "nature", label: "Nature" },
+  { id: "space", label: "Space" },
+  { id: "cities", label: "Cities" },
+  { id: "mountains", label: "Mountains" },
+  { id: "oceans", label: "Oceans" },
+  { id: "wildlife", label: "Wildlife" },
+  { id: "architecture", label: "Architecture" },
+  { id: "abstract", label: "Abstract" },
+];
 
 const PRESETS = [
   { minutes: 60, label: "Every hour" },
@@ -29,6 +40,7 @@ export default function RotationPanel({ onApplied }: Props) {
   const [busy, setBusy] = useState(false);
   const [customMinutes, setCustomMinutes] = useState("120");
   const [customDays, setCustomDays] = useState("30");
+  const [topicsOpen, setTopicsOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -86,6 +98,15 @@ export default function RotationPanel({ onApplied }: Props) {
   }
 
   const prefs = status?.preferences;
+  const selectedTopics = prefs?.discoveryTopics ?? [];
+  const allTopicsSelected = selectedTopics.length === DISCOVERY_TOPICS.length;
+  const lastDiscoveryLabel = status?.lastDiscoveryOutcome === "saved"
+    ? "Saved an approved image"
+    : status?.lastDiscoveryOutcome === "no_match"
+      ? "No new eligible image found"
+      : status?.lastDiscoveryOutcome === "error" ? "Source request failed" : "";
+  const lastTopicName = DISCOVERY_TOPICS.find((topic) =>
+    topic.id === status?.lastDiscoveryTopic)?.label || status?.lastDiscoveryTopic;
   const isPreset = PRESETS.some((p) => p.minutes === prefs?.intervalMinutes);
   return (
     <section className="hwr-panel" aria-label="Library rotation controls">
@@ -154,17 +175,49 @@ export default function RotationPanel({ onApplied }: Props) {
                 onChange={(e) => void savePatch({ discoveryEnabled: e.target.checked })} />
               Discover approved public-domain images automatically
             </label>
-            <label>
-              <span>Auto-discovery topic</span>
-              <select value={prefs.discoveryTopic} disabled={busy || !prefs.discoveryEnabled}
-                onChange={(e) => void savePatch({
-                  discoveryTopic: e.target.value as RotationPreferences["discoveryTopic"],
-                })}>
-                <option value="nature">Nature</option>
-                <option value="space">Space</option>
-                <option value="cities">Cities</option>
-              </select>
-            </label>
+            <div className="hwr-topic-picker">
+              <span className="hwr-topic-label">Auto-discovery topics</span>
+              <button type="button" className="hwr-topic-trigger"
+                disabled={busy || !prefs.discoveryEnabled}
+                aria-expanded={topicsOpen}
+                aria-controls="hwr-topic-options"
+                onClick={() => setTopicsOpen((open) => !open)}>
+                {allTopicsSelected ? "All topics (8)"
+                  : `${selectedTopics.length} topic${selectedTopics.length === 1 ? "" : "s"} selected`}
+                <span aria-hidden="true">{topicsOpen ? "▴" : "▾"}</span>
+              </button>
+              {topicsOpen && prefs.discoveryEnabled && (
+                <div id="hwr-topic-options" className="hwr-topic-options"
+                  role="group" aria-label="Choose automatic discovery topics">
+                  <div className="hwr-topic-toolbar">
+                    <button type="button" disabled={busy || allTopicsSelected}
+                      onClick={() => void savePatch({
+                        discoveryTopics: DISCOVERY_TOPICS.map((topic) => topic.id),
+                      })}>Select all</button>
+                    <span>Choose one or more topics</span>
+                  </div>
+                  <div className="hwr-topic-grid">
+                    {DISCOVERY_TOPICS.map((topic) => {
+                      const selected = selectedTopics.includes(topic.id);
+                      return (
+                        <label key={topic.id} className="hwr-topic-option">
+                          <input type="checkbox" checked={selected}
+                            disabled={busy || (selected && selectedTopics.length === 1)}
+                            onChange={(event) => {
+                              const updated = event.target.checked
+                                ? DISCOVERY_TOPICS.map((entry) => entry.id).filter(
+                                    (id) => id === topic.id || selectedTopics.includes(id))
+                                : selectedTopics.filter((id) => id !== topic.id);
+                              if (updated.length) void savePatch({ discoveryTopics: updated });
+                            }} />
+                          {topic.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="hwr-actions">
             <button type="button" disabled={busy} className={prefs.enabled ? "hwr-secondary" : "hwr-primary"}
@@ -197,7 +250,14 @@ export default function RotationPanel({ onApplied }: Props) {
             )}
           </div>
           <p className="hwr-note">Automatic source: verified public-domain/CC0 Wikimedia Commons images. Bing Daily and Unsplash remain available for manual selection while unattended provider use is reviewed. Offline reserve files are separate from your permanent Library. Favorites-only does not use the reserve.</p>
-          {status.lastDiscoveryError && <p className="hwr-note">Discovery: {status.lastDiscoveryError}</p>}
+          {lastDiscoveryLabel && (
+            <p className="hwr-note">
+              Last discovery: {lastDiscoveryLabel}
+              {lastTopicName ? ` · ${lastTopicName}` : ""}
+              {status.lastDiscoveryUnix ? ` · ${localDate(status.lastDiscoveryUnix)}` : ""}
+            </p>
+          )}
+          {status.lastDiscoveryError && <p className="hwr-error">Discovery error: {status.lastDiscoveryError}</p>}
           {status.lastError && <p className="hwr-note">{status.lastError}</p>}
         </>
       )}
