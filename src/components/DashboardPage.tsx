@@ -18,7 +18,7 @@ interface Props {
   onOpenAutomation: () => void;
   onOpenLibrary: (wallpaperId?: string) => void;
   onBrowseWallpapers: () => void;
-  onOpenSources: () => void;
+  onDiscoverByCategory: () => void;
 }
 function message(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
@@ -28,7 +28,7 @@ function nextDate(unix: number | null): string {
 }
 
 export default function DashboardPage({
-  onOpenAutomation, onOpenLibrary, onBrowseWallpapers, onOpenSources,
+  onOpenAutomation, onOpenLibrary, onBrowseWallpapers, onDiscoverByCategory,
 }: Props) {
   // React unmounts Dashboard when another workspace page opens. Restoring
   // the last verified image avoids repeatedly decoding the same 4K/8K file.
@@ -292,9 +292,9 @@ export default function DashboardPage({
           <span className="hwd-shortcut-icon">▣</span>
           <span><strong>Wallpaper Library</strong><small>Your saved and favorite images</small></span><span>→</span>
         </button>
-        <button type="button" onClick={onOpenSources}>
+        <button type="button" onClick={onDiscoverByCategory}>
           <span className="hwd-shortcut-icon">✧</span>
-          <span><strong>Sources</strong><small>Manage wallpaper providers</small></span><span>→</span>
+          <span><strong>Discover by Category</strong><small>Explore nature, space, sports and more</small></span><span>→</span>
         </button>
       </div>
       {expanded && shownPreview && (

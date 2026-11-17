@@ -519,3 +519,35 @@ returning causes the full native preview to download/decode again and flashes
    wallpaper image is persisted in the browser cache on disk.
 8. Build with `npm run build` and `npm run tauri dev`. PR #7 remains
    draft until local Windows regression checks pass and user approves.
+
+## Commit 5 follow-up: Remove redundant Sources page
+
+- Removed the standalone Sources sidebar destination and its duplicated
+  provider-card route. All five provider choices continue to exist in Gallery:
+  Bing Daily, Google Images, Discover by Category, TheSportsDB, and TMDB.
+- Dashboard quick access now provides two **distinct** discovery actions:
+  Browse wallpapers reopens Gallery on the last selected provider, while
+  Discover by Category directly opens Gallery's Discover by Category tab.
+- The Settings > Sources tab is retained for source exclusions, API credentials
+  and other source preferences. No provider integrations or source data were
+  removed or changed.
+- Deleted the old Sources-card-only styles, leaving the shared link style.
+- Updated the Category Discover review footnote to preserve the provider
+  usage-rights warning and remove a stale PR #4 claim. Existing Gallery
+  license/attribution notices remain in place.
+
+### Windows verification
+
+1. Pull the PR #7 branch; run `npm run build` and `npm run tauri dev`.
+2. Confirm sidebar contains Dashboard, Gallery, Browser, Library, Settings;
+   the standalone Sources navigation entry is gone.
+3. Confirm all five Gallery provider tabs still work, including Bing Daily,
+   Google Browser/API, Discover by Category, TheSportsDB, and TMDB.
+4. Select a Gallery provider such as TMDB. Return to Dashboard and click
+   Browse wallpapers: Gallery should reopen on TMDB, not reset to Category.
+5. Return to Dashboard and click Discover by Category: Gallery should
+   switch directly to Discover by Category.
+6. Settings > Sources must still show API credentials, exclusions and saved
+   provider settings. Nothing should have been reset.
+7. Verify Browser, Library, current-wallpaper Dashboard preview, Next
+   wallpaper, and Settings > Automation still work as before.

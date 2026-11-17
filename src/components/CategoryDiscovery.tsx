@@ -447,7 +447,8 @@ export default function CategoryDiscovery({
           <button type="button" className="cdy-clear" disabled={review.length === 0}
             onClick={() => setReview([])}>Clear selection</button>
           <p className="cdy-review-footnote">Library verifies image bytes, minimum resolution,
-            duplicates and source restrictions. No automatic wallpaper rotation in PR #4.</p>
+            duplicates and source restrictions. These are discovery previews, not rights-cleared
+            downloads. Check the original provider's terms, licensing and attribution before use.</p>
         </aside>
       </div>
 

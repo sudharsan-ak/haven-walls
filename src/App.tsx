@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invalidateDashboardWallpaperCache } from "./lib/dashboardPreviewCache";
 import { type CatalogSourceId } from "./lib/native";
-import { catalogSources } from "./lib/catalog";
 import WindowChrome from "./components/WindowChrome";
 import OnlineGallery from "./components/OnlineGallery";
 import BrowserPage from "./components/BrowserPage";
@@ -42,7 +41,7 @@ export default function App() {
     return () => { active = false; unlisten?.(); };
   }, []);
 
-  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "sources" | "settings">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "settings">("dashboard");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("automation");
   const [libraryFocusId, setLibraryFocusId] = useState<string | null>(null);
 
@@ -130,9 +129,6 @@ export default function App() {
             <button type="button" onClick={() => setPage("library")}
               className={"nav-item " + (page === "library" ? "current" : "")}
               aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
-            <button type="button" onClick={() => setPage("sources")}
-              className={"nav-item " + (page === "sources" ? "current" : "")}
-              aria-current={page === "sources" ? "page" : undefined}>✧ <span>Sources</span></button>
             <button type="button" onClick={() => setPage("settings")}
               className={"nav-item " + (page === "settings" ? "current" : "")}
               aria-current={page === "settings" ? "page" : undefined}>⚙ <span>Settings</span></button>
@@ -167,46 +163,12 @@ export default function App() {
               onSaveToLibrary={beginOtherImport}
               blockingDialogOpen={importRequest !== null || applyCandidate !== null}
             />
-          ) : page === "sources" ? (
-            <section className="sources-page">
-              <div className="eyebrow">Online image providers</div>
-              <h1>Sources</h1>
-              <p className="subheading">
-                Browse sources individually. Automatic discovery preferences are in Settings → Automation.
-              </p>
-              <div className="provider-grid">
-                {catalogSources.map((source) => (
-                  <article className="provider-panel" key={source.id}>
-                    <div className="provider-icon" aria-hidden="true">✧</div>
-                    <div className="provider-info">
-                      <h2>{source.name}</h2>
-                      <p>{source.description}</p>
-                      <p className="provider-description">{source.hint}</p>
-                      <button
-                        type="button"
-                        onClick={() => openGallery(source.id)}
-                        className="provider-link"
-                      >Browse {source.name}</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-              <div className="provider-footnote">
-                Wallpaper caption and photo-credit preferences are now in
-                <button type="button" className="gallery-open-link"
-                  onClick={() => { setSettingsTab("wallpaper"); setPage("settings"); }}>Settings</button>.
-              </div>
-              <p className="provider-footnote">
-                These are previews, not rights-cleared wallpaper downloads. External provider
-                terms, attributions and artwork permissions must be checked before applying images.
-              </p>
-            </section>
           ) : (
           <DashboardPage
             onOpenAutomation={openAutomation}
             onOpenLibrary={openLibrary}
-            onBrowseWallpapers={() => openGallery("discover")}
-            onOpenSources={() => setPage("sources")}
+            onBrowseWallpapers={() => openGallery(gallerySource)}
+            onDiscoverByCategory={() => openGallery("discover")}
           />
           )}
         </main>
