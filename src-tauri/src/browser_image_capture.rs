@@ -21,7 +21,6 @@ use windows::{
 
 pub const IMAGE_PICKED_EVENT: &str = "haven-browser-image-picked";
 pub const CONTEXT_MENU_ERROR_EVENT: &str = "haven-browser-image-error";
-pub const CONTEXT_MENU_STATUS_EVENT: &str = "haven-browser-image-status";
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -251,7 +250,13 @@ pub const SCAN_JS: &str = r#"
       const onGoogle = ['google.com', 'www.google.com', 'images.google.com']
         .includes(location.hostname.toLowerCase());
       const directFile = /\.(?:jpe?g|png|webp|avif)$/i.test(link.pathname);
-      return onGoogle && !directFile ? acceptable(href) : '';
+      if (onGoogle && !directFile) return acceptable(href);
+      // Photo-grid thumbnails often link to their own photo detail page.
+      // Preserve it rather than treating the search page as the publisher.
+      const photoDetail = /^\/(?:photo|photos|image|images|wallpaper|wallpapers)\//i
+        .test(link.pathname);
+      return link.origin === location.origin && photoDetail && !directFile
+        ? acceptable(href) : '';
     } catch { return ''; }
   };
   const add = (src, original, title, width, height, publisher = '', alternates = []) => {

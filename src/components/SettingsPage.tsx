@@ -8,6 +8,7 @@ import {
 import "./SettingsPage.css";
 import ConfirmDialog from "./ConfirmDialog";
 import ApiCredentialsSettings from "./ApiCredentialsSettings";
+import AutomationSettings from "./AutomationSettings";
 
 const WALLPAPER_FITS: { value: WallpaperFit; label: string }[] = [
   { value: "smartFit", label: "Smart Fit (recommended)" },
@@ -23,7 +24,19 @@ function statusMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export default function SettingsPage() {
+export type SettingsTab = "wallpaper" | "automation" | "library" | "sources" | "storage";
+interface SettingsPageProps {
+  selectedTab: SettingsTab;
+  onTabChange: (tab: SettingsTab) => void;
+}
+const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
+  { key: "wallpaper", label: "Wallpaper & Display" },
+  { key: "automation", label: "Automation" },
+  { key: "library", label: "Library & Quality" },
+  { key: "sources", label: "Sources" },
+  { key: "storage", label: "Storage & Privacy" },
+];
+export default function SettingsPage({ selectedTab, onTabChange }: SettingsPageProps) {
   const [snapshot, setSnapshot] = useState<ConfigurationSnapshot | null>(null);
   const [form, setForm] = useState<AppSettings | null>(null);
   const [storageChoice, setStorageChoice] = useState<StorageMode>("appData");
@@ -145,19 +158,24 @@ export default function SettingsPage() {
 
   return (
     <section className="hws-settings-page">
-      <div className="eyebrow">Haven Walls / Settings</div>
+      <div className="eyebrow">Haven Walls / Preferences</div>
       <h1>Settings</h1>
-      <p className="subheading">
-        Your preferences are stored locally. Wallpaper fit, captions and photo credits
-        now apply when you set a saved image as your Windows wallpaper.
-      </p>
+      <p className="subheading">Your wallpaper, rotation and storage preferences in one place. Everything stays local.</p>
 
-      <div className="hws-settings-summary">
-        <div><span>Storage</span><strong>{snapshot.storage.mode === "appData" ? "Windows AppData" : "Portable folder"}</strong></div>
-        <div><span>Cache limit</span><strong>{formattedBytes(form.cacheLimitMb * 1024 * 1024)}</strong></div>
-        <div><span>Privacy</span><strong>Local only · No telemetry</strong></div>
-      </div>
 
+      <nav className="hws-settings-tabs" role="tablist" aria-label="Settings categories">
+        {SETTINGS_TABS.map((tab) => (
+          <button key={tab.key} type="button" role="tab"
+            id={"hws-tab-" + tab.key}
+            aria-selected={selectedTab === tab.key}
+            aria-controls={"hws-panel-" + tab.key}
+            className={selectedTab === tab.key ? "selected" : ""}
+            onClick={() => onTabChange(tab.key)}>{tab.label}</button>
+        ))}
+      </nav>
+      {changed && <p className="hws-pending-indicator">You have unsaved configuration changes. Save before leaving Settings.</p>}
+      {selectedTab === "wallpaper" && (
+        <div id="hws-panel-wallpaper" role="tabpanel" aria-labelledby="hws-tab-wallpaper">
       <section className="hws-settings-panel" aria-labelledby="hws-wallpaper">
         <div className="hws-settings-section-header">
           <div>
@@ -201,6 +219,120 @@ export default function SettingsPage() {
         </label>
         <p className="hws-settings-note">Attribution required by an image license cannot be disabled merely by hiding a visual credit.</p>
       </section>
+
+
+        </div>
+      )}
+      {selectedTab === "automation" && (
+        <div id="hws-panel-automation" role="tabpanel" aria-labelledby="hws-tab-automation">
+          <AutomationSettings />
+        </div>
+      )}
+      {selectedTab === "library" && (
+        <div id="hws-panel-library" role="tabpanel" aria-labelledby="hws-tab-library">
+      <section className="hws-settings-panel" aria-labelledby="hws-import">
+        <div className="hws-settings-section-header">
+          <div>
+            <h2 id="hws-import">Library & importing</h2>
+            <p>Choose how user-initiated wallpaper imports behave.</p>
+          </div>
+          <span className="hws-settings-live">Available now</span>
+        </div>
+        <label className="hws-settings-toggle">
+          <div>
+            <strong>Quick Save to Library</strong>
+            <small>Skip the repeated confirmation dialog and begin saving when you click Add to Library. Enabled by default.</small>
+          </div>
+          <input type="checkbox" checked={form.skipImportConfirmation}
+            onChange={(event) => field("skipImportConfirmation", event.target.checked)} />
+        </label>
+        <p className="hws-settings-note">
+          Quick Save is a convenience setting. It does not verify or grant image
+          usage rights. You are still responsible for following each image
+          source's license and attribution requirements. Turn this off to
+          require the individual confirmation before saving.
+        </p>
+      </section>
+
+
+      <section className="hws-settings-panel" aria-labelledby="hws-quality">
+        <div className="hws-settings-section-header">
+          <div><h2 id="hws-quality">Image quality & duplicate detection</h2>
+            <p>Validated during every managed Library import. Exact duplicates always remain blocked.</p></div>
+          <span className="hws-settings-live">Available now</span>
+        </div>
+        <label className="hws-settings-toggle">
+          <div>
+            <strong>Allow images below minimum resolution</strong>
+            <small>Off by default. When enabled, smaller images can be saved to the Library with or without Quick Save. You can still override this choice for an individual import.</small>
+          </div>
+          <input type="checkbox" checked={form.allowBelowMinimum}
+            onChange={(event) => field("allowBelowMinimum", event.target.checked)} />
+        </label>
+        <label className="hws-settings-field">
+          <strong>Allowed image types</strong>
+          <div className="hws-image-types">
+            {IMAGE_TYPES.map((type) =>
+              <label key={type}>
+                <input type="checkbox" value={type}
+                  checked={form.allowedImageTypes.includes(type)}
+                  onChange={toggleImageType}/>
+                {type.toUpperCase()}
+              </label>)}
+          </div>
+        </label>
+        <label className="hws-settings-field">
+          <strong>Similar-image sensitivity: {form.duplicateSensitivity}%</strong>
+          <input type="range" min={0} max={100} step={5}
+            value={form.duplicateSensitivity}
+            onChange={(event) => field("duplicateSensitivity", Number(event.target.value))}/>
+          <small>0 = permissive, 100 = strict. Exact-file deduplication is separate.</small>
+        </label>
+      </section>
+
+
+        </div>
+      )}
+      {selectedTab === "sources" && (
+        <div id="hws-panel-sources" role="tabpanel" aria-labelledby="hws-tab-sources">
+      <section className="hws-settings-panel" aria-labelledby="hws-exclusions">
+        <div className="hws-settings-section-header">
+          <div><h2 id="hws-exclusions">Source & keyword exclusions</h2>
+            <p>Applied when saving online discoveries to the Library. Search results themselves remain visible.</p></div>
+          <span className="hws-settings-live">Available now</span>
+        </div>
+        <div className="hws-settings-fields two">
+          <label className="hws-settings-field">
+            <strong>Blocked keywords</strong>
+            <textarea rows={4} value={form.excludedKeywords.join("\n")}
+              onChange={(event) => field("excludedKeywords", event.target.value.split("\n"))}
+              placeholder={"watermarked\nlow resolution"}/>
+            <small>One keyword per line, up to 100.</small>
+          </label>
+          <label className="hws-settings-field">
+            <strong>Blocked source names or domains</strong>
+            <textarea rows={4} value={form.excludedSources.join("\n")}
+              onChange={(event) => field("excludedSources", event.target.value.split("\n"))}
+              placeholder={"example.com\nblocked-source"}/>
+            <small>One entry per line. The rule engine will use these during import.</small>
+          </label>
+        </div>
+      </section>
+
+
+      <ApiCredentialsSettings />
+
+
+        </div>
+      )}
+      {selectedTab === "storage" && (
+        <div id="hws-panel-storage" role="tabpanel" aria-labelledby="hws-tab-storage">
+      <div className="hws-settings-summary">
+        <div><span>Storage</span><strong>{snapshot.storage.mode === "appData" ? "Windows AppData" : "Portable folder"}</strong></div>
+        <div><span>Cache limit</span><strong>{formattedBytes(form.cacheLimitMb * 1024 * 1024)}</strong></div>
+        <div><span>Privacy</span><strong>Local only · No telemetry</strong></div>
+      </div>
+
 
       <section className="hws-settings-panel" aria-labelledby="hws-storage">
         <div className="hws-settings-section-header">
@@ -254,102 +386,23 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="hws-settings-panel" aria-labelledby="hws-import">
-        <div className="hws-settings-section-header">
-          <div>
-            <h2 id="hws-import">Library & importing</h2>
-            <p>Choose how user-initiated wallpaper imports behave.</p>
-          </div>
-          <span className="hws-settings-live">Available now</span>
-        </div>
-        <label className="hws-settings-toggle">
-          <div>
-            <strong>Quick Save to Library</strong>
-            <small>Skip the repeated confirmation dialog and begin saving when you click Add to Library. Enabled by default.</small>
-          </div>
-          <input type="checkbox" checked={form.skipImportConfirmation}
-            onChange={(event) => field("skipImportConfirmation", event.target.checked)} />
-        </label>
-        <p className="hws-settings-note">
-          Quick Save is a convenience setting. It does not verify or grant image
-          usage rights. You are still responsible for following each image
-          source's license and attribution requirements. Turn this off to
-          require the individual confirmation before saving.
-        </p>
-      </section>
-
-      <section className="hws-settings-panel" aria-labelledby="hws-quality">
-        <div className="hws-settings-section-header">
-          <div><h2 id="hws-quality">Image quality & duplicate detection</h2>
-            <p>Validated during every managed Library import. Exact duplicates always remain blocked.</p></div>
-          <span className="hws-settings-live">Available now</span>
-        </div>
-        <label className="hws-settings-toggle">
-          <div>
-            <strong>Allow images below minimum resolution</strong>
-            <small>Off by default. When enabled, smaller images can be saved to the Library with or without Quick Save. You can still override this choice for an individual import.</small>
-          </div>
-          <input type="checkbox" checked={form.allowBelowMinimum}
-            onChange={(event) => field("allowBelowMinimum", event.target.checked)} />
-        </label>
-        <label className="hws-settings-field">
-          <strong>Allowed image types</strong>
-          <div className="hws-image-types">
-            {IMAGE_TYPES.map((type) =>
-              <label key={type}>
-                <input type="checkbox" value={type}
-                  checked={form.allowedImageTypes.includes(type)}
-                  onChange={toggleImageType}/>
-                {type.toUpperCase()}
-              </label>)}
-          </div>
-        </label>
-        <label className="hws-settings-field">
-          <strong>Similar-image sensitivity: {form.duplicateSensitivity}%</strong>
-          <input type="range" min={0} max={100} step={5}
-            value={form.duplicateSensitivity}
-            onChange={(event) => field("duplicateSensitivity", Number(event.target.value))}/>
-          <small>0 = permissive, 100 = strict. Exact-file deduplication is separate.</small>
-        </label>
-      </section>
-
-      <section className="hws-settings-panel" aria-labelledby="hws-exclusions">
-        <div className="hws-settings-section-header">
-          <div><h2 id="hws-exclusions">Source & keyword exclusions</h2>
-            <p>Applied when saving online discoveries to the Library. Search results themselves remain visible.</p></div>
-          <span className="hws-settings-live">Available now</span>
-        </div>
-        <div className="hws-settings-fields two">
-          <label className="hws-settings-field">
-            <strong>Blocked keywords</strong>
-            <textarea rows={4} value={form.excludedKeywords.join("\n")}
-              onChange={(event) => field("excludedKeywords", event.target.value.split("\n"))}
-              placeholder={"watermarked\nlow resolution"}/>
-            <small>One keyword per line, up to 100.</small>
-          </label>
-          <label className="hws-settings-field">
-            <strong>Blocked source names or domains</strong>
-            <textarea rows={4} value={form.excludedSources.join("\n")}
-              onChange={(event) => field("excludedSources", event.target.value.split("\n"))}
-              placeholder={"example.com\nblocked-source"}/>
-            <small>One entry per line. The rule engine will use these during import.</small>
-          </label>
-        </div>
-      </section>
-
-      <ApiCredentialsSettings />
 
       <section className="hws-settings-panel" aria-labelledby="hws-privacy">
         <div className="hws-settings-section-header">
-          <div><h2 id="hws-privacy">Privacy, appearance & upcoming</h2>
+          <div><h2 id="hws-privacy">Privacy & appearance</h2>
             <p>Local-first by design. Future background behavior is not silently activated.</p></div>
         </div>
         <div className="hws-privacy-row"><strong>Telemetry</strong><span>Off · Not collected</span></div>
-        <div className="hws-privacy-row"><strong>Automatic rotation and scheduling</strong><span>Not enabled yet</span></div>
-        <div className="hws-privacy-row"><strong>Global shortcuts and startup tray</strong><span>Not enabled yet</span></div>
+        <div className="hws-privacy-row"><strong>Automatic rotation</strong><span>Configure in the Automation tab</span></div>
+        <div className="hws-privacy-row"><strong>Windows startup</strong><span>Opt-in from the Automation tab in the installed release. Global shortcuts planned.</span></div>
         <div className="hws-privacy-row"><strong>Dark appearance</strong><span>Planned; current light theme retained</span></div>
       </section>
 
+
+        </div>
+      )}
+      {(selectedTab !== "automation" || changed) && (
+        <>
       <div className="hws-settings-actions">
         <div className="hws-settings-status" aria-live="polite">
           {error && <p role="alert" className="hws-settings-error">{error}</p>}
@@ -367,6 +420,9 @@ export default function SettingsPage() {
           {busy ? "Working…" : "Save settings"}
         </button>
       </div>
+
+        </>
+      )}
       {pendingAction === "move" && (
         <ConfirmDialog tone="warning"
           title="Move Haven Walls storage?"
@@ -395,6 +451,7 @@ export default function SettingsPage() {
             void clearCache();
           }} />
       )}
+
     </section>
   );
 }

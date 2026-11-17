@@ -11,6 +11,7 @@ import {
   getWallpaperActivity, formatWallpaperLocalTime,
   type WallpaperActivity, type WallpaperApplyResult,
 } from "../lib/windowsWallpaper";
+import { listen } from "@tauri-apps/api/event";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import "./LibraryPage.css";
@@ -19,12 +20,18 @@ type Filter = "all" | "favorites" | "4k" | "portrait";
 
 interface Props {
   revision: number;
+  /** Optional Dashboard deep-link: open the selected wallpaper's details. */
+  focusWallpaperId?: string | null;
+  onFocusHandled?: () => void;
   onDiscover: () => void;
   onReverseSearch: (image: LibraryWallpaper) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
 }
 
-export default function LibraryPage({ revision, onDiscover, onReverseSearch, onSaveToLibrary }: Props) {
+export default function LibraryPage({
+  revision, focusWallpaperId, onFocusHandled,
+  onDiscover, onReverseSearch, onSaveToLibrary,
+}: Props) {
   const [items, setItems] = useState<LibraryWallpaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -47,6 +54,9 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
   const selectedId = useRef<string | null>(null);
   // Discard activity reads started before a successful wallpaper change.
   const activityReadVersion = useRef(0);
+  // Keep the native rotation event handler up-to-date without repeatedly
+  // removing and reinstalling its event subscription.
+  const onRotationApplied = useRef<(result: WallpaperApplyResult) => void>(() => {});
   useEffect(() => () => {
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
@@ -107,6 +117,24 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     }
   }
 
+  // The scheduler emits a successful ApplyResult. Use that authoritative
+  // event payload to update the badge immediately. Requerying Windows right
+  // here can return its previous path briefly and overwrite the new badge.
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen<WallpaperApplyResult>("rotation:applied", (event) => {
+      if (active) onRotationApplied.current(event.payload);
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    }).catch(() => { /* The Next button also provides an ApplyResult directly. */ });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [revision]);
+
   useEffect(() => {
     let active = true;
     void listLibraryWallpapers()
@@ -158,6 +186,10 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
     setActivityError("");
     setNotice("Windows desktop wallpaper changed. The active working copy is protected.");
   }
+
+  useEffect(() => {
+    onRotationApplied.current = afterApply;
+  });
 
   // Current appearance is verified against Windows; deletion protection is
   // deliberately broader and follows every persisted Haven Walls assignment.
@@ -259,6 +291,14 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
       setRemovalError(message);
     } finally { setBusyId(""); }
   }
+
+  // Deep links from Dashboard work even while the Library loads asynchronously.
+  useEffect(() => {
+    if (!focusWallpaperId || loading) return;
+    const image = items.find((item) => item.id === focusWallpaperId);
+    onFocusHandled?.();
+    if (image) void open(image);
+  }, [focusWallpaperId, loading, items, onFocusHandled]);
 
   async function open(image: LibraryWallpaper) {
     selectedId.current = image.id;
@@ -470,7 +510,7 @@ export default function LibraryPage({ revision, onDiscover, onReverseSearch, onS
       )}
 
       <p className="hwl-footer">
-        Wallpapers are applied only when you click Set Now or Apply to Windows.
+        Manual Set Now and your enabled rotation schedule can apply saved wallpapers to Windows.
         Automatic rotation and background downloading are not enabled.
         Active working copies stay separate from saved Library originals.
       </p>

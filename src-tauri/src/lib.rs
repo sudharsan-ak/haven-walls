@@ -4,6 +4,11 @@ mod app_settings;
 mod configuration;
 mod wallpaper_library;
 mod windows_wallpaper;
+mod rotation;
+mod rotation_discovery;
+mod desktop_background;
+#[cfg(windows)]
+mod desktop_single_instance;
 mod google_images;
 mod category_discovery;
 mod api_credentials;
@@ -25,6 +30,7 @@ mod browser_image_capture {
 }
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +51,19 @@ fn get_host_info() -> HostInfo {
 }
 
 pub fn run() {
+    // Acquire before Tauri creates any windows, browser sessions or workers.
+    // Launching Haven Walls again signals the existing window instead of
+    // creating duplicate schedulers and background source requests.
+    #[cfg(windows)]
+    let _process_guard = match desktop_single_instance::acquire() {
+        Ok(Some(guard)) => guard,
+        Ok(None) => return,
+        Err(problem) => {
+            eprintln!("Haven Walls could not start safely: {problem}");
+            return;
+        }
+    };
+
     tauri::Builder::default()
         // Preserve the opener service for trusted commands such as
         // "Open wallpaper source" while allowing native WebView2 new-tab
@@ -55,10 +74,25 @@ pub fn run() {
             .open_js_links_on_click(false)
             .build())
         .manage(local_storage::StorageLock::default())
+        .manage(rotation::RotationGate::default())
+        .manage(wallpaper_library::best_source::InspectionCache::default())
         .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
             configuration::initialize(app.handle()).map_err(std::io::Error::other)?;
+            desktop_background::setup(app)?;
+            #[cfg(windows)]
+            desktop_single_instance::watch_activation(app.handle().clone());
+            rotation::start(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main"
+                    && desktop_background::keep_running_on_close(window.app_handle()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_host_info,
@@ -107,7 +141,13 @@ pub fn run() {
             wallpaper_library::open_wallpaper_source,
             windows_wallpaper::list_wallpaper_monitors,
             windows_wallpaper::get_wallpaper_activity,
-            windows_wallpaper::apply_library_wallpaper
+            windows_wallpaper::get_active_wallpaper_preview,
+            windows_wallpaper::apply_library_wallpaper,
+            rotation::get_rotation_status,
+            rotation::save_rotation_preferences,
+            rotation::rotation_next,
+            desktop_background::get_background_status,
+            desktop_background::save_background_settings
         ])
         .run(tauri::generate_context!())
         .expect("Failed to launch Haven Walls");

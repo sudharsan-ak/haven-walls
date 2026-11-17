@@ -1,4 +1,8 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import {
+  invalidateDashboardWallpaperCache,
+  rememberVerifiedWallpaperActivity,
+} from "./dashboardPreviewCache";
 import type { LibraryWallpaper } from "./wallpaperLibrary";
 import type { AppSettings, WallpaperFit } from "./configuration";
 
@@ -36,6 +40,17 @@ export interface WallpaperApplyResult {
   wallpaperId: string;
 }
 
+/** Decoded, bounded thumbnail from the protected Windows-confirmed active copy. */
+export interface ActiveWallpaperPreview {
+  targetId: string;
+  wallpaperId: string;
+  title: string;
+  appliedAt: string;
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 /**
  * SQLite's legacy CURRENT_TIMESTAMP values are UTC without an explicit zone.
  * Interpret those values as UTC, then render using the operating system's
@@ -65,7 +80,15 @@ export async function listWindowsMonitors(): Promise<WindowsMonitor[]> {
 }
 export async function getWallpaperActivity(): Promise<WallpaperActivity> {
   requireDesktop();
-  return invoke<WallpaperActivity>("get_wallpaper_activity");
+  const activity = await invoke<WallpaperActivity>("get_wallpaper_activity");
+  // A verified OS status invalidates obsolete Dashboard previews even when
+  // the user performed the operation from Library or another screen.
+  rememberVerifiedWallpaperActivity(activity);
+  return activity;
+}
+export async function getActiveWallpaperPreview(targetId: string): Promise<ActiveWallpaperPreview> {
+  requireDesktop();
+  return invoke<ActiveWallpaperPreview>("get_active_wallpaper_preview", { targetId });
 }
 export async function applyLibraryWallpaper(
   id: string,
@@ -74,12 +97,14 @@ export async function applyLibraryWallpaper(
   overlayJpegBase64?: string,
 ): Promise<WallpaperApplyResult> {
   requireDesktop();
-  return invoke<WallpaperApplyResult>("apply_library_wallpaper", {
+  const applied = await invoke<WallpaperApplyResult>("apply_library_wallpaper", {
     wallpaperId: id,
     targetId,
     fit,
     overlayJpegBase64: overlayJpegBase64 ?? null,
   });
+  invalidateDashboardWallpaperCache();
+  return applied;
 }
 
 function loadImage(dataUrl: string): Promise<HTMLImageElement> {

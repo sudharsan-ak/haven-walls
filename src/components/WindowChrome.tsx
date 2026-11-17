@@ -116,7 +116,7 @@ export default function WindowChrome() {
             className="window-control close-control"
             type="button"
             aria-label="Close"
-            title="Close Haven Walls"
+            title="Close window (rotation can continue in system tray)"
             disabled={!nativeWindow}
             onClick={() => void runWindowAction("close")}
           >

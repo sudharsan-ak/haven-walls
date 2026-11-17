@@ -35,7 +35,7 @@ pub struct HistoryEntry {
     pub wallpaper_id: Option<String>, pub title: String,
     pub target_id: String, pub fit: String, pub applied_at: String,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct ApplyResult { pub notice: String, pub target_id: String, pub wallpaper_id: String }
 
@@ -107,6 +107,85 @@ pub fn get_wallpaper_activity(app: AppHandle) -> Result<Activity, String> {
     Ok(Activity { current, history })
 }
 
+/// Read-only preview of the *Windows-confirmed* protected active wallpaper.
+ /// This also works for approved offline reserve images, which are deliberately
+ /// absent from the permanent Library list. Never serve arbitrary filesystem paths.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ActiveWallpaperPreview {
+    pub target_id: String,
+    pub wallpaper_id: String,
+    pub title: String,
+    pub applied_at: String,
+    pub data_url: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn get_active_wallpaper_preview(
+    app: AppHandle, target_id: String,
+) -> Result<ActiveWallpaperPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || active_preview_sync(&app, &target_id))
+        .await.map_err(|_| "Active wallpaper preview was interrupted.".to_string())?
+}
+
+fn active_preview_sync(app: &AppHandle, target_id: &str) -> Result<ActiveWallpaperPreview, String> {
+    if target_id.len() > 256 || target_id.is_empty() { return Err("Invalid display selection.".into()); }
+    let state = app.state::<StorageLock>();
+    let _lock = state.0.lock().map_err(|_| "Wallpaper storage is busy.".to_string())?;
+    let paths = local_storage::current_paths(app)?;
+    let conn = app_settings::open_database(&paths)?;
+    ensure_schema(&conn)?;
+    let current: Option<(String, String, String, String)> = conn.query_row(
+        "SELECT a.wallpaper_id,w.title,a.applied_at,a.relative_path
+         FROM active_assignments a JOIN wallpapers w ON w.id=a.wallpaper_id
+         WHERE a.target_id=?1",
+        params![target_id],
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))
+    ).optional().map_err(|e| format!("Could not read current wallpaper: {e}"))?;
+    let (wallpaper_id,title,applied_at,filename) =
+        current.ok_or("There is no Haven Walls wallpaper assigned to this display.")?;
+    if !filename.ends_with(".jpg") ||
+        !filename.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '.') {
+        return Err("The active wallpaper filename is not valid.".into());
+    }
+    let active_path = paths.active().join(&filename);
+    let expected = active_path.to_string_lossy();
+    let matches_windows = platform::current_wallpaper_paths()?
+        .iter().any(|(monitor, actual)| {
+            (target_id == "all" || monitor == target_id) &&
+                !actual.is_empty() && expected.eq_ignore_ascii_case(actual)
+        });
+    if !matches_windows {
+        return Err("The Windows wallpaper has changed outside Haven Walls.".into());
+    }
+    let metadata = fs::metadata(&active_path)
+        .map_err(|e| format!("Could not inspect active wallpaper file: {e}"))?;
+    if metadata.len() == 0 || metadata.len() > 32 * 1024 * 1024 {
+        return Err("Active wallpaper is too large for a preview.".into());
+    }
+    let bytes = fs::read(active_path)
+        .map_err(|e| format!("Could not read active wallpaper preview: {e}"))?;
+    let photo = image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)
+        .map_err(|e| format!("Could not decode active wallpaper: {e}"))?;
+    let (width,height) = (photo.width(),photo.height());
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 90_000_000 {
+        return Err("Active wallpaper dimensions are invalid.".into());
+    }
+    // Thumbnail only: bound WebView memory and avoid transferring full 4K/8K files.
+    let preview = photo.thumbnail(1700, 1000);
+    let mut encoded = Vec::new();
+    preview.write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+        &mut encoded, 82
+    )).map_err(|e| format!("Could not encode active wallpaper preview: {e}"))?;
+    Ok(ActiveWallpaperPreview {
+        target_id: target_id.to_string(), wallpaper_id, title, applied_at,
+        data_url: format!("data:image/jpeg;base64,{}", BASE64.encode(encoded)),
+        width, height,
+    })
+}
+
 fn encode_original(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let photo = image::load_from_memory(bytes)
         .map_err(|e| format!("Could not decode saved wallpaper: {e}"))?;
@@ -148,7 +227,7 @@ pub async fn apply_library_wallpaper(
     ).await.map_err(|_| "Wallpaper operation was interrupted.".to_string())?
 }
 
-fn apply_sync(
+pub(crate) fn apply_sync(
     app: &AppHandle, wallpaper_id: String, target_id: String,
     fit: Option<String>, overlay: Option<String>,
 ) -> Result<ApplyResult, String> {
@@ -176,18 +255,24 @@ fn apply_sync(
     if wallpaper_id.len() != 64 || !wallpaper_id.bytes().all(|ch| ch.is_ascii_hexdigit()) {
         return Err("Invalid Library wallpaper ID.".into());
     }
-    let data: Option<(String,String)> = conn.query_row(
-        "SELECT f.relative_path,w.title FROM wallpapers w
+    // Rotation may use verified protected reserve files without adding them
+    // permanently to the Library. Manual Library originals take priority.
+    let data: Option<(String,String,String)> = conn.query_row(
+        "SELECT f.relative_path,w.title,f.storage_class FROM wallpapers w
          JOIN wallpaper_files f ON f.wallpaper_id=w.id
-         WHERE w.id=?1 AND f.storage_class='managed' LIMIT 1",
-        params![wallpaper_id], |row| Ok((row.get(0)?,row.get(1)?))
+         WHERE w.id=?1 AND f.storage_class IN ('managed','reserve')
+         ORDER BY CASE f.storage_class WHEN 'managed' THEN 0 ELSE 1 END LIMIT 1",
+        params![wallpaper_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))
     ).optional().map_err(|e| format!("Could not find wallpaper: {e}"))?;
-    let (file_name,title) = data.ok_or_else(|| "Wallpaper not found in your local Library.".to_string())?;
+    let (file_name,title,source_class) =
+        data.ok_or_else(|| "Wallpaper was not found in the Library or approved reserve.".to_string())?;
     if !["jpg","png","webp"].iter().any(|ext| file_name == format!("{wallpaper_id}.{ext}")) {
-        return Err("Unexpected managed wallpaper filename.".into());
+        return Err("Unexpected wallpaper filename.".into());
     }
-    let bytes = fs::read(paths.library().join(file_name))
-        .map_err(|e| format!("Could not read managed wallpaper: {e}"))?;
+    let source_path = if source_class == "reserve" { paths.offline_reserve() }
+        else { paths.library() };
+    let bytes = fs::read(source_path.join(file_name))
+        .map_err(|e| format!("Could not read approved wallpaper file: {e}"))?;
     let jpeg = if let Some(encoded) = overlay { decode_overlay(&encoded)? }
         else { encode_original(&bytes)? };
     let dimensions = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg)
@@ -272,9 +357,17 @@ fn apply_sync(
             let _ = fs::remove_file(paths.active().join(item));
         }
     }
+    // Keep the rotation timer aligned with successful manual Set Now actions.
+    // This is best-effort and must never turn a successful Windows apply into
+    // an apparent error if rotation metadata cannot be updated.
+    let _ = crate::rotation::note_successful_apply(&conn, &wallpaper_id);
     Ok(ApplyResult {
         target_id, wallpaper_id,
-        notice: format!("Applied {title} to Windows. Your saved Library original remains unchanged."),
+        notice: if source_class == "reserve" {
+            format!("Applied approved offline wallpaper {title}. The protected reserve original is unchanged.")
+        } else {
+            format!("Applied {title} to Windows. Your saved Library original remains unchanged.")
+        },
     })
 }
 
