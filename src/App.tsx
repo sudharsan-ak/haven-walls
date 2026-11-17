@@ -6,6 +6,8 @@ import OnlineGallery from "./components/OnlineGallery";
 import BrowserPage from "./components/BrowserPage";
 import SettingsPage from "./components/SettingsPage";
 import LibraryPage from "./components/LibraryPage";
+import RotationPage from "./components/RotationPage";
+import RotationDashboard from "./components/RotationDashboard";
 import LibraryImportDialog from "./components/LibraryImportDialog";
 import type { ImportItemResult } from "./components/LibraryImportDialog";
 import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
@@ -33,12 +35,12 @@ const upcoming = [
   { title: "Online gallery", detail: "Explore photography, TV backdrops and team artwork", icon: "▧" },
   { title: "Wallpaper Library", detail: "Save, favorite and organize images offline", icon: "▣" },
   { title: "Set wallpaper", detail: "Apply saved images to Windows displays", icon: "▤" },
-  { title: "Rotation", detail: "Schedules and category preferences", icon: "↻" },
+  { title: "Rotation", detail: "Automatic schedules and background controls", icon: "↻" },
 ];
 
 export default function App() {
   const [host, setHost] = useState<HostState>({ kind: "checking" });
-  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "sources" | "settings">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "rotation" | "sources" | "settings">("dashboard");
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
   const [lensRequest, setLensRequest] = useState<{ imageId: string; requestId: number } | null>(null);
@@ -136,6 +138,9 @@ export default function App() {
             <button type="button" onClick={() => setPage("library")}
               className={"nav-item " + (page === "library" ? "current" : "")}
               aria-current={page === "library" ? "page" : undefined}>▣ <span>Library</span></button>
+            <button type="button" onClick={() => setPage("rotation")}
+              className={"nav-item " + (page === "rotation" ? "current" : "")}
+              aria-current={page === "rotation" ? "page" : undefined}>↻ <span>Schedule</span></button>
             <button type="button" onClick={() => setPage("sources")}
               className={"nav-item " + (page === "sources" ? "current" : "")}
               aria-current={page === "sources" ? "page" : undefined}>✧ <span>Sources</span></button>
@@ -153,6 +158,8 @@ export default function App() {
             importCompletion={browserImportCompletion} />
           {page === "browser" ? null : page === "settings" ? (
             <SettingsPage />
+          ) : page === "rotation" ? (
+            <RotationPage />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               onDiscover={() => openGallery("discover")}
@@ -176,7 +183,7 @@ export default function App() {
               <div className="eyebrow">Online image providers</div>
               <h1>Sources</h1>
               <p className="subheading">
-                Browse sources individually. Every lookup is manual, with no background downloads.
+                Browse sources individually. Manual browsing is separate from approved public-domain automatic discovery in Schedule.
               </p>
               <div className="provider-grid">
                 {catalogSources.map((source) => (
@@ -211,7 +218,7 @@ export default function App() {
           <h1>Welcome to Haven Walls</h1>
           <p className="subheading">
             A better way to discover and manage desktop wallpapers.
-            Save wallpapers locally, apply them to Windows, and enable basic Library rotation from the Library page.
+            Save wallpapers locally, apply them to Windows, and schedule automatic changes in the background.
           </p>
 
           <section className="hero" aria-labelledby="foundation-title">
@@ -240,6 +247,8 @@ export default function App() {
             </div>
           </section>
 
+          {host.kind === "connected" && <RotationDashboard onOpen={() => setPage("rotation")} />}
+
           <div className="section-heading">
             <h2>Get started</h2>
             <span>Find, save and apply a wallpaper directly to your Windows desktop.</span>
@@ -252,6 +261,9 @@ export default function App() {
                 <p>{item.detail}</p>
                 {item.title === "Online gallery" ? (
                   <button type="button" className="gallery-open-link" onClick={() => openGallery("discover")}>Open gallery</button>
+                ) : item.title === "Rotation" ? (
+                  <button type="button" className="gallery-open-link"
+                    onClick={() => setPage("rotation")}>Open schedule</button>
                 ) : item.title === "Wallpaper Library" || item.title === "Set wallpaper" ? (
                   <button type="button" className="gallery-open-link"
                     onClick={() => setPage("library")}>

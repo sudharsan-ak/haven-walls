@@ -12,6 +12,8 @@ export interface RotationPreferences {
   intervalMinutes: number;
   favoritesOnly: boolean;
   cooldownDays: number;
+  scheduleMode: "interval" | "daily";
+  dailyTime: string;
   discoveryEnabled: boolean;
   discoveryTopics: DiscoveryTopic[];
 }

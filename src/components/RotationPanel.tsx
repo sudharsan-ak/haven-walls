@@ -31,7 +31,7 @@ function localDate(unix: number | null): string {
   return new Date(unix * 1000).toLocaleString();
 }
 interface Props {
-  onApplied: (result: WallpaperApplyResult) => void;
+  onApplied?: (result: WallpaperApplyResult) => void;
 }
 export default function RotationPanel({ onApplied }: Props) {
   const [status, setStatus] = useState<RotationStatus | null>(null);
@@ -40,6 +40,7 @@ export default function RotationPanel({ onApplied }: Props) {
   const [busy, setBusy] = useState(false);
   const [customMinutes, setCustomMinutes] = useState("120");
   const [customDays, setCustomDays] = useState("30");
+  const [dailyDraft, setDailyDraft] = useState("09:00");
   const [topicsOpen, setTopicsOpen] = useState(false);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function RotationPanel({ onApplied }: Props) {
         setStatus(value);
         setCustomMinutes(String(value.preferences.intervalMinutes));
         setCustomDays(String(value.preferences.cooldownDays));
+        setDailyDraft(value.preferences.dailyTime);
       }
     }).catch((reason: unknown) => {
       if (live) setError(errorMessage(reason));
@@ -73,6 +75,7 @@ export default function RotationPanel({ onApplied }: Props) {
       setStatus(updated);
       setCustomMinutes(String(updated.preferences.intervalMinutes));
       setCustomDays(String(updated.preferences.cooldownDays));
+      setDailyDraft(updated.preferences.dailyTime);
       setNotice("Rotation preferences saved.");
     } catch (reason) {
       setError(errorMessage(reason));
@@ -87,7 +90,7 @@ export default function RotationPanel({ onApplied }: Props) {
     setNotice("");
     try {
       const result = await rotateNextWallpaper();
-      onApplied(result);
+      onApplied?.(result);
       setStatus(await getRotationStatus());
       setNotice("Wallpaper changed.");
     } catch (reason) {
@@ -123,6 +126,29 @@ export default function RotationPanel({ onApplied }: Props) {
         <>
           <div className="hwr-fields">
             <label>
+              <span>Schedule</span>
+              <select value={prefs.scheduleMode} disabled={busy}
+                onChange={(e) => void savePatch({
+                  scheduleMode: e.target.value as RotationPreferences["scheduleMode"],
+                })}>
+                <option value="interval">Repeat at an interval</option>
+                <option value="daily">Every day at a time</option>
+              </select>
+            </label>
+            {prefs.scheduleMode === "daily" && (
+              <label>
+                <span>Local Windows time</span>
+                <input type="time" value={dailyDraft} disabled={busy}
+                  onChange={(e) => setDailyDraft(e.target.value)}
+                  onBlur={() => {
+                    if (/^\d{2}:\d{2}$/.test(dailyDraft) &&
+                        dailyDraft !== prefs.dailyTime) {
+                      void savePatch({ dailyTime: dailyDraft });
+                    } else setDailyDraft(prefs.dailyTime);
+                  }} />
+              </label>
+            )}
+            {prefs.scheduleMode === "interval" && <label>
               <span>Change every</span>
               <select disabled={busy} value={isPreset ? String(prefs.intervalMinutes) : "custom"}
                 onChange={(e) => {
@@ -134,8 +160,8 @@ export default function RotationPanel({ onApplied }: Props) {
                 ))}
                 <option value="custom">Custom</option>
               </select>
-            </label>
-            {!isPreset && (
+            </label>}
+            {prefs.scheduleMode === "interval" && !isPreset && (
               <label>
                 <span>Custom interval (minutes)</span>
                 <input type="number" min={15} max={10080} step={15} disabled={busy}

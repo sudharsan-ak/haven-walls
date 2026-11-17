@@ -229,3 +229,76 @@ and end-to-end Windows regression checks. No direct changes to `main`.
    or discovery off must also stop new background discovery attempts.
 7. Library and current-wallpaper highlighting remain unchanged; verify
    automatic Next wallpaper and Browse > Review > Save still work.
+
+
+## Commit 3: Background operation and Schedule UI
+
+### Native background lifetime
+- Tauri 2 system tray (the existing application icon, no new UI process).
+  Menu: Open Haven Walls, Next wallpaper, Pause/Resume, Pin/Unpin and
+  Quit Haven Walls. The left mouse button restores and focuses the window.
+- Closing the main window **while rotation is enabled** hides it into the
+  tray when the user's "Keep running in system tray" preference is enabled.
+  The Rust process, scheduler and protected reserve keep running. Choosing
+  Quit exits the app completely. If rotation is disabled or the preference
+  is turned off, Close exits the application normally.
+- The background option is stored locally in SQLite and defaults to on,
+  but does not run anything by itself: the main rotation switch still
+  defaults to off.
+- Windows login startup is a **separate opt-in**. A per-user Run entry
+  under HKCU is created only after the user checks the control from the
+  installed release executable. It starts that specific executable with
+  `--background` and keeps the main window hidden. Disabling it removes
+  the entry. No admin privileges, system-wide writes or external services.
+- The startup control is disabled in `npm run tauri dev`, so a temporary
+  development executable is never accidentally registered for login.
+- Close-to-tray controls and startup status do not touch automatic image
+  discovery permissions or turn rotation on without the user requesting it.
+
+### Scheduling and interface
+- Rotation now supports two mutually exclusive schedule types:
+  customizable interval, or once daily at a selected **local Windows
+  HH:MM** time. The scheduler calculates the next future occurrence and
+  uses local timezone rules for DST transitions.
+- Manual Set Now / Next resets the next scheduled time without immediately
+  causing a second automatic rotation.
+- New "Schedule" sidebar destination reuses the existing rotation controls
+  and adds background/startup options, status and reserve summary.
+- Dashboard adds a compact rotation-status card linking to Schedule.
+  The Library retains its current wallpaper indicator and quick controls.
+- Existing stored rotation settings migrate automatically to interval mode
+  without changing the user's interval, topics or discovery options.
+
+### Windows regression checklist
+
+1. Update the PR #7 branch, then run `npm run build` and
+   `npm run tauri dev`.
+2. Open Schedule. Confirm Rotation Off by default for new installs, and
+   previously enabled intervals/topics still persist.
+3. Enable rotation, check Keep running in system tray, then press the title
+   bar X. The window hides, the Haven Walls tray icon remains, and no second
+   scheduler is created. Left-click the icon to restore the window.
+4. Tray: try Next wallpaper, Pause/Resume, Pin/Unpin and Quit. The current
+   desktop and Library status should remain consistent with each action.
+5. With rotation disabled, closing the app should exit normally even when
+   Keep running in system tray is checked.
+6. Switch to Daily at a local time just ahead of the current clock.
+   Confirm Next change updates, a due change occurs once, and the next due
+   advances to tomorrow. Test toggling Pause and Pin.
+7. Switch back to Interval. The previous interval and no-repeat period
+   should remain intact, and the next due should be recomputed.
+8. Confirm the Dashboard status and the Schedule page report the same
+   rotation state, next due, eligible count, and reserve count.
+9. Install a release executable (`npm run tauri build`). Toggle
+   "Start at Windows login" on and off. When enabled, sign out/in and
+   verify Haven Walls starts hidden with a working tray icon, without
+   showing an unexpected window.
+10. Confirm Browser, Library, Quick Save and manual Set Now still work;
+    no wallpaper files are deleted by hiding, showing or quitting.
+
+### Known limits before Commit 4
+- Commit 4 will validate duplicate process prevention on repeated launches,
+  recovery after sleep/wake and Windows startup, and missed schedules, along
+  with full Windows regression. Do not merge PR #7 before these tests.
+- This authoring environment does not have the Windows Rust toolchain.
+  The native build and tray behavior must be validated locally by the user.

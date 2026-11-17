@@ -7,6 +7,9 @@ use crate::{
     rotation_discovery,
 };
 use rusqlite::{params, Connection};
+use chrono::{Days, Duration as ChronoDuration, Local, LocalResult, NaiveTime, TimeZone};
+#[cfg(test)]
+use chrono::Timelike;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -29,6 +32,8 @@ pub struct RotationPreferences {
     pub interval_minutes: u32,
     pub favorites_only: bool,
     pub cooldown_days: u32,
+    pub schedule_mode: String,
+    pub daily_time: String,
     pub discovery_enabled: bool,
     pub discovery_topics: Vec<String>,
     /// Read only for migration of the single-topic settings saved by the
@@ -45,6 +50,8 @@ impl Default for RotationPreferences {
             interval_minutes: 1440,
             favorites_only: false,
             cooldown_days: 30,
+            schedule_mode: "interval".into(),
+            daily_time: "09:00".into(),
             discovery_enabled: true,
             discovery_topics: rotation_discovery::DISCOVERY_TOPICS.iter()
                 .map(|topic| (*topic).to_owned()).collect(),
@@ -59,6 +66,13 @@ impl RotationPreferences {
         }
         if !(1..=365).contains(&self.cooldown_days) {
             return Err("No-repeat period must be between 1 and 365 days.".into());
+        }
+        if self.schedule_mode != "interval" && self.schedule_mode != "daily" {
+            return Err("Choose interval or daily rotation scheduling.".into());
+        }
+        if self.daily_time.len() != 5 ||
+            NaiveTime::parse_from_str(&self.daily_time, "%H:%M").is_err() {
+            return Err("Daily rotation time must be HH:MM (local Windows time).".into());
         }
         if self.discovery_topics.is_empty() ||
             self.discovery_topics.len() > rotation_discovery::DISCOVERY_TOPICS.len() {
@@ -150,6 +164,38 @@ fn now_unix() -> i64 {
 }
 fn next_due(now: i64, interval_minutes: u32) -> i64 {
     now.saturating_add(i64::from(interval_minutes) * 60)
+}
+
+/// The next local wall-clock occurrence, including DST gap and overlap cases.
+fn schedule_next(now: i64, preferences: &RotationPreferences) -> i64 {
+    if preferences.schedule_mode != "daily" {
+        return next_due(now, preferences.interval_minutes);
+    }
+    let Ok(time) = NaiveTime::parse_from_str(&preferences.daily_time, "%H:%M") else {
+        return next_due(now, preferences.interval_minutes);
+    };
+    let today = Local.timestamp_opt(now, 0)
+        .single().unwrap_or_else(Local::now).date_naive();
+    for offset in 0..4 {
+        let Some(day) = today.checked_add_days(Days::new(offset)) else { break; };
+        let mut naive = day.and_time(time);
+        for _ in 0..181 {
+            let candidate = match Local.from_local_datetime(&naive) {
+                LocalResult::Single(date) => Some(date.timestamp()),
+                LocalResult::Ambiguous(a, b) =>
+                    [a.timestamp(), b.timestamp()].into_iter()
+                        .filter(|value| *value > now).min(),
+                LocalResult::None => None,
+            };
+            if let Some(timestamp) = candidate {
+                if timestamp > now { return timestamp; }
+                break;
+            }
+            // During spring-forward, use the first valid clock minute.
+            naive += ChronoDuration::minutes(1);
+        }
+    }
+    next_due(now, 1440)
 }
 fn ensure_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -351,15 +397,19 @@ pub fn save_rotation_preferences(
         let now = now_unix();
         if !preferences.enabled {
             state.next_due_unix = None;
-        } else if !before.enabled || preferences.interval_minutes != before.interval_minutes {
-            state.next_due_unix = Some(next_due(now, preferences.interval_minutes));
+        } else if !before.enabled ||
+            preferences.schedule_mode != before.schedule_mode ||
+            preferences.daily_time != before.daily_time ||
+            (preferences.schedule_mode == "interval" &&
+                preferences.interval_minutes != before.interval_minutes) {
+            state.next_due_unix = Some(schedule_next(now, &preferences));
         } else if (!preferences.paused && !preferences.pinned)
             && (before.paused || before.pinned)
             && state.next_due_unix.unwrap_or(now) <= now {
             // Unpin/resume should not immediately trigger missed rotations.
-            state.next_due_unix = Some(next_due(now, preferences.interval_minutes));
+            state.next_due_unix = Some(schedule_next(now, &preferences));
         } else if state.next_due_unix.is_none() {
-            state.next_due_unix = Some(next_due(now, preferences.interval_minutes));
+            state.next_due_unix = Some(schedule_next(now, &preferences));
         }
         if !preferences.enabled || !preferences.discovery_enabled {
             state.next_discovery_unix = None;
@@ -389,7 +439,7 @@ pub(crate) fn note_successful_apply(conn: &Connection, id: &str) -> Result<(), S
     state.last_wallpaper_id = Some(id.to_owned());
     state.last_error = None;
     if state.preferences.enabled {
-        state.next_due_unix = Some(next_due(now, state.preferences.interval_minutes));
+        state.next_due_unix = Some(schedule_next(now, &state.preferences));
     }
     save(conn, &state)
 }
@@ -474,6 +524,24 @@ fn select_candidate(app: &AppHandle, now: i64, force: bool)
         }
         Err("No other eligible wallpaper. Add a landscape image to Library or enable automatic discovery to replenish your offline reserve.".into())
     })
+}
+
+/// Native tray quick actions use the same serialized preference updates as
+/// the Library controls. No second rotation worker is started by the tray.
+pub fn is_enabled(app: &AppHandle) -> Result<bool, String> {
+    with_storage(app, |conn, _| Ok(load(conn)?.preferences.enabled))
+}
+pub fn toggle_pause(app: &AppHandle) -> Result<(), String> {
+    let mut settings = get_rotation_status(app.clone())?.preferences;
+    if !settings.enabled { return Err("Enable wallpaper rotation before pausing.".into()); }
+    settings.paused = !settings.paused;
+    save_rotation_preferences(app.clone(), settings).map(|_| ())
+}
+pub fn toggle_pin(app: &AppHandle) -> Result<(), String> {
+    let mut settings = get_rotation_status(app.clone())?.preferences;
+    if !settings.enabled { return Err("Enable wallpaper rotation before pinning.".into()); }
+    settings.pinned = !settings.pinned;
+    save_rotation_preferences(app.clone(), settings).map(|_| ())
 }
 
 fn rotate_sync(app: &AppHandle, force: bool) -> Result<Option<ApplyResult>, String> {
@@ -563,6 +631,8 @@ mod tests {
         assert!(!defaults.enabled);
         assert_eq!(defaults.interval_minutes, 1440);
         assert_eq!(defaults.cooldown_days, 30);
+        assert_eq!(defaults.schedule_mode, "interval");
+        assert_eq!(defaults.daily_time, "09:00");
     }
     #[test]
     fn topics_default_to_all_and_reject_empty_duplicates_unknown() {
@@ -590,6 +660,27 @@ mod tests {
         let new = load(&conn).unwrap();
         assert_eq!(new.preferences.discovery_topics, vec!["space"]);
         assert!(!serde_json::to_string(&new).unwrap().contains("\"discoveryTopic\""));
+    }
+    #[test]
+    fn daily_schedule_is_future_and_in_local_time() {
+        let mut prefs = RotationPreferences::default();
+        prefs.schedule_mode = "daily".into();
+        prefs.daily_time = "10:30".into();
+        let now = now_unix();
+        let next = schedule_next(now, &prefs);
+        assert!(next > now);
+        assert!(next - now <= 86400 + 7200);
+        let local = Local.timestamp_opt(next, 0).single().unwrap();
+        assert_eq!((local.hour(), local.minute()), (10,30));
+    }
+    #[test]
+    fn rejects_invalid_daily_times() {
+        let mut prefs = RotationPreferences::default();
+        prefs.schedule_mode = "daily".into();
+        prefs.daily_time = "25:90".into();
+        assert!(prefs.validate().is_err());
+        prefs.daily_time = "07:45".into();
+        assert!(prefs.validate().is_ok());
     }
     #[test]
     fn rotates_selected_topics_before_advancing_pages() {
