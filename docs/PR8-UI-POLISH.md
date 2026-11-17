@@ -38,9 +38,9 @@ global typography change or changes to the Rust wallpaper/rotation engine.
   Windows apply, rotation schedule, discovery rate limits or persistence.
 - Browser, Gallery, Settings > Sources and protected offline-reserve workflows
   remain untouched.
-- PR #8 is stacked on PR #7 while #7 is open. **Do not merge PR #8 into
-  main independently of PR #7.** After #7 merges, retarget or update PR #8
-  against main as appropriate.
+- PR #7 has now merged into main. PR #8 was retargeted directly to
+  main before the navigation icon follow-up; PR #8 remains draft until
+  the user verifies the changes on Windows.
 
 ## Windows verification checklist
 
@@ -71,3 +71,27 @@ global typography change or changes to the Rust wallpaper/rotation engine.
 
 Source checks were performed before publishing this commit, but final
 TypeScript and Windows/Tauri runtime verification must happen locally.
+
+## Follow-up: Sidebar icon cleanup
+
+- The five sidebar sections now use matching Lucide outline SVG geometry:
+  LayoutDashboard, Images, Globe, FolderOpen and Settings2.
+- SVGs render at 18 x 18 px with a 1.75 px stroke, and inherit the
+  selected or hover color from the existing sidebar design.
+- Icons are decorative; screen readers get the same text label and
+  aria-current remains on the selected navigation button.
+- No new dependencies, CDNs, font assets, changes to the navigation
+  handlers, or changes to the app-wide typography system.
+- Source: Lucide (ISC license), https://lucide.dev/icons.
+
+### Windows quick check
+
+1. Run `npm run build` and `npm run tauri dev`.
+2. Verify Dashboard/Grid, Gallery/Images, Browser/Globe,
+   Library/FolderOpen and Settings/Settings2 all appear at one
+   consistent size, with no clipping at narrow window widths.
+3. Hover, focus and select each destination; icons should inherit
+   muted default and blue active/hover colors without flicker.
+4. Navigate through each section and return. Only the icon
+   drawing should change; routing, forms and settings must behave
+   exactly as before.
