@@ -1,42 +1,32 @@
 # Haven Walls
 
-Haven Walls is a **local-first wallpaper manager for Windows** that helps you discover, preview, organize, and rotate high-quality desktop wallpapers.
+Haven Walls is a **local-first wallpaper manager for Windows 11**. Discover, save, preview, and automatically rotate desktop wallpapers without an account or telemetry.
 
-The first development priority is **online wallpaper discovery**. Importing wallpapers from local files and folders will come later.
+## Current features
 
-## Planned features
+- **Wallpaper discovery:** Browse Bing Daily, Wikimedia Commons, NASA, TheSportsDB, TMDB, Google Images, and optional Unsplash results. Some providers require your own API credentials.
+- **Built-in browser:** Open websites in tabs, inspect images, save selections to a persistent Review queue, and import them into the Library. Includes bookmarks and browsing history.
+- **Wallpaper Library:** Import local photos or online images, manage favorites, inspect image details, and check resolution and duplicates. Images and metadata are stored locally.
+- **Windows desktop integration:** Preview the active wallpaper, apply images to all displays or a selected monitor, choose fit modes, and view recent wallpaper activity.
+- **Automatic rotation:** Rotate saved images or eligible images from a protected offline reserve. Configure intervals or a daily time, no-repeat rules, Favorites-only mode, pause/pin, and selected discovery topics.
+- **Background controls:** System tray actions, optional launch at Windows sign-in, and settings for image quality, sources, storage, and privacy.
 
-- Discover wallpapers from supported, permitted online sources.
-- Preview images and apply them to the Windows desktop.
-- Follow interests such as sports leagues, teams, players, TV shows, and custom topics.
-- Organize favorites, categories, history, and a review queue.
-- Rotate wallpapers automatically, including per-monitor preferences.
-- Manage cached images, offline availability, and backups.
-- Run quietly in the system tray, without accounts or telemetry.
+Automatic online discovery currently uses a restricted Wikimedia Commons public-domain/CC0 workflow. Other sources support manual browsing and importing, subject to their terms and image rights.
+
+## Coming next
+
+Personalized sports and TV show follows, wallpaper collections, interest-aware discovery and rotation, plus more advanced scheduling, backup/restore, and lock-screen support (subject to Windows capability validation).
 
 ## Tech stack
 
-- **Desktop:** Tauri 2
-- **Frontend:** React, TypeScript, Vite
-- **Native/background core:** Rust
-- **Local data:** SQLite
-- **Initial target:** Windows 11 (Windows 10 support later)
+**Tauri 2 · React · TypeScript · Vite · Rust · SQLite · WebView2**
 
-## Development status
+Windows 11 is the primary development target; Windows 10 support is planned later.
 
-**Planning / repository initialization.** The application has not been implemented yet.
+## Development
 
-### First milestone: Online Wallpaper MVP
+PRs #1–#8 have been merged. Haven Walls is **under active development**, not yet a finished Windows release.
 
-1. Set up the Tauri, React, TypeScript, and Rust application.
-2. Integrate a suitable online wallpaper source and display real results.
-3. Validate, download, and apply an image using Windows native APIs.
-4. Add a basic gallery, active-wallpaper status, and persistence.
+See [Windows build and test instructions](docs/WINDOWS-BUILD.md) to run the project locally. Changes are developed in feature branches and reviewed through pull requests.
 
-Local image import, personalized discovery, rotation, and advanced features will follow in later milestones.
-
-## Development workflow
-
-Changes will be made on feature branches and reviewed through GitHub pull requests. Windows behavior will be tested locally before merging.
-
-> **Image rights matter:** Finding an image or its metadata online does not automatically grant permission to download, cache, or use it. Each provider integration must be validated against its terms and applicable image licenses.
+> **Image rights:** Finding artwork or a photo online does not automatically grant permission to download or use it. Source terms, license restrictions, and attribution still apply.
