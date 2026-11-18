@@ -158,7 +158,7 @@ export default function LibraryOrganization({
       <div className="hwo-heading">
         <div>
           <h2>Collections & Categories</h2>
-          <p>Organize saved photos without making extra copies. Select a group to filter the Library.</p>
+          <p>Create and manage groups without duplicating images. Select a group to open its wallpapers.</p>
         </div>
       </div>
       {loading && <p role="status" className="hwo-muted">Loading organization…</p>}

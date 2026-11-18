@@ -19,6 +19,7 @@ import { getPersonalization, type PersonalizationSnapshot } from "../lib/persona
 import "./LibraryPage.css";
 
 type Filter = "all" | "favorites" | "4k" | "portrait";
+type LibraryTab = "wallpapers" | "organization";
 
 interface Props {
   revision: number;
@@ -45,6 +46,7 @@ export default function LibraryPage({
   const [openCardMenu, setOpenCardMenu] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [activeTab, setActiveTab] = useState<LibraryTab>("wallpapers");
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
   const [editingOrganization, setEditingOrganization] = useState<LibraryWallpaper | null>(null);
   const [organization, setOrganization] = useState<PersonalizationSnapshot | null>(null);
@@ -452,6 +454,27 @@ export default function LibraryPage({
     }
   }
 
+  function showCollection(id: string | null) {
+    setCollectionFilter(id);
+    setCategoryFilter(null);
+    setFilter("all");
+    setSearch("");
+    setActiveTab("wallpapers");
+  }
+
+  function showCategory(id: string | null) {
+    setCategoryFilter(id);
+    setCollectionFilter(null);
+    setFilter("all");
+    setSearch("");
+    setActiveTab("wallpapers");
+  }
+
+  const activeGroup = collectionFilter
+    ? organization?.collections.find((group) => group.id === collectionFilter)
+    : categoryFilter
+      ? organization?.categories.find((group) => group.id === categoryFilter)
+      : null;
   const totalBytes = items.reduce((sum, image) => sum + image.bytes, 0);
   return (
     <section className="hwl-page">
@@ -461,6 +484,20 @@ export default function LibraryPage({
         Your saved wallpapers stay available without an internet connection.
         These are managed copies, separate from source originals and temporary discovery cache.
       </p>
+      <nav className="hwl-library-tabs" role="tablist" aria-label="Library sections">
+        <button type="button" id="hwl-tab-wallpapers" role="tab"
+          aria-selected={activeTab === "wallpapers"}
+          aria-controls="hwl-panel-wallpapers"
+          className={activeTab === "wallpapers" ? "selected" : ""}
+          onClick={() => setActiveTab("wallpapers")}>Wallpapers</button>
+        <button type="button" id="hwl-tab-organization" role="tab"
+          aria-selected={activeTab === "organization"}
+          aria-controls="hwl-panel-organization"
+          className={activeTab === "organization" ? "selected" : ""}
+          onClick={() => setActiveTab("organization")}>Collections & Categories</button>
+      </nav>
+      <div id="hwl-panel-wallpapers" role="tabpanel"
+        aria-labelledby="hwl-tab-wallpapers" hidden={activeTab !== "wallpapers"}>
       <div className="hwl-summary">
         <div><span>Saved wallpapers</span><strong>{items.length}</strong></div>
         <div><span>Favorites</span><strong>{items.filter((item) => item.favorite).length}</strong></div>
@@ -490,12 +527,17 @@ export default function LibraryPage({
           </div>
         </section>
       )}
-      <LibraryOrganization
-        snapshot={organization} loading={organizationLoading} error={organizationError}
-        selectedCollectionId={collectionFilter} selectedCategoryId={categoryFilter}
-        onSelectCollection={setCollectionFilter} onSelectCategory={setCategoryFilter}
-        onChanged={() => setOrganizationRevision((value) => value + 1)}
-      />
+      {(collectionFilter || categoryFilter) && (
+        <div className="hwl-active-group" role="status">
+          <span>Showing {collectionFilter ? "collection" : "category"}:
+            <strong>{activeGroup?.name ?? "Selected group"}</strong>
+          </span>
+          <button type="button" onClick={() => {
+            setCollectionFilter(null);
+            setCategoryFilter(null);
+          }}>Show all wallpapers</button>
+        </div>
+      )}
       <div className="hwl-controls">
         <input type="search" value={search}
           placeholder="Search title, provider, or photographer…"
@@ -521,9 +563,13 @@ export default function LibraryPage({
       {!loading && !error && visible.length === 0 && (
         <div className="hwl-empty">
           <span className="hwl-empty-symbol" aria-hidden="true">{items.length ? "⌕" : "▧"}</span>
-          <strong>{items.length ? "Nothing matches your search" : "Start your wallpaper collection"}</strong>
+          <strong>{items.length
+            ? collectionFilter || categoryFilter ? "No wallpapers in this group" : "Nothing matches your search"
+            : "Start your wallpaper collection"}</strong>
           <p>{items.length
-            ? "Clear your search and filters to see the wallpapers you've saved."
+            ? collectionFilter || categoryFilter
+              ? "Use Organize on a saved wallpaper to add it to this collection or category."
+              : "Clear your search and filters to see the wallpapers you've saved."
             : "Discover wallpapers in Gallery or import photos already saved on your computer."}</p>
           <div className="hwl-empty-actions">
             {items.length ? (
@@ -623,6 +669,16 @@ export default function LibraryPage({
       {activityError && <p className="hwl-error" role="alert">
         Windows wallpaper history is unavailable: {activityError}
       </p>}
+      </div>
+      <div id="hwl-panel-organization" role="tabpanel"
+        aria-labelledby="hwl-tab-organization" hidden={activeTab !== "organization"}>
+        <LibraryOrganization
+          snapshot={organization} loading={organizationLoading} error={organizationError}
+          selectedCollectionId={collectionFilter} selectedCategoryId={categoryFilter}
+          onSelectCollection={showCollection} onSelectCategory={showCategory}
+          onChanged={() => setOrganizationRevision((value) => value + 1)}
+        />
+      </div>
 
       {selected && (
         <div className="hwl-overlay" onMouseDown={(event) => {

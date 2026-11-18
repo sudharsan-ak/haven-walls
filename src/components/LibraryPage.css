@@ -549,3 +549,16 @@
 .hwl-card-menu-popup button:disabled{opacity:.46;cursor:not-allowed}
 .hwl-empty-symbol{font-size:35px;color:#3b87b8;line-height:1.2}
 .hwl-empty-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
+
+/* PR #10 Commit 1 follow-up: match the sticky underline tabs used in Settings. */
+.hwl-library-tabs{position:sticky;top:0;z-index:25;display:flex;gap:4px;overflow-x:auto;scrollbar-width:thin;background:#f4f7fa;border-bottom:1px solid #d8e5ef;margin:-5px 0 24px;padding:7px 2px 0;box-shadow:0 6px 10px #f4f7faed}
+.hwl-library-tabs button{position:relative;white-space:nowrap;padding:14px 17px;margin:0;background:transparent;border:0;border-bottom:3px solid transparent;font:inherit;font-size:12px;font-weight:720;color:#728ba3;cursor:pointer}
+.hwl-library-tabs button:hover{color:#176fb5;background:#f1f7fc}
+.hwl-library-tabs button.selected{border-bottom-color:#1873b6;color:#1767a2}
+.hwl-library-tabs button:focus-visible{outline:2px solid #287dd0;outline-offset:-3px}
+.hwl-page [role="tabpanel"]{min-width:0}
+.hwl-active-group{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 14px;padding:9px 13px;border-radius:9px;border:1px solid #bdd9ed;background:#eef7fe;color:#315a75;font-size:11px}
+.hwl-active-group strong{margin-left:5px;color:#116eac}
+.hwl-active-group button{border:0;background:transparent;color:#116eac;cursor:pointer;font:inherit;font-size:11px;font-weight:700;text-decoration:underline}
+.hwl-page #hwl-panel-organization .hwo-panel{margin:0 0 18px;padding:20px;background:#fff}
+@media(max-width:800px){.hwl-library-tabs button{font-size:11px;padding:13px 12px}}
