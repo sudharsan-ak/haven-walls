@@ -139,7 +139,7 @@ fn inspect_loaded_page(app: AppHandle, view: tauri::Webview, search_id: String)
             }
             Ok(())
         },
-        }))
+        ))
     })
 
 }
@@ -211,7 +211,7 @@ fn start_native_search(
                 }
                 Ok(())
             },
-            }))
+            ))
         };
         if let Err(err) = run_script(&view, &script, make_handler) {
             report_error(&app, &search_id, err);
