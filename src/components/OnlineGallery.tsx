@@ -11,6 +11,8 @@ import FullResolutionPreview from "./FullResolutionPreview";
 import GoogleWorkspace from "./GoogleWorkspace";
 import CategoryDiscovery from "./CategoryDiscovery";
 import SportsLeagueSources from "./SportsLeagueSources";
+import GalleryModes from "./GalleryModes";
+import SavedInterestGallery from "./SavedInterestGallery";
 import "./OnlineGallery.css";
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -23,6 +25,9 @@ type Props = {
   onSearchWeb: (query: string) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
   blockingDialogOpen: boolean;
+  interestSeedId: string | null;
+  onManageCategories: () => void;
+  onOpenBrowserWebsite: (url: string) => void;
 };
 
 function CatalogThumbnail({ image }: { image: CatalogImage }) {
@@ -419,21 +424,48 @@ function SourceGallery({
 // Google Images alone has nested Browser and API tabs.
 // All other source pages continue to use the existing Gallery view.
 export default function OnlineGallery(props: Props) {
-  if (props.source === "discover") {
-    return <CategoryDiscovery onSourceChange={props.onSourceChange}
+  const [freeCategories, setFreeCategories] = useState(false);
+  const selectSource = (value: CatalogSourceId) => {
+    setFreeCategories(false);
+    props.onSourceChange(value);
+  };
+  const body = props.source === "discover" && freeCategories ? (
+    <CategoryDiscovery
+      onSourceChange={selectSource}
       onSaveToLibrary={props.onSaveToLibrary}
-/>;
-  }
-  if (props.source === "google") {
-    return (
-      <GoogleWorkspace
-        onSourceChange={props.onSourceChange}
-        googleSearchSeed={props.googleSearchSeed}
-        lensRequest={props.lensRequest}
-        onSaveToLibrary={props.onSaveToLibrary}
-        blockingDialogOpen={props.blockingDialogOpen}
-      />
-    );
-  }
-  return <SourceGallery {...props} />;
+    />
+  ) : (props.source === "discover" ||
+    props.source === "sports" || props.source === "tmdb") ? (
+    <SavedInterestGallery
+      source={props.source}
+      interestSeedId={props.interestSeedId}
+      onSaveToLibrary={props.onSaveToLibrary}
+      onManageCategories={props.onManageCategories}
+      onOpenBrowserWebsite={props.onOpenBrowserWebsite}
+    />
+  ) : props.source === "google" ? (
+    <GoogleWorkspace
+      onSourceChange={selectSource}
+      googleSearchSeed={props.googleSearchSeed}
+      lensRequest={props.lensRequest}
+      onSaveToLibrary={props.onSaveToLibrary}
+      blockingDialogOpen={props.blockingDialogOpen}
+    />
+  ) : (
+    <SourceGallery {...props} onSourceChange={selectSource} />
+  );
+  return (
+    <div className="hwg-root">
+      <GalleryModes source={props.source} onSourceChange={selectSource} />
+      {props.source === "discover" && (
+        <div className="hwg-classic-switch">
+          <span>{freeCategories ? "Free photo discovery" : "Saved-interest discovery"}</span>
+          <button type="button" onClick={() => setFreeCategories((value) => !value)}>
+            {freeCategories ? "Back to saved interests" : "Browse free photo categories"}
+          </button>
+        </div>
+      )}
+      {body}
+    </div>
+  );
 }

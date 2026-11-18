@@ -38,8 +38,8 @@ export const catalogSources: SourceDefinition[] = [
   },
   {
     id: "discover",
-    name: "Discover by Category",
-    description: "Explore Nature, Earth, Space, Animals, Places and Sports with free photo catalogs.",
+    name: "Discover",
+    description: "Unified discovery from your saved categories and search interests.",
     hint: "Mix Wikimedia Commons, NASA and optional Google/Unsplash sources, then review and save.",
     action: "Discover wallpapers",
     defaultQuery: "",
@@ -47,8 +47,8 @@ export const catalogSources: SourceDefinition[] = [
   },
   {
     id: "sports",
-    name: "TheSportsDB",
-    description: "Find team artwork and manage NBA, IPL, WNBA or custom league image websites.",
+    name: "Sports Interests",
+    description: "Search leagues, teams and players configured in Library → Categories.",
     hint: "Search a team, then add league websites and find wallpapers using Google Images site-filtered searches.",
     action: "Find teams",
     defaultQuery: "Golden State Warriors",
@@ -56,8 +56,8 @@ export const catalogSources: SourceDefinition[] = [
   },
   {
     id: "tmdb",
-    name: "TMDB",
-    description: "Find a TV show by its exact title, then browse available landscape backdrops.",
+    name: "TV & Movies",
+    description: "Find images for saved shows and movies configured in Library → Categories.",
     hint: "Set your TMDB API Read Access Token once under Settings → API credentials.",
     action: "Find TV shows",
     defaultQuery: "Landman",

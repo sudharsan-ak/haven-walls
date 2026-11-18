@@ -14,6 +14,7 @@ import type { ImportItemResult } from "./components/LibraryImportDialog";
 import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
 import type { CatalogImage } from "./lib/native";
 import type { LibraryWallpaper } from "./lib/wallpaperLibrary";
+import type { FollowedInterest } from "./lib/personalization";
 import "./App.css";
 
 type ImportRequest = {
@@ -45,6 +46,10 @@ export default function App() {
   const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "settings">("dashboard");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("automation");
   const [libraryFocusId, setLibraryFocusId] = useState<string | null>(null);
+  const [libraryEntryTab, setLibraryEntryTab] = useState<"wallpapers" | "categories">("wallpapers");
+  const [galleryInterestId, setGalleryInterestId] = useState<string | null>(null);
+  const [browserOpenRequest, setBrowserOpenRequest] = useState<
+    { sequence: number; url: string } | null>(null);
 
   function openAutomation() {
     setSettingsTab("automation");
@@ -52,7 +57,26 @@ export default function App() {
   }
   function openLibrary(wallpaperId?: string) {
     setLibraryFocusId(wallpaperId ?? null);
+    setLibraryEntryTab("wallpapers");
     setPage("library");
+  }
+  function manageCategories() {
+    setLibraryFocusId(null);
+    setLibraryEntryTab("categories");
+    setPage("library");
+  }
+  function openInterestGallery(interest: FollowedInterest) {
+    setGalleryInterestId(interest.id);
+    setGallerySource(interest.kind === "league" || interest.kind === "team" ||
+      interest.kind === "player" ? "sports" :
+      interest.kind === "tv" || interest.kind === "movie" ? "tmdb" : "discover");
+    setPage("gallery");
+  }
+  function openWebsiteInBrowser(url: string) {
+    setBrowserOpenRequest((previous) => ({
+      url, sequence: (previous?.sequence ?? 0) + 1,
+    }));
+    setPage("browser");
   }
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
@@ -86,6 +110,7 @@ export default function App() {
   const [libraryRevision, setLibraryRevision] = useState(0);
 
   function openGallery(source: CatalogSourceId) {
+    setGalleryInterestId(null);
     setLensRequest(null);
     setGallerySource(source);
     setPage("gallery");
@@ -127,7 +152,7 @@ export default function App() {
             <button type="button" onClick={() => setPage("browser")}
               className={"nav-item " + (page === "browser" ? "current" : "")}
               aria-current={page === "browser" ? "page" : undefined}><SidebarIcon name="browser" /> <span>Browser</span></button>
-            <button type="button" onClick={() => setPage("library")}
+            <button type="button" onClick={() => openLibrary()}
               className={"nav-item " + (page === "library" ? "current" : "")}
               aria-current={page === "library" ? "page" : undefined}><SidebarIcon name="library" /> <span>Library</span></button>
             <button type="button" onClick={() => setPage("settings")}
@@ -139,6 +164,7 @@ export default function App() {
 
         <main className={"content" + (page === "browser" ? " content-browser" : "")}>
           <BrowserPage active={page === "browser"}
+            openRequest={browserOpenRequest}
             blockingDialogOpen={importRequest !== null || applyCandidate !== null}
             onSaveToLibrary={beginBrowserImport}
             importCompletion={browserImportCompletion} />
@@ -148,9 +174,11 @@ export default function App() {
               onOpenLibrary={() => openLibrary()} />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
+              initialTab={libraryEntryTab}
               focusWallpaperId={libraryFocusId}
               onFocusHandled={() => setLibraryFocusId(null)}
               onDiscover={() => openGallery("discover")}
+              onDiscoverInterest={openInterestGallery}
               onReverseSearch={reverseSearchSavedImage}
               onSaveToLibrary={beginOtherImport} />
           ) : page === "gallery" ? (
@@ -158,8 +186,12 @@ export default function App() {
               source={gallerySource}
               onSourceChange={(source) => {
                 setLensRequest(null);
+                setGalleryInterestId(null);
                 setGallerySource(source);
               }}
+              interestSeedId={galleryInterestId}
+              onManageCategories={manageCategories}
+              onOpenBrowserWebsite={openWebsiteInBrowser}
               googleSearchSeed={googleSearchSeed}
               lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}

@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 
 /** Personalization is saved to the same local SQLite database as Library images. */
 export type OrganizationKind = "category" | "collection";
-export type InterestKind = "league" | "team" | "player" | "tv";
+export type InterestKind = "league" | "team" | "player" | "tv" | "movie" | "place";
 
 export interface NamedGroup {
   id: string;

@@ -1,0 +1,21 @@
+
+.hwgm-heading{margin-bottom:16px}.hwgm-heading h1{font-size:30px;margin:8px 0}.hwgm-heading .subheading{margin:0;color:#7992a6}
+.hwgm-bar{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:0 0 19px}
+.hwgm-tabs{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hwgm-tabs button,.hwgm-rename{background:#fff;border:1px solid #d2e0ec;border-radius:10px;padding:11px 14px;color:#476d8d;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.hwgm-tabs button.active{background:#def0ff;border-color:#9bcced;color:#12699f}
+.hwgm-tabs button:hover:not(.active),.hwgm-rename:hover{background:#f0f8fd}
+.hwgm-rename{margin-left:auto}
+.hwg-root .gallery-page>.eyebrow,.hwg-root .gallery-page>h1,.hwg-root .gallery-page>.subheading,.hwg-root .online-source-picker{display:none}
+.hwgm-backdrop{position:fixed;inset:0;z-index:5500;background:#132f47ac;display:flex;align-items:center;justify-content:center;padding:22px}
+.hwgm-dialog{width:min(440px,100%);display:grid;gap:13px;padding:23px;border:1px solid #d7e5ef;border-radius:14px;background:#fff;box-shadow:0 14px 45px #092b494d}
+.hwgm-dialog h2{margin:0;color:#234966;font-size:20px}.hwgm-dialog>p{margin:0;color:#8197a8;font-size:12px;line-height:1.6}
+.hwgm-dialog label{display:grid;gap:6px;color:#405e79;font-size:12px;font-weight:700}
+.hwgm-dialog input{padding:11px;border:1px solid #d0e1ed;border-radius:8px;font:inherit;font-size:12px}
+.hwgm-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px}
+.hwgm-actions button{border:1px solid #d0e0eb;background:#fff;padding:10px 12px;border-radius:8px;color:#326889;font-size:11px;cursor:pointer}
+.hwgm-actions button.hwgm-save{background:#176fb5;color:white;border-color:#176fb5}
+.hwgm-error{color:#af4848;font-size:11px}
+
+.hwg-classic-switch{display:flex;gap:12px;align-items:center;justify-content:flex-end;margin:-5px 0 15px;font-size:11px;color:#7b95a8}
+.hwg-classic-switch button{border:1px solid #cce1ef;background:#fff;color:#136da8;border-radius:8px;padding:9px 12px;font-size:11px;cursor:pointer}

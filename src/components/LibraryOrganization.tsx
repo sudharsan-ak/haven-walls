@@ -10,6 +10,7 @@ import "./LibraryOrganization.css";
 
 interface PanelProps {
   snapshot: PersonalizationSnapshot | null;
+  wallpapers: LibraryWallpaper[];
   loading: boolean;
   error: string;
   selectedCollectionId: string | null;
@@ -27,7 +28,7 @@ function describe(kind: OrganizationKind) {
 
 /** Library organization is separate from Gallery discovery/search topics. */
 export default function LibraryOrganization({
-  snapshot, loading, error, selectedCollectionId, selectedCategoryId,
+  snapshot, wallpapers, loading, error, selectedCollectionId, selectedCategoryId,
   onSelectCollection, onSelectCategory, onChanged,
 }: PanelProps) {
   const [names, setNames] = useState({ collection: "", category: "" });
@@ -95,70 +96,71 @@ export default function LibraryOrganization({
   }
 
   function section(kind: OrganizationKind) {
-    const groups = kind === "collection" ? snapshot?.collections ?? [] : snapshot?.categories ?? [];
-    const links = kind === "collection" ?
-      snapshot?.wallpaperCollections ?? [] : snapshot?.wallpaperCategories ?? [];
-    const activeId = kind === "collection" ? selectedCollectionId : selectedCategoryId;
-    const onSelect = kind === "collection" ? onSelectCollection : onSelectCategory;
+    const groups = snapshot?.collections ?? [];
+    const links = snapshot?.wallpaperCollections ?? [];
     return (
-      <div className="hwo-group" key={kind}>
-        <header className="hwo-group-title">
-          <strong>{kind === "collection" ? "Collections" : "Categories"}</strong>
-          <small>{kind === "collection" ?
-            "Personal groups for your saved wallpapers" :
-            "Labels that can overlap across images"}</small>
-        </header>
-        <div className="hwo-chips" role="group" aria-label={"Filter by " + kind}>
-          <button type="button" className={"hwo-chip" + (activeId === null ? " active" : "")}
-            aria-pressed={activeId === null} onClick={() => onSelect(null)}>
-            All
-          </button>
-          {groups.map((group) => (
-            <div className="hwo-chip-set" key={group.id}>
-              <button type="button"
-                aria-pressed={activeId === group.id}
-                className={"hwo-chip" + (activeId === group.id ? " active" : "")}
-                onClick={() => onSelect(activeId === group.id ? null : group.id)}
-                title={"Show wallpapers in " + group.name}>
-                {group.name}
-                <span>{links.filter((link) => link.groupId === group.id).length}</span>
-              </button>
-              <button type="button" className="hwo-chip-edit"
-                title={"Rename " + group.name} aria-label={"Rename " + group.name}
-                disabled={busy}
-                onClick={() => { setActionError(""); setEditing({ kind, group }); setEditName(group.name); }}>
-                ✎
-              </button>
-              <button type="button" className="hwo-chip-remove"
-                title={"Delete " + group.name} aria-label={"Delete " + group.name}
-                disabled={busy}
-                onClick={() => { setActionError(""); setDeleting({ kind, group }); }}>
-                ×
-              </button>
-            </div>
-          ))}
+      <div className="hwo-collection-section" key={kind}>
+        <div className="hwo-collection-top">
+          <span>{groups.length} {groups.length === 1 ? "collection" : "collections"}</span>
+          <form className="hwo-add" onSubmit={(event) => void add("collection", event)}>
+            <label htmlFor="hwo-add-collection" className="hwo-sr">New collection name</label>
+            <input id="hwo-add-collection" type="text" maxLength={60}
+              placeholder="New collection…" value={names.collection}
+              disabled={busy || loading}
+              onChange={(event) => setNames((old) => ({ ...old, collection: event.target.value }))}/>
+            <button type="submit" disabled={busy || loading || !names.collection.trim()}>
+              + Create collection
+            </button>
+          </form>
         </div>
-        <form className="hwo-add" onSubmit={(event) => void add(kind, event)}>
-          <label htmlFor={"hwo-add-" + kind} className="hwo-sr">
-            New {kind} name
-          </label>
-          <input id={"hwo-add-" + kind} type="text" maxLength={60}
-            placeholder={"New " + kind + "…"} value={names[kind]} disabled={busy || loading}
-            onChange={(event) => setNames((old) => ({ ...old, [kind]: event.target.value }))} />
-          <button type="submit" disabled={busy || loading || !names[kind].trim()}>
-            + Add
-          </button>
-        </form>
+        {groups.length === 0 && <p className="hwo-muted">No collections yet. Create one, then add
+          saved wallpapers using the image's Collections action in the Wallpapers tab.</p>}
+        <div className="hwo-collection-cards">
+          {groups.map((group) => {
+            const ids = new Set(links.filter((link) => link.groupId === group.id)
+              .map((link) => link.wallpaperId));
+            const photos = wallpapers.filter((image) => ids.has(image.id)).slice(0, 3);
+            return (
+              <article key={group.id} className="hwo-collection-card">
+                <div className="hwo-collection-thumbs">
+                  {photos.map((image) => <div key={image.id}>
+                    {image.thumbnailDataUrl && <img src={image.thumbnailDataUrl}
+                      alt="" loading="lazy"/>}
+                  </div>)}
+                  {Array.from({ length: 3 - photos.length }, (_, i) =>
+                    <div key={"empty-" + i} className="hwo-collection-thumb-empty">▧</div>)}
+                </div>
+                <div className="hwo-collection-card-body">
+                  <strong>{group.name}</strong>
+                  <small>{ids.size} saved {ids.size === 1 ? "wallpaper" : "wallpapers"}</small>
+                  <div className="hwo-collection-card-actions">
+                    <button type="button" onClick={() => onSelectCollection(group.id)}>
+                      View wallpapers
+                    </button>
+                    <button type="button" disabled={busy}
+                      onClick={() => { setActionError(""); setEditing({ kind, group }); setEditName(group.name); }}>
+                      Rename
+                    </button>
+                    <button type="button" disabled={busy} className="danger"
+                      onClick={() => { setActionError(""); setDeleting({ kind, group }); }}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </div>
     );
   }
 
   return (
-    <section className="hwo-panel" aria-label="Wallpaper collections and categories">
+    <section className="hwo-panel" aria-label="Saved wallpaper collections">
       <div className="hwo-heading">
         <div>
-          <h2>Collections & Categories</h2>
-          <p>Create and manage groups without duplicating images. Select a group to open its wallpapers.</p>
+          <h2>Saved wallpaper collections</h2>
+          <p>Create personal groups for your saved images. A wallpaper can belong to more than one collection without making copies.</p>
         </div>
       </div>
       {loading && <p role="status" className="hwo-muted">Loading organization…</p>}
@@ -166,7 +168,6 @@ export default function LibraryOrganization({
       {snapshot && (
         <div className="hwo-panels">
           {section("collection")}
-          {section("category")}
         </div>
       )}
       {notice && <p role="status" className="hwo-notice">{notice}</p>}
@@ -215,7 +216,9 @@ interface EditorProps {
 }
 
 export function WallpaperOrganizationEditor({ image, snapshot, onClose, onSaved }: EditorProps) {
-  const [categories, setCategories] = useState<string[]>(
+  // Preserve legacy wallpaper category labels while this screen moves to
+  // discovery-oriented categories. The user only edits collection membership.
+  const [categories] = useState<string[]>(
     () => groupIdsForImage(snapshot.wallpaperCategories, image.id)
   );
   const [collections, setCollections] = useState<string[]>(
@@ -224,10 +227,9 @@ export function WallpaperOrganizationEditor({ image, snapshot, onClose, onSaved 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  function toggle(id: string, kind: OrganizationKind) {
-    const current = kind === "category" ? categories : collections;
-    const update = kind === "category" ? setCategories : setCollections;
-    update(current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  function toggle(id: string) {
+    setCollections((current) => current.includes(id)
+      ? current.filter((item) => item !== id) : [...current, id]);
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -250,36 +252,29 @@ export function WallpaperOrganizationEditor({ image, snapshot, onClose, onSaved 
       if (event.target === event.currentTarget && !busy) onClose();
     }}>
       <form className="hwo-dialog hwo-editor" role="dialog" aria-modal="true"
-        aria-label={"Organize " + image.title} onSubmit={(event) => void save(event)}>
-        <h3>Organize wallpaper</h3>
+        aria-label={"Collections for " + image.title} onSubmit={(event) => void save(event)}>
+        <h3>Manage wallpaper collections</h3>
         <p title={image.title}>{image.title}</p>
-        {(["collection", "category"] as const).map((kind) => {
-          const groups = kind === "collection" ? snapshot.collections : snapshot.categories;
-          const current = kind === "collection" ? collections : categories;
-          return (
-            <fieldset key={kind}>
-              <legend>{kind === "collection" ? "Collections" : "Categories"}</legend>
-              {groups.length === 0 && (
-                <small>No {kind === "collection" ? "collections" : "categories"} yet.
-                  Close this dialog to create one above.</small>
-              )}
-              <div className="hwo-editor-grid">
-                {groups.map((group) => (
-                  <label key={group.id} className="hwo-check">
-                    <input type="checkbox" checked={current.includes(group.id)}
-                      disabled={busy} onChange={() => toggle(group.id, kind)} />
-                    <span>{group.name}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          );
-        })}
+        <fieldset>
+          <legend>Collections</legend>
+          {snapshot.collections.length === 0 && (
+            <small>No collections yet. Create one in Library → Collections.</small>
+          )}
+          <div className="hwo-editor-grid">
+            {snapshot.collections.map((group) => (
+              <label key={group.id} className="hwo-check">
+                <input type="checkbox" checked={collections.includes(group.id)}
+                  disabled={busy} onChange={() => toggle(group.id)} />
+                <span>{group.name}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
         {error && <p role="alert" className="hwo-error">{error}</p>}
         <div className="hwo-dialog-actions">
           <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
           <button type="submit" disabled={busy}>
-            {busy ? "Saving…" : "Save assignments"}
+            {busy ? "Saving…" : "Save collections"}
           </button>
         </div>
       </form>

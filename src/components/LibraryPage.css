@@ -560,5 +560,5 @@
 .hwl-active-group{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 14px;padding:9px 13px;border-radius:9px;border:1px solid #bdd9ed;background:#eef7fe;color:#315a75;font-size:11px}
 .hwl-active-group strong{margin-left:5px;color:#116eac}
 .hwl-active-group button{border:0;background:transparent;color:#116eac;cursor:pointer;font:inherit;font-size:11px;font-weight:700;text-decoration:underline}
-.hwl-page #hwl-panel-organization .hwo-panel{margin:0 0 18px;padding:20px;background:#fff}
+.hwl-page #hwl-panel-collections .hwo-panel{margin:0 0 18px;padding:20px;background:#fff}
 @media(max-width:800px){.hwl-library-tabs button{font-size:11px;padding:13px 12px}}

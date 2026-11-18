@@ -43,3 +43,24 @@
 .hwl-organize-action{border:1px solid #cddfea;border-radius:8px;padding:8px 10px;background:#eef7fd;color:#126a9e;cursor:pointer;font-size:11px;font-weight:700}
 .hwl-organize-action:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:850px){.hwo-panels{grid-template-columns:1fr}.hwo-editor-grid{grid-template-columns:1fr}}
+
+/* PR #10: Collections are organized photo groups, separate from search categories. */
+.hwo-panels{display:block}
+.hwo-collection-top{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;margin:0 0 18px}
+.hwo-collection-top>span{font-size:11px;color:#8298a9;font-weight:700}
+.hwo-collection-top .hwo-add{margin:0;min-width:min(360px,100%)}
+.hwo-collection-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.hwo-collection-card{min-width:0;border:1px solid #d9e6ee;border-radius:12px;overflow:hidden;background:#fff}
+.hwo-collection-thumbs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));aspect-ratio:16/7;background:#eaf3f9;overflow:hidden}
+.hwo-collection-thumbs>div{min-width:0;border-right:1px solid #f5faff;display:grid;place-items:center}
+.hwo-collection-thumbs img{width:100%;height:100%;object-fit:cover}
+.hwo-collection-thumb-empty{color:#91acbf;font-size:22px}
+.hwo-collection-card-body{padding:15px}
+.hwo-collection-card-body strong{display:block;font-size:13px;color:#284860;overflow-wrap:anywhere}
+.hwo-collection-card-body small{display:block;color:#8ba0ae;font-size:11px;margin:6px 0 12px}
+.hwo-collection-card-actions{display:flex;gap:7px;flex-wrap:wrap}
+.hwo-collection-card-actions button{border:1px solid #d4e3ed;background:#f7fbfd;color:#286b99;border-radius:7px;cursor:pointer;padding:8px 10px;font-size:11px;font-weight:700}
+.hwo-collection-card-actions button:first-child{background:#e6f3fd;color:#1168a3}
+.hwo-collection-card-actions button.danger{color:#ac5050}
+@media(max-width:1100px){.hwo-collection-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.hwo-collection-cards{grid-template-columns:1fr}}

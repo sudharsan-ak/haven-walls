@@ -77,7 +77,7 @@ pub fn ensure_schema(conn: &Connection) -> Result<(), String> {
              ON wallpaper_collections(collection_id);
          CREATE TABLE IF NOT EXISTS followed_interests (
              id TEXT PRIMARY KEY,
-             kind TEXT NOT NULL CHECK(kind IN ('league','team','player','tv')),
+             kind TEXT NOT NULL CHECK(kind IN ('league','team','player','tv','movie','place')),
              provider TEXT NOT NULL,
              provider_id TEXT NOT NULL,
              title TEXT NOT NULL,
@@ -86,9 +86,38 @@ pub fn ensure_schema(conn: &Connection) -> Result<(), String> {
              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
              UNIQUE(kind, provider, provider_id)
          );
-         PRAGMA user_version=2;
          COMMIT;"
-    ).map_err(|e| format!("Could not upgrade personalization storage: {e}"))
+    ).map_err(|e| format!("Could not upgrade personalization storage: {e}"))?;
+    let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| format!("Could not inspect personalization schema: {e}"))?;
+    if version < 3 {
+        // The original PR #10 table only allowed sports and TV. Rebuild its
+        // local interest metadata to support movie and place interests too.
+        // This does not touch Library images, browser state, or collections.
+        conn.execute_batch(
+            "BEGIN IMMEDIATE;
+             CREATE TABLE followed_interests_v3 (
+                 id TEXT PRIMARY KEY,
+                 kind TEXT NOT NULL CHECK(kind IN ('league','team','player','tv','movie','place')),
+                 provider TEXT NOT NULL,
+                 provider_id TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 parent_id TEXT,
+                 preferences_json TEXT NOT NULL DEFAULT '{}',
+                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                 UNIQUE(kind, provider, provider_id)
+             );
+             INSERT INTO followed_interests_v3
+                 (id,kind,provider,provider_id,title,parent_id,preferences_json,created_at)
+               SELECT id,kind,provider,provider_id,title,parent_id,preferences_json,created_at
+               FROM followed_interests;
+             DROP TABLE followed_interests;
+             ALTER TABLE followed_interests_v3 RENAME TO followed_interests;
+             PRAGMA user_version=3;
+             COMMIT;"
+        ).map_err(|e| format!("Could not upgrade interest kinds: {e}"))?;
+    }
+    Ok(())
 }
 
 fn with_db<T>(
@@ -301,14 +330,15 @@ pub fn save_wallpaper_organization(
 }
 
 fn validate_interest(input: &InterestInput) -> Result<String, String> {
-    if !["league", "team", "player", "tv"].contains(&input.kind.as_str()) {
+    if !["league", "team", "player", "tv", "movie", "place"].contains(&input.kind.as_str()) {
         return Err("Unsupported interest type.".into());
     }
     if !["sportsdb", "tmdb", "custom"].contains(&input.provider.as_str()) {
         return Err("Unsupported interest provider.".into());
     }
-    if input.kind == "tv" && input.provider != "tmdb" {
-        return Err("TV shows must use the TMDB identifier.".into());
+    if ["tv","movie"].contains(&input.kind.as_str()) &&
+        !["tmdb", "custom"].contains(&input.provider.as_str()) {
+        return Err("TV and movie interests require TMDB or a custom search.".into());
     }
     for id in [&input.provider_id, input.parent_id.as_ref().unwrap_or(&input.provider_id)] {
         if id.is_empty() || id.len() > 120 ||
@@ -351,9 +381,14 @@ pub fn remove_followed_interest(
     app: AppHandle, state: State<'_, StorageLock>, id: String,
 ) -> Result<(), String> {
     with_db(&app, &state, |conn| {
-        conn.execute("DELETE FROM followed_interests WHERE id=?1", [id])
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        // Flexible follows: removing a league/team never removes its followed
+        // children; they simply become independent interests.
+        tx.execute("UPDATE followed_interests SET parent_id=NULL WHERE parent_id=?1", [&id])
+            .map_err(|e| format!("Could not preserve child interests: {e}"))?;
+        tx.execute("DELETE FROM followed_interests WHERE id=?1", [&id])
             .map_err(|e| format!("Could not remove followed interest: {e}"))?;
-        Ok(())
+        tx.commit().map_err(|e| format!("Could not save interest removal: {e}"))
     })
 }
 
@@ -378,7 +413,7 @@ mod tests {
         ).unwrap();
         ensure_schema(&conn).unwrap();
         ensure_schema(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 3);
         assert_eq!(load_groups(&conn, "categories").unwrap()[0].name, "Saved Category");
     }
 
@@ -402,6 +437,54 @@ mod tests {
         conn.execute("DELETE FROM collections WHERE id='group'", []).unwrap();
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM wallpaper_collections", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM wallpapers", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn upgrades_old_interest_records_without_losing_preferences() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             CREATE TABLE wallpapers(id TEXT PRIMARY KEY);
+             CREATE TABLE categories(id TEXT PRIMARY KEY,name TEXT NOT NULL,
+                 parent_id TEXT REFERENCES categories(id));
+             CREATE TABLE wallpaper_categories(
+                 wallpaper_id TEXT REFERENCES wallpapers(id) ON DELETE CASCADE,
+                 category_id TEXT REFERENCES categories(id) ON DELETE CASCADE,
+                 PRIMARY KEY(wallpaper_id,category_id));
+             CREATE TABLE followed_interests (
+                 id TEXT PRIMARY KEY,
+                 kind TEXT NOT NULL CHECK(kind IN ('league','team','player','tv')),
+                 provider TEXT NOT NULL,
+                 provider_id TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 parent_id TEXT,
+                 preferences_json TEXT NOT NULL DEFAULT '{}',
+                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                 UNIQUE(kind, provider, provider_id)
+             );
+             INSERT INTO followed_interests
+                 (id,kind,provider,provider_id,title,preferences_json)
+                 VALUES('oldteam','team','sportsdb','123','Warriors',
+                 '{\"keyword\":\"Golden State Warriors\",\"timeRange\":\"day\"}');
+             PRAGMA user_version=2;"
+        ).unwrap();
+        ensure_schema(&conn).unwrap();
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |r|
+            r.get::<_, i64>(0)).unwrap(), 3);
+        let existing: (String, String) = conn.query_row(
+            "SELECT title, preferences_json FROM followed_interests WHERE id='oldteam'",
+            [], |row| Ok((row.get(0)?, row.get(1)?))
+        ).unwrap();
+        assert_eq!(existing.0, "Warriors");
+        assert!(existing.1.contains("Golden State Warriors"));
+        conn.execute(
+            "INSERT INTO followed_interests
+               (id,kind,provider,provider_id,title) VALUES('movie','movie','custom','new','Movie')",
+            []
+        ).unwrap();
+        ensure_schema(&conn).unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM followed_interests",
+            [], |row| row.get::<_, i64>(0)).unwrap(), 2);
     }
 
     #[test]

@@ -15,25 +15,29 @@ import { listen } from "@tauri-apps/api/event";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import LibraryOrganization, { WallpaperOrganizationEditor } from "./LibraryOrganization";
-import { getPersonalization, type PersonalizationSnapshot } from "../lib/personalization";
+import InterestCategories from "./InterestCategories";
+import { type FollowedInterest, type PersonalizationSnapshot } from "../lib/personalization";
+import { loadPersonalizationWithMigration } from "../lib/interestProfiles";
 import "./LibraryPage.css";
 
 type Filter = "all" | "favorites" | "4k" | "portrait";
-type LibraryTab = "wallpapers" | "organization";
+type LibraryTab = "wallpapers" | "categories" | "collections";
 
 interface Props {
   revision: number;
+  initialTab?: "wallpapers" | "categories";
   /** Optional Dashboard deep-link: open the selected wallpaper's details. */
   focusWallpaperId?: string | null;
   onFocusHandled?: () => void;
   onDiscover: () => void;
+  onDiscoverInterest: (interest: FollowedInterest) => void;
   onReverseSearch: (image: LibraryWallpaper) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
 }
 
 export default function LibraryPage({
-  revision, focusWallpaperId, onFocusHandled,
-  onDiscover, onReverseSearch, onSaveToLibrary,
+  revision, initialTab = "wallpapers", focusWallpaperId, onFocusHandled,
+  onDiscover, onDiscoverInterest, onReverseSearch, onSaveToLibrary,
 }: Props) {
   const [items, setItems] = useState<LibraryWallpaper[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +50,7 @@ export default function LibraryPage({
   const [openCardMenu, setOpenCardMenu] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [activeTab, setActiveTab] = useState<LibraryTab>("wallpapers");
+  const [activeTab, setActiveTab] = useState<LibraryTab>(initialTab);
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
   const [editingOrganization, setEditingOrganization] = useState<LibraryWallpaper | null>(null);
   const [organization, setOrganization] = useState<PersonalizationSnapshot | null>(null);
@@ -97,7 +101,7 @@ export default function LibraryPage({
   useEffect(() => {
     let active = true;
     setOrganizationLoading(true);
-    void getPersonalization().then((data) => {
+    void loadPersonalizationWithMigration().then((data) => {
       if (!active) return;
       setOrganization(data);
       setOrganizationError("");
@@ -490,11 +494,16 @@ export default function LibraryPage({
           aria-controls="hwl-panel-wallpapers"
           className={activeTab === "wallpapers" ? "selected" : ""}
           onClick={() => setActiveTab("wallpapers")}>Wallpapers</button>
-        <button type="button" id="hwl-tab-organization" role="tab"
-          aria-selected={activeTab === "organization"}
-          aria-controls="hwl-panel-organization"
-          className={activeTab === "organization" ? "selected" : ""}
-          onClick={() => setActiveTab("organization")}>Collections & Categories</button>
+        <button type="button" id="hwl-tab-categories" role="tab"
+          aria-selected={activeTab === "categories"}
+          aria-controls="hwl-panel-categories"
+          className={activeTab === "categories" ? "selected" : ""}
+          onClick={() => setActiveTab("categories")}>Categories</button>
+        <button type="button" id="hwl-tab-collections" role="tab"
+          aria-selected={activeTab === "collections"}
+          aria-controls="hwl-panel-collections"
+          className={activeTab === "collections" ? "selected" : ""}
+          onClick={() => setActiveTab("collections")}>Collections</button>
       </nav>
       <div id="hwl-panel-wallpapers" role="tabpanel"
         aria-labelledby="hwl-tab-wallpapers" hidden={activeTab !== "wallpapers"}>
@@ -640,7 +649,7 @@ export default function LibraryPage({
                           onClick={() => {
                             setOpenCardMenu(null);
                             setEditingOrganization(item);
-                          }}>Collections & categories</button>
+                          }}>Add to collections</button>
                         <button type="button" role="menuitem"
                           disabled={!canVerifyRemoval || assignedIds.has(item.id) || Boolean(busyId)}
                           title={assignedIds.has(item.id)
@@ -670,10 +679,19 @@ export default function LibraryPage({
         Windows wallpaper history is unavailable: {activityError}
       </p>}
       </div>
-      <div id="hwl-panel-organization" role="tabpanel"
-        aria-labelledby="hwl-tab-organization" hidden={activeTab !== "organization"}>
-        <LibraryOrganization
+      <div id="hwl-panel-categories" role="tabpanel"
+        aria-labelledby="hwl-tab-categories" hidden={activeTab !== "categories"}>
+        <InterestCategories
           snapshot={organization} loading={organizationLoading} error={organizationError}
+          onChanged={() => setOrganizationRevision((value) => value + 1)}
+          onPreview={onDiscoverInterest}
+        />
+      </div>
+      <div id="hwl-panel-collections" role="tabpanel"
+        aria-labelledby="hwl-tab-collections" hidden={activeTab !== "collections"}>
+        <LibraryOrganization
+          snapshot={organization} wallpapers={items}
+          loading={organizationLoading} error={organizationError}
           selectedCollectionId={collectionFilter} selectedCategoryId={categoryFilter}
           onSelectCollection={showCollection} onSelectCategory={showCategory}
           onChanged={() => setOrganizationRevision((value) => value + 1)}
@@ -850,7 +868,7 @@ export default function LibraryPage({
                 <button type="button" className="hwl-organize-action"
                   disabled={Boolean(busyId) || !organization}
                   onClick={() => setEditingOrganization(selected)}>
-                  Organize
+                  Collections
                 </button>
                 <button type="button" className="hwl-secondary hwl-danger"
                   disabled={Boolean(busyId) || !canVerifyRemoval || assignedIds.has(selected.id)}
@@ -878,7 +896,7 @@ export default function LibraryPage({
           onSaved={() => {
             setEditingOrganization(null);
             setOrganizationRevision((value) => value + 1);
-            setNotice("Wallpaper collections and categories saved.");
+            setNotice("Wallpaper collections saved.");
           }} />
       )}
       {applyItem && (

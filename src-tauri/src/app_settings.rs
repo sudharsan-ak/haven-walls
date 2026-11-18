@@ -102,7 +102,7 @@ pub fn open_database(paths: &DataPaths) -> Result<Connection, String> {
     let schema_version: u32 = conn.query_row(
         "PRAGMA user_version", [], |row| row.get(0)
     ).map_err(|e| format!("Could not read database version: {e}"))?;
-    if schema_version > 2 {
+    if schema_version > 3 {
         return Err("This Haven Walls database was created by a newer version of the app.             It will not be opened with an older schema.".into());
     }
     conn.execute_batch(

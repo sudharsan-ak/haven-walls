@@ -143,6 +143,9 @@ pub async fn browse_google_images(
     min_width: u32,
     min_height: u32,
     page: Option<u32>,
+    time_range: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
 ) -> Result<CatalogResponse, String> {
     let query = query.trim();
     if !(2..=320).contains(&query.chars().count()) {
@@ -162,6 +165,28 @@ pub async fn browse_google_images(
         return Err("Unsupported image resolution filter.".into());
     }
 
+    // Search recency applies to Google results only. A custom date range
+    // must be valid ISO dates before it is sent as Google's tbs parameter.
+    let tbs = match time_range.as_deref().unwrap_or("any") {
+        "any" => None,
+        "day" => Some("qdr:d".to_owned()),
+        "week" => Some("qdr:w".to_owned()),
+        "month" => Some("qdr:m".to_owned()),
+        "year" => Some("qdr:y".to_owned()),
+        "custom" => {
+            let from = date_from.as_deref().ok_or("Choose a start date.")?;
+            let to = date_to.as_deref().ok_or("Choose an end date.")?;
+            let from = chrono::NaiveDate::parse_from_str(from, "%Y-%m-%d")
+                .map_err(|_| "Start date must be YYYY-MM-DD.")?;
+            let to = chrono::NaiveDate::parse_from_str(to, "%Y-%m-%d")
+                .map_err(|_| "End date must be YYYY-MM-DD.")?;
+            if from > to { return Err("Start date must be on or before end date.".into()); }
+            Some(format!("cdr:1,cd_min:{},cd_max:{}",
+                from.format("%-m/%-d/%Y"), to.format("%-m/%-d/%Y")))
+        },
+        _ => return Err("Unsupported Google Images time filter.".into()),
+    };
+
     let client = Client::builder()
         .timeout(Duration::from_secs(25))
         .user_agent("HavenWalls/0.1 (https://github.com/sudharsan-ak/haven-walls)")
@@ -170,7 +195,7 @@ pub async fn browse_google_images(
 
     // Retrieve a DPAPI-protected key from the local SQLite DB, then send it
     // over HTTPS only to SerpApi. Never return the secret to the frontend.
-    let response = client
+    let mut request = client
         .get(API)
         .query(&[
             ("engine", "google_images"),
@@ -182,9 +207,11 @@ pub async fn browse_google_images(
             ("hl", "en"),
             ("gl", "us"),
             ("api_key", key),
-        ])
-        .send()
-        .await
+        ]);
+    if let Some(tbs) = &tbs {
+        request = request.query(&[("tbs", tbs.as_str())]);
+    }
+    let response = request.send().await
         .map_err(|_| "Couldn't contact SerpApi. Check your network connection.".to_string())?;
 
     match response.status() {
