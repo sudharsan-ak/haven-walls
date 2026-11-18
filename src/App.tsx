@@ -48,8 +48,6 @@ export default function App() {
   const [libraryFocusId, setLibraryFocusId] = useState<string | null>(null);
   const [libraryEntryTab, setLibraryEntryTab] = useState<"wallpapers" | "categories">("wallpapers");
   const [galleryInterestId, setGalleryInterestId] = useState<string | null>(null);
-  const [browserOpenRequest, setBrowserOpenRequest] = useState<
-    { sequence: number; url: string } | null>(null);
 
   function openAutomation() {
     setSettingsTab("automation");
@@ -71,12 +69,6 @@ export default function App() {
       interest.kind === "player" ? "sports" :
       interest.kind === "tv" || interest.kind === "movie" ? "tmdb" : "discover");
     setPage("gallery");
-  }
-  function openWebsiteInBrowser(url: string) {
-    setBrowserOpenRequest((previous) => ({
-      url, sequence: (previous?.sequence ?? 0) + 1,
-    }));
-    setPage("browser");
   }
   const [gallerySource, setGallerySource] = useState<CatalogSourceId>("discover");
   const [googleSearchSeed, setGoogleSearchSeed] = useState("");
@@ -164,7 +156,6 @@ export default function App() {
 
         <main className={"content" + (page === "browser" ? " content-browser" : "")}>
           <BrowserPage active={page === "browser"}
-            openRequest={browserOpenRequest}
             blockingDialogOpen={importRequest !== null || applyCandidate !== null}
             onSaveToLibrary={beginBrowserImport}
             importCompletion={browserImportCompletion} />
@@ -191,7 +182,6 @@ export default function App() {
               }}
               interestSeedId={galleryInterestId}
               onManageCategories={manageCategories}
-              onOpenBrowserWebsite={openWebsiteInBrowser}
               googleSearchSeed={googleSearchSeed}
               lensRequest={lensRequest}
               onSearchWeb={searchWebForWallpaper}

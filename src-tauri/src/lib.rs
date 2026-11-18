@@ -21,6 +21,19 @@ mod browser_review;
 mod google_context_menu;
 #[cfg(windows)]
 mod browser_image_capture;
+#[cfg(windows)]
+mod interest_discovery;
+#[cfg(not(windows))]
+mod interest_discovery {
+    #[tauri::command]
+    pub async fn start_interest_page_search(_app: tauri::AppHandle, _search_id: String, _url: String) -> Result<(), String> {
+        Err("Interest image scanning requires Windows WebView2.".into())
+    }
+    #[tauri::command]
+    pub fn close_interest_page_search(_app: tauri::AppHandle, _search_id: String) -> Result<(), String> {
+        Err("Interest image scanning requires Windows WebView2.".into())
+    }
+}
 #[cfg(not(windows))]
 mod browser_image_capture {
     #[tauri::command]
@@ -112,6 +125,8 @@ pub fn run() {
             internal_browser::browser_tab_state,
             internal_browser::browser_close_tab,
             browser_image_capture::browser_scan_images,
+            interest_discovery::start_interest_page_search,
+            interest_discovery::close_interest_page_search,
             browser_storage::browser_load_data,
             browser_review::browser_load_review,
             browser_review::browser_save_review,

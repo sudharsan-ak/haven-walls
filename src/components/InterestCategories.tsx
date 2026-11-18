@@ -286,8 +286,8 @@ export default function InterestCategories({
                     Inherit parent websites</label>}
                 </div>
                 <h4>Preferred image websites</h4>
-                <p className="hwi-muted">Use Google Images site search for the keyword, or open a website
-                  in Browser and click Find Images on that page.</p>
+                <p className="hwi-muted">Each website is searched or scanned inside Gallery using Find Images. Direct-page scans
+                  fall back to a Google Images site: search when no matching photos are found.</p>
                 <div className="hwi-sites">
                   {draft.websites.map((site) => <div key={site.host} className="hwi-site">
                     <span>{site.host}</span>
@@ -296,7 +296,7 @@ export default function InterestCategories({
                         item.host === site.host ? { ...item, mode: event.target.value as WebsiteMode } : item
                       ))}>
                       <option value="google">Google site: search</option>
-                      <option value="browser">Browser Find Images</option>
+                      <option value="browser">Scan site, then search fallback</option>
                     </select>
                     <button type="button" aria-label={"Remove " + site.host}
                       onClick={() => update("websites", draft.websites.filter((item) => item.host !== site.host))}>×</button>

@@ -27,7 +27,6 @@ type Props = {
   blockingDialogOpen: boolean;
   interestSeedId: string | null;
   onManageCategories: () => void;
-  onOpenBrowserWebsite: (url: string) => void;
 };
 
 function CatalogThumbnail({ image }: { image: CatalogImage }) {
@@ -441,7 +440,6 @@ export default function OnlineGallery(props: Props) {
       interestSeedId={props.interestSeedId}
       onSaveToLibrary={props.onSaveToLibrary}
       onManageCategories={props.onManageCategories}
-      onOpenBrowserWebsite={props.onOpenBrowserWebsite}
     />
   ) : props.source === "google" ? (
     <GoogleWorkspace

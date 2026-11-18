@@ -10,6 +10,12 @@ import {
 import type { FollowedInterest, InterestKind } from "../lib/personalization";
 import FullResolutionPreview from "./FullResolutionPreview";
 import ConfirmDialog from "./ConfirmDialog";
+import type { BrowserScanResponse } from "../lib/browserNative";
+import {
+  googleImageSearchUrl, readInterestSearchMode, saveInterestSearchMode,
+  scanInterestSearchPage, type InterestSearchMode,
+} from "../lib/interestWebScan";
+import type { WebsiteMode } from "../lib/interestProfiles";
 import "./SavedInterestGallery.css";
 
 interface Props {
@@ -17,7 +23,6 @@ interface Props {
   interestSeedId: string | null;
   onSaveToLibrary: (images: CatalogImage[]) => void;
   onManageCategories: () => void;
-  onOpenBrowserWebsite: (url: string) => void;
 }
 interface Result {
   image: CatalogImage;
@@ -29,6 +34,8 @@ interface Job {
   query: string;
   website?: string;
   provider?: "sports" | "tmdb";
+  method?: "browser" | "serpapi";
+  siteMode?: WebsiteMode;
 }
 function urlIdentity(image: CatalogImage): string {
   const url = image.originalUrl || image.previewUrl;
@@ -40,10 +47,40 @@ function urlIdentity(image: CatalogImage): string {
   }
   return image.source + ":" + image.id;
 }
-function searchSuffix(interest: FollowedInterest): string {
-  return interest.kind === "movie" ? "movie wallpaper" :
-    interest.kind === "tv" ? "TV show wallpaper" :
-      interest.kind === "place" ? "landscape wallpaper" : "4K desktop wallpaper";
+function scannedImages(
+  response: BrowserScanResponse,
+  label: string,
+  keyword: string,
+  onlyRelevant: boolean,
+): CatalogImage[] {
+  const tokens = keyword.toLowerCase().split(/[^a-z0-9]+/)
+    .filter((part) => part.length >= 4);
+  return response.images.filter((candidate) => {
+    // Google often renders small thumbnails for full-resolution photos.
+    // Don't reject a candidate just because its preview dimensions are small.
+    if (candidate.width >= 600 && candidate.height >= 600 &&
+        candidate.width < candidate.height) return false;
+    // Direct webpage scans are not inherently searches. Keep only images
+    // whose text or URL indicates a relationship to the chosen category.
+    if (onlyRelevant && tokens.length) {
+      const metadata = (candidate.title + " " + candidate.url).toLowerCase();
+      return tokens.some((token) => metadata.includes(token));
+    }
+    return true;
+  }).map((candidate, index) => ({
+    id: "interest-browser-" + index,
+    source: label + " · Find Images",
+    title: candidate.title || "Website image",
+    previewUrl: candidate.url,
+    originalUrl: candidate.originalUrl,
+    candidateUrls: candidate.candidateUrls,
+    pageUrl: candidate.sourcePageUrl || response.pageUrl,
+    credit: response.pageUrl,
+    rights: "Image rights are not verified. Inspect the original publisher and permissions before saving.",
+    width: candidate.width,
+    height: candidate.height,
+    kind: "image" as const,
+  }));
 }
 function windowText(value: SearchWindow): string {
   return ({ day: "Past 24 hours", week: "Past week", month: "Past month",
@@ -57,7 +94,7 @@ function displayError(error: unknown): string {
 }
 
 export default function SavedInterestGallery({
-  source, interestSeedId, onSaveToLibrary, onManageCategories, onOpenBrowserWebsite,
+  source, interestSeedId, onSaveToLibrary, onManageCategories,
 }: Props) {
   const [interests, setInterests] = useState<FollowedInterest[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -77,7 +114,9 @@ export default function SavedInterestGallery({
   const [review, setReview] = useState<CatalogImage[]>([]);
   const [showReview, setShowReview] = useState(false);
   const [pendingSearch, setPendingSearch] = useState<Job[] | null>(null);
+  const [searchMode, setSearchMode] = useState<InterestSearchMode>(readInterestSearchMode);
   const requestId = useRef(0);
+  const scanController = useRef<AbortController | null>(null);
   const scope = useMemo(() => interests.filter((item) =>
     source === "sports" ? familyForKind(item.kind) === "Sports" :
       source === "tmdb" ? familyForKind(item.kind) === "TV & Movies" : true
@@ -122,7 +161,9 @@ export default function SavedInterestGallery({
 
   // Switching tabs or changing interest selection must never show stale results.
   useEffect(() => {
+    scanController.current?.abort();
     requestId.current++;
+    setPendingSearch(null);
     setBusy(false);
     setResults([]);
     setErrors([]);
@@ -131,21 +172,36 @@ export default function SavedInterestGallery({
     setProgress("");
   }, [source, selectedId]);
 
+  // Search per category keyword. A "website" can use a direct page scan
+  // or Google Images site: search, but neither needs SerpApi by default.
+  useEffect(() => () => scanController.current?.abort(), []);
+
   function jobs(): Job[] {
     const targets = all ? scope : selected ? [selected] : [];
     const tasks: Job[] = [];
+    const methods: ("browser" | "serpapi")[] =
+      searchMode === "both" ? ["browser", "serpapi"] : [searchMode];
     for (const interest of targets) {
       const prefs = preferencesFor(interest);
-      const term = all ? prefs.keyword : keyword.trim();
+      const term = (all ? prefs.keyword : keyword).trim();
       if (!term) continue;
-      const query = term + " " + searchSuffix(interest);
-      if (prefs.googleEnabled) tasks.push({ label: "Google Images", interest, query });
+      if (prefs.googleEnabled) {
+        for (const method of methods) {
+          tasks.push({
+            label: method === "browser" ? "Google Images" : "Google Images (SerpApi)",
+            interest, query: term, method,
+          });
+        }
+      }
       for (const site of linkedWebsites(interest, interests)) {
-        if (site.mode !== "google") continue;
-        tasks.push({
-          label: site.host, interest,
-          website: site.host, query: query + " site:" + site.host,
-        });
+        for (const method of methods) {
+          tasks.push({
+            label: site.host + (method === "serpapi" ? " (SerpApi)" : ""),
+            interest, website: site.host,
+            siteMode: site.mode, method,
+            query: term + " site:" + site.host,
+          });
+        }
       }
       if (prefs.providerEnabled) {
         if (interest.kind === "team") {
@@ -172,16 +228,22 @@ export default function SavedInterestGallery({
     if (tasks.length === 0) {
       setErrors(["Enable Google Images or website searches in Library → Categories."]); return;
     }
-    if (tasks.length > 60) {
-      setErrors(["This selection would run over 60 searches. Choose a specific interest to reduce API usage."]);
+    if (tasks.length > 24) {
+      setErrors(["This selection contains over 24 searches. Choose a specific interest first."]);
       return;
     }
-    if (tasks.length > 5) { setPendingSearch(tasks); return; }
+    const paidRequests = tasks.filter((task) => task.method === "serpapi").length;
+    if (paidRequests > 5 || tasks.length > 10) {
+      setPendingSearch(tasks); return;
+    }
     void runSearch(tasks);
   }
 
   async function runSearch(tasks: Job[]) {
     setPendingSearch(null);
+    scanController.current?.abort();
+    const controller = new AbortController();
+    scanController.current = controller;
     const run = ++requestId.current;
     setBusy(true);
     setSearched(false);
@@ -192,9 +254,10 @@ export default function SavedInterestGallery({
     const seen = new Set<string>();
     const problems: string[] = [];
     for (let i = 0; i < tasks.length; i++) {
-      if (requestId.current !== run) return;
+      if (requestId.current !== run || controller.signal.aborted) return;
       const task = tasks[i];
-      setProgress("Searching " + task.label + " · " + (i + 1) + " of " + tasks.length);
+      setProgress("Finding images from " + task.label + " · " + (i + 1) +
+        " of " + tasks.length);
       try {
         let images: CatalogImage[];
         if (task.provider === "sports") {
@@ -203,35 +266,72 @@ export default function SavedInterestGallery({
         } else if (task.provider === "tmdb") {
           const response = await browseTMDBBackdrops(Number(task.query));
           images = response.items.filter((item) => item.kind === "image");
+        } else if (task.method === "serpapi") {
+          const pref = preferencesFor(task.interest);
+          const timeFilter = all ? pref : {
+            ...pref, timeRange: range, dateFrom: from, dateTo: to,
+          };
+          const response = await browseGoogleImages(task.query, 1920, 1080, 1, {
+            timeRange: timeFilter.timeRange,
+            dateFrom: timeFilter.dateFrom, dateTo: timeFilter.dateTo,
+          });
+          images = response.items;
         } else {
           const pref = preferencesFor(task.interest);
-          const timeFilter = all ? pref : { ...pref,
-            timeRange: range, dateFrom: from, dateTo: to,
-          };
-          const response = await browseGoogleImages(
-            task.query, 1920, 1080, 1, {
-              timeRange: timeFilter.timeRange,
-              dateFrom: timeFilter.dateFrom, dateTo: timeFilter.dateTo,
+          const window = all ? pref.timeRange : range;
+          const start = all ? pref.dateFrom : from;
+          const end = all ? pref.dateTo : to;
+          const searchId = "g" + run + "-" + i + "-" + Date.now().toString(36);
+          // Some website profiles deliberately scan a direct page first.
+          // They fall back to the category-specific Google site: query if the
+          // site exposes no matching images or refuses the page scan.
+          if (task.website && task.siteMode === "browser") {
+            let direct: CatalogImage[] = [];
+            try {
+              const page = await scanInterestSearchPage(
+                browserLink(task.website), searchId + "-s", controller.signal,
+              );
+              direct = scannedImages(page, task.label, preferencesFor(task.interest).keyword, true);
+            } catch {
+              if (controller.signal.aborted) return;
+              // A site may block scanning. The Google site: fallback below
+              // is expected behavior and should not show a recovered error.
             }
-          );
-          images = response.items;
+            if (direct.length > 0) {
+              images = direct;
+            } else {
+              const page = await scanInterestSearchPage(
+                googleImageSearchUrl(task.query, window, start, end),
+                searchId + "-g", controller.signal,
+              );
+              images = scannedImages(page, task.label, task.query, false);
+            }
+          } else {
+            const page = await scanInterestSearchPage(
+              googleImageSearchUrl(task.query, window, start, end),
+              searchId, controller.signal,
+            );
+            images = scannedImages(page, task.label, task.query, false);
+          }
         }
+        if (controller.signal.aborted || requestId.current !== run) return;
         for (const image of images) {
           const key = urlIdentity(image);
           if (seen.has(key)) continue;
           seen.add(key);
-          // Google returns position-based IDs (google-1, google-2) for each
-          // search. Namespace them so Review/import never collides across sites.
-          found.push({ image: { ...image, id: "interest-" + i + "-" + image.id },
-            foundAt: task.label });
+          found.push({
+            image: { ...image, id: "interest-" + run + "-" + i + "-" + image.id },
+            foundAt: task.label,
+          });
         }
-        // Show partial results while other sources run.
-        if (requestId.current === run) setResults([...found]);
+        setResults([...found]);
       } catch (cause) {
+        if (controller.signal.aborted || requestId.current !== run) return;
         problems.push(task.label + ": " + displayError(cause));
       }
     }
-    if (requestId.current !== run) return;
+    if (requestId.current !== run || controller.signal.aborted) return;
+    scanController.current = null;
     setErrors(problems);
     setProgress("");
     setBusy(false);
@@ -298,24 +398,33 @@ export default function SavedInterestGallery({
                 {profilePrefs?.providerEnabled && <span>
                   {selected?.kind === "tv" || selected?.kind === "movie" ? "TMDB (linked IDs)" : "Sports provider"}
                 </span>}
-                {activeSites.filter((site) => site.mode === "google").map((site) =>
+                {activeSites.map((site) =>
                   <span key={site.host}>site:{site.host}</span>)}
               </>
             )}
           </div>
           {activeSites.some((site) => site.mode === "browser") && (
             <div className="hwsi-browser-sources">
-              <strong>Websites for Browser Find Images</strong>
-              {activeSites.filter((site) => site.mode === "browser").map((site) => (
-                <button key={site.host} type="button"
-                  onClick={() => onOpenBrowserWebsite(browserLink(site.host))}>
-                  Open {site.host} in Browser
-                </button>
-              ))}
+              <strong>Direct page scanning (inside Gallery)</strong>
+              {activeSites.filter((site) => site.mode === "browser").map((site) =>
+                <span key={site.host}>{site.host} · Find Images, then site: fallback</span>
+              )}
             </div>
           )}
         </div>
         <aside className="hwsi-search-side">
+          <label className="hwsi-field">Search method
+            <select value={searchMode} disabled={busy}
+              onChange={(event) => {
+                const value = event.target.value as InterestSearchMode;
+                setSearchMode(value);
+                saveInterestSearchMode(value);
+              }}>
+              <option value="browser">Built-in Browser · No API key</option>
+              <option value="serpapi">SerpApi · Optional API key</option>
+              <option value="both">Both methods</option>
+            </select>
+          </label>
           <label className="hwsi-field">Google Images time filter
             <select value={range} disabled={all || busy}
               onChange={(event) => setRange(event.target.value as SearchWindow)}>
@@ -329,6 +438,9 @@ export default function SavedInterestGallery({
             <label>To<input type="date" value={to} disabled={busy}
               onChange={(event) => setTo(event.target.value)}/></label>
           </div>}
+          <p>The built-in WebView2 scanner works inside Gallery. It reads image
+            candidates from loaded search pages, not entire websites. Some sites
+            limit access. SerpApi is only used when selected.</p>
           <p>Google's date filter applies to indexed content, not necessarily when a photo was taken.</p>
           <button type="submit" disabled={busy || !loaded || scope.length === 0}>
             {busy ? "Searching…" : "Find wallpapers"}
@@ -375,7 +487,7 @@ export default function SavedInterestGallery({
         </div>
       )}
       <p className="hwsi-disclaimer">Search results are previews, not permission to reuse an image.
-        Browser Find Images operates on explicitly opened pages, not an unattended whole-site crawl.
+        Built-in Find Images scans loaded pages in an isolated view without leaving Gallery, not an unattended whole-site crawl.
         Import checks still apply.</p>
 
       {inspect && <FullResolutionPreview image={inspect}
@@ -407,7 +519,10 @@ export default function SavedInterestGallery({
       )}
       {pendingSearch && <ConfirmDialog
         title={"Run " + pendingSearch.length + " image searches?"}
-        description="Each Google Images request can use a SerpApi credit. Searches run only after you confirm."
+        description={"This runs " + pendingSearch.filter((task) =>
+          task.method === "serpapi").length + " optional SerpApi requests and " +
+          pendingSearch.filter((task) => task.method === "browser").length +
+          " built-in page scans. Continue?"}
         confirmLabel="Run searches" tone="standard"
         onConfirm={() => { void runSearch(pendingSearch); }}
         onCancel={() => setPendingSearch(null)} />}

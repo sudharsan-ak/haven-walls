@@ -51,3 +51,7 @@
 .hwsi-review-actions button:first-child{border:1px solid #cbdfea;border-radius:8px;padding:10px;background:#fff;color:#376886}
 @media(max-width:1050px){.hwsi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.hwsi-search{grid-template-columns:1fr}.hwsi-search-side{border-left:0;border-top:1px solid #e4ecf3;padding:15px 0 0}}
 @media(max-width:700px){.hwsi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* PR #10: free built-in scanning is the default; API search is opt-in. */
+.hwsi-browser-sources span{font-size:10px;border:1px solid #d2e5f1;background:#f0f8fd;color:#396e90;border-radius:8px;padding:7px 10px}
+.hwsi-search-side .hwsi-field:first-child select{border-color:#a6cde5;background:#f4faff;color:#175e90;font-weight:700}

@@ -96,14 +96,12 @@ interface Props {
   blockingDialogOpen: boolean;
   onSaveToLibrary: (images: CatalogImage[]) => void;
   importCompletion: { sequence: number; completedIds: string[] } | null;
-  openRequest?: { sequence: number; url: string } | null;
 }
 
 export default function BrowserPage({
-  active, blockingDialogOpen, onSaveToLibrary, importCompletion, openRequest,
+  active, blockingDialogOpen, onSaveToLibrary, importCompletion,
 }: Props) {
   const [tabs, setTabs] = useState<Tab[]>(() => [defaultTab()]);
-  const lastOpenedRequest = useRef(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [address, setAddress] = useState(BROWSER_HOME);
   const [error, setError] = useState("");
@@ -457,15 +455,6 @@ export default function BrowserPage({
     setPanel(null);
     setError("");
   }
-
-  // Category source links are opened only on user action. Wait until the
-  // previous Browser session is restored so navigation cannot be overwritten.
-  useEffect(() => {
-    if (!active || !ready || !openRequest ||
-      openRequest.sequence === lastOpenedRequest.current) return;
-    lastOpenedRequest.current = openRequest.sequence;
-    openTab(openRequest.url);
-  }, [active, ready, openRequest]);
 
   function selectTab(tab: Tab) {
     selectedRef.current = tab.id;
