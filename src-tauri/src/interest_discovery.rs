@@ -104,7 +104,7 @@ fn report_error(app: &AppHandle, tab_id: &str, message: impl Into<String>) {
 fn run_script(
     view: &tauri::Webview,
     script: &str,
-    make_handler: impl FnOnce() -> ExecuteScriptCompletedHandler + Send + 'static,
+    make_handler: impl FnOnce() -> webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2ExecuteScriptCompletedHandler + Send + 'static,
 ) -> Result<(), String> {
     let source: Vec<u16> = script.encode_utf16().chain(std::iter::once(0)).collect();
     view.with_webview(move |platform| {
