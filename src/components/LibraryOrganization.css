@@ -1,0 +1,45 @@
+/* PR #10: saved Library collections and categories. No sidebar changes. */
+.hwo-panel{margin:16px 0 18px;padding:16px;border:1px solid #d8e6ef;border-radius:13px;background:#f9fcff;color:#27435b}
+.hwo-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.hwo-heading h2{margin:0 0 4px;font-size:16px;line-height:1.3;color:#193b55}
+.hwo-heading p{margin:0;color:#61788a;font-size:12px;line-height:1.5}
+.hwo-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.hwo-group{min-width:0;background:white;border:1px solid #d9e6ef;border-radius:10px;padding:12px}
+.hwo-group-title{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.hwo-group-title strong{font-size:13px}
+.hwo-group-title small{font-size:11px;color:#6a8090}
+.hwo-chips{display:flex;flex-wrap:wrap;gap:6px;min-height:34px;align-items:flex-start}
+.hwo-chip-set{display:flex;align-items:stretch;border:1px solid #ccdfea;border-radius:8px;overflow:hidden;background:#f8fbfd}
+.hwo-chip{border:1px solid #ccdfea;border-radius:8px;padding:7px 9px;background:#f8fbfd;color:#315c78;cursor:pointer;font-size:11px}
+.hwo-chip-set .hwo-chip{border:0;border-radius:0}
+.hwo-chip.active{background:#dfeffc;color:#075d90;font-weight:700}
+.hwo-chip span{margin-left:5px;font-size:10px;color:#67889d}
+.hwo-chip-edit,.hwo-chip-remove{padding:4px 6px;border:0;border-left:1px solid #dbe8ef;background:transparent;color:#607e91;cursor:pointer;font-size:13px}
+.hwo-chip-remove{font-size:17px}
+.hwo-chip-edit:hover,.hwo-chip-remove:hover{background:#eaf4fc}
+.hwo-add{display:flex;gap:7px;margin-top:12px}
+.hwo-add input,.hwo-dialog input[type="text"]{min-width:0;flex:1;border:1px solid #c9dce9;border-radius:7px;padding:9px 10px;background:#fff;color:#21435e;font:inherit;font-size:12px}
+.hwo-add button,.hwo-dialog-actions button:last-child{border:1px solid #1480b6;border-radius:7px;padding:8px 11px;background:#117bb3;color:white;font-size:12px;font-weight:700;cursor:pointer}
+.hwo-add button:disabled,.hwo-dialog button:disabled{opacity:.55;cursor:not-allowed}
+.hwo-muted,.hwo-notice{margin:8px 0 0;color:#467693;font-size:12px}
+.hwo-error{margin:8px 0 0;color:#ab4141;font-size:12px}
+.hwo-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.hwo-backdrop{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(10,31,49,.62)}
+.hwo-dialog{width:min(100%,430px);max-height:min(90vh,720px);overflow-y:auto;padding:22px;border-radius:13px;border:1px solid #d7e5ef;background:#fff;box-shadow:0 22px 60px #0b25404a;color:#24425a}
+.hwo-dialog h3{margin:0 0 8px;font-size:19px;color:#183b55}
+.hwo-dialog>label{display:block;margin:14px 0 6px;font-size:12px}
+.hwo-dialog input[type="text"]{width:100%;box-sizing:border-box}
+.hwo-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.hwo-dialog-actions button{padding:9px 14px;border-radius:7px;border:1px solid #c8dbe7;background:#f8fbfd;color:#335a75;font-size:12px;cursor:pointer}
+.hwo-editor{width:min(100%,540px)}
+.hwo-editor>p{margin:0 0 16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#6d8495}
+.hwo-editor fieldset{padding:12px;margin:0 0 12px;border:1px solid #dbe6ed;border-radius:9px}
+.hwo-editor legend{padding:0 5px;font-size:13px;font-weight:700;color:#214d69}
+.hwo-editor fieldset small{font-size:12px;color:#718694}
+.hwo-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.hwo-check{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;cursor:pointer}
+.hwo-check span{overflow:hidden;text-overflow:ellipsis}
+.hwo-check input{accent-color:#1681b9}
+.hwl-organize-action{border:1px solid #cddfea;border-radius:8px;padding:8px 10px;background:#eef7fd;color:#126a9e;cursor:pointer;font-size:11px;font-weight:700}
+.hwl-organize-action:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:850px){.hwo-panels{grid-template-columns:1fr}.hwo-editor-grid{grid-template-columns:1fr}}

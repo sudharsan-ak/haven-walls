@@ -14,6 +14,8 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
+import LibraryOrganization, { WallpaperOrganizationEditor } from "./LibraryOrganization";
+import { getPersonalization, type PersonalizationSnapshot } from "../lib/personalization";
 import "./LibraryPage.css";
 
 type Filter = "all" | "favorites" | "4k" | "portrait";
@@ -44,6 +46,13 @@ export default function LibraryPage({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
+  const [editingOrganization, setEditingOrganization] = useState<LibraryWallpaper | null>(null);
+  const [organization, setOrganization] = useState<PersonalizationSnapshot | null>(null);
+  const [organizationError, setOrganizationError] = useState("");
+  const [organizationLoading, setOrganizationLoading] = useState(true);
+  const [organizationRevision, setOrganizationRevision] = useState(0);
+  const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [applyItem, setApplyItem] = useState<LibraryWallpaper | null>(null);
   const [activity, setActivity] = useState<WallpaperActivity | null>(null);
   const [activityError, setActivityError] = useState("");
@@ -81,6 +90,21 @@ export default function LibraryPage({
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
   }, []);
+
+  // Group membership belongs to SQLite, not the Gallery's discovery-topic profiles.
+  useEffect(() => {
+    let active = true;
+    setOrganizationLoading(true);
+    void getPersonalization().then((data) => {
+      if (!active) return;
+      setOrganization(data);
+      setOrganizationError("");
+    }).catch((problem: unknown) => {
+      if (!active) return;
+      setOrganizationError(problem instanceof Error ? problem.message : String(problem));
+    }).finally(() => { if (active) setOrganizationLoading(false); });
+    return () => { active = false; };
+  }, [revision, organizationRevision]);
 
   function importLocalFiles(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.currentTarget.files || []).slice(0, 30);
@@ -229,8 +253,14 @@ export default function LibraryPage({
     if (filter === "favorites" && !item.favorite) return false;
     if (filter === "4k" && qualityTier(item.width, item.height) !== "4K+") return false;
     if (filter === "portrait" && !(item.height > item.width)) return false;
+    if (collectionFilter && !organization?.wallpaperCollections.some(
+      (entry) => entry.wallpaperId === item.id && entry.groupId === collectionFilter
+    )) return false;
+    if (categoryFilter && !organization?.wallpaperCategories.some(
+      (entry) => entry.wallpaperId === item.id && entry.groupId === categoryFilter
+    )) return false;
     return true;
-  }), [items, filter, search]);
+  }), [items, filter, search, collectionFilter, categoryFilter, organization]);
 
   // Filmstrip shows every item in the current filter, scrolling when the
   // collection outgrows the stage. The selected image is kept in view.
@@ -305,6 +335,7 @@ export default function LibraryPage({
       setOpenedOriginal("");
       setNotice("Removed wallpaper from the managed Library.");
       setPendingRemoval(null);
+      setOrganizationRevision((value) => value + 1);
     } catch (problem) {
       const message = problem instanceof Error ? problem.message : String(problem);
       setError(message);
@@ -459,6 +490,12 @@ export default function LibraryPage({
           </div>
         </section>
       )}
+      <LibraryOrganization
+        snapshot={organization} loading={organizationLoading} error={organizationError}
+        selectedCollectionId={collectionFilter} selectedCategoryId={categoryFilter}
+        onSelectCollection={setCollectionFilter} onSelectCategory={setCategoryFilter}
+        onChanged={() => setOrganizationRevision((value) => value + 1)}
+      />
       <div className="hwl-controls">
         <input type="search" value={search}
           placeholder="Search title, provider, or photographer…"
@@ -492,6 +529,7 @@ export default function LibraryPage({
             {items.length ? (
               <button type="button" className="hwl-primary" onClick={() => {
                 setSearch(""); setFilter("all");
+                setCollectionFilter(null); setCategoryFilter(null);
               }}>Clear filters</button>
             ) : (
               <>
@@ -552,6 +590,11 @@ export default function LibraryPage({
                         id={"hwl-menu-" + item.id} aria-label={"Actions for " + item.title}>
                         <button type="button" role="menuitem"
                           onClick={() => void open(item)}>Inspect details</button>
+                        <button type="button" role="menuitem" disabled={!organization}
+                          onClick={() => {
+                            setOpenCardMenu(null);
+                            setEditingOrganization(item);
+                          }}>Collections & categories</button>
                         <button type="button" role="menuitem"
                           disabled={!canVerifyRemoval || assignedIds.has(item.id) || Boolean(busyId)}
                           title={assignedIds.has(item.id)
@@ -748,6 +791,11 @@ export default function LibraryPage({
                   onClick={() => void toggleFavorite(selected)}>
                   {selected.favorite ? "♥" : "♡"}
                 </button>
+                <button type="button" className="hwl-organize-action"
+                  disabled={Boolean(busyId) || !organization}
+                  onClick={() => setEditingOrganization(selected)}>
+                  Organize
+                </button>
                 <button type="button" className="hwl-secondary hwl-danger"
                   disabled={Boolean(busyId) || !canVerifyRemoval || assignedIds.has(selected.id)}
                   title={assignedIds.has(selected.id)
@@ -766,6 +814,16 @@ export default function LibraryPage({
             </div>
           </section>
         </div>
+      )}
+      {editingOrganization && organization && (
+        <WallpaperOrganizationEditor key={editingOrganization.id}
+          image={editingOrganization} snapshot={organization}
+          onClose={() => setEditingOrganization(null)}
+          onSaved={() => {
+            setEditingOrganization(null);
+            setOrganizationRevision((value) => value + 1);
+            setNotice("Wallpaper collections and categories saved.");
+          }} />
       )}
       {applyItem && (
         <ApplyWallpaperDialog image={applyItem}

@@ -1,6 +1,7 @@
 mod sources;
 mod local_storage;
 mod app_settings;
+mod personalization;
 mod configuration;
 mod wallpaper_library;
 mod windows_wallpaper;
@@ -138,6 +139,13 @@ pub fn run() {
             wallpaper_library::show_library_wallpaper_for_lens,
             wallpaper_library::set_wallpaper_favorite,
             wallpaper_library::remove_library_wallpaper,
+            personalization::get_personalization,
+            personalization::create_personalization_group,
+            personalization::rename_personalization_group,
+            personalization::delete_personalization_group,
+            personalization::save_wallpaper_organization,
+            personalization::save_followed_interest,
+            personalization::remove_followed_interest,
             wallpaper_library::open_wallpaper_source,
             windows_wallpaper::list_wallpaper_monitors,
             windows_wallpaper::get_wallpaper_activity,
