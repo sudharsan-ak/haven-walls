@@ -7,7 +7,6 @@ import {
 import {
   defaultInterestPreferences, familyForKind, INTEREST_TYPES,
   kindLabel, linkedWebsites, preferencesFor, type InterestPreferences,
-  type WebsiteMode,
 } from "../lib/interestProfiles";
 import { normalizeLeagueWebsite } from "../lib/sportsLeagues";
 import ConfirmDialog from "./ConfirmDialog";
@@ -44,7 +43,6 @@ export default function InterestCategories({
   const [providerChoice, setProviderChoice] = useState<CatalogImage | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [newWebsite, setNewWebsite] = useState("");
-  const [newSiteMode, setNewSiteMode] = useState<WebsiteMode>("google");
   const [deleting, setDeleting] = useState<FollowedInterest | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
@@ -149,7 +147,7 @@ export default function InterestCategories({
       return;
     }
     setProblem("");
-    update("websites", [...draft.websites, { host, mode: newSiteMode }]);
+    update("websites", [...draft.websites, { host, mode: "google" }]);
     setNewWebsite("");
   }
 
@@ -286,24 +284,19 @@ export default function InterestCategories({
                     Inherit parent websites</label>}
                 </div>
                 <h4>Preferred image websites</h4>
-                <p className="hwi-muted">Each website is searched or scanned inside Gallery using Find Images. Direct-page scans
-                  fall back to a Google Images site: search when no matching photos are found.</p>
+                <p className="hwi-muted">Every saved site runs all three searches: Google Images site: query,
+                  direct website image scan, and the site's own keyword search when available.
+                  All results appear in Gallery.</p>
                 <div className="hwi-sites">
                   {draft.websites.map((site) => <div key={site.host} className="hwi-site">
                     <span>{site.host}</span>
-                    <select value={site.mode} aria-label={"Search method for " + site.host}
-                      onChange={(event) => update("websites", draft.websites.map((item) =>
-                        item.host === site.host ? { ...item, mode: event.target.value as WebsiteMode } : item
-                      ))}>
-                      <option value="google">Google site: search</option>
-                      <option value="browser">Scan site, then search fallback</option>
-                    </select>
+                    <small>3 search passes</small>
                     <button type="button" aria-label={"Remove " + site.host}
                       onClick={() => update("websites", draft.websites.filter((item) => item.host !== site.host))}>×</button>
                   </div>)}
                   {inherited.map((site) => (
                     <div key={site.host} className="hwi-site inherited">
-                      <span>{site.host}</span><small>Inherited · {site.mode === "google" ? "Google site search" : "Browser"}</small>
+                      <span>{site.host}</span><small>Inherited · 3 search passes</small>
                     </div>
                   ))}
                 </div>
@@ -311,12 +304,6 @@ export default function InterestCategories({
                   <input placeholder="e.g. nba.com or espn.com/nba"
                     aria-label="New website" value={newWebsite}
                     onChange={(event) => setNewWebsite(event.target.value)}/>
-                  <select form="hwi-website-form" aria-label="New website search method"
-                    value={newSiteMode}
-                    onChange={(event) => setNewSiteMode(event.target.value as WebsiteMode)}>
-                    <option value="google">Google site: search</option>
-                    <option value="browser">Browser Find Images</option>
-                  </select>
                   <button type="button" onClick={addSite}>
                     + Add website
                   </button>

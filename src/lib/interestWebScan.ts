@@ -59,6 +59,7 @@ export function googleImageSearchUrl(
  */
 export async function scanInterestSearchPage(
   pageUrl: string, searchId: string, signal?: AbortSignal,
+  nativeQuery?: string,
 ): Promise<BrowserScanResponse> {
   if (!isTauri()) throw new Error("Website image scanning requires Haven Walls for Windows.");
   if (signal?.aborted) throw new Error("Search cancelled.");
@@ -93,7 +94,9 @@ export async function scanInterestSearchPage(
       signal?.addEventListener("abort", abortListener, { once: true });
     });
     // Start only after listening; very fast site loads must not lose events.
-    await invoke<void>("start_interest_page_search", { searchId, url: pageUrl });
+    await invoke<void>("start_interest_page_search", {
+      searchId, url: pageUrl, nativeQuery: nativeQuery ?? null,
+    });
     return await Promise.race([response, timeoutPromise, abortPromise]);
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);

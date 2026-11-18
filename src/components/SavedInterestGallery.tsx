@@ -15,7 +15,6 @@ import {
   googleImageSearchUrl, readInterestSearchMode, saveInterestSearchMode,
   scanInterestSearchPage, type InterestSearchMode,
 } from "../lib/interestWebScan";
-import type { WebsiteMode } from "../lib/interestProfiles";
 import "./SavedInterestGallery.css";
 
 interface Props {
@@ -35,7 +34,7 @@ interface Job {
   website?: string;
   provider?: "sports" | "tmdb";
   method?: "browser" | "serpapi";
-  siteMode?: WebsiteMode;
+  pass?: "google" | "site-google" | "site-direct" | "site-native";
 }
 function urlIdentity(image: CatalogImage): string {
   const url = image.originalUrl || image.previewUrl;
@@ -54,7 +53,7 @@ function scannedImages(
   onlyRelevant: boolean,
 ): CatalogImage[] {
   const tokens = keyword.toLowerCase().split(/[^a-z0-9]+/)
-    .filter((part) => part.length >= 4);
+    .filter((part) => part.length >= 3);
   return response.images.filter((candidate) => {
     // Google often renders small thumbnails for full-resolution photos.
     // Don't reject a candidate just because its preview dimensions are small.
@@ -172,36 +171,50 @@ export default function SavedInterestGallery({
     setProgress("");
   }, [source, selectedId]);
 
-  // Search per category keyword. A "website" can use a direct page scan
-  // or Google Images site: search, but neither needs SerpApi by default.
+  // Each configured website ALWAYS contributes three independent passes:
+  // (1) Google Images site: query, (2) the actual webpage, (3) the site's
+  // native search box/form when supported. A failure cannot suppress other
+  // passes. SerpApi changes only how Google queries run, never site scanning.
   useEffect(() => () => scanController.current?.abort(), []);
 
   function jobs(): Job[] {
     const targets = all ? scope : selected ? [selected] : [];
     const tasks: Job[] = [];
-    const methods: ("browser" | "serpapi")[] =
+    const googleMethods: ("browser" | "serpapi")[] =
       searchMode === "both" ? ["browser", "serpapi"] : [searchMode];
     for (const interest of targets) {
       const prefs = preferencesFor(interest);
       const term = (all ? prefs.keyword : keyword).trim();
       if (!term) continue;
       if (prefs.googleEnabled) {
-        for (const method of methods) {
+        for (const method of googleMethods) {
           tasks.push({
             label: method === "browser" ? "Google Images" : "Google Images (SerpApi)",
-            interest, query: term, method,
+            interest, query: term, method, pass: "google",
           });
         }
       }
       for (const site of linkedWebsites(interest, interests)) {
-        for (const method of methods) {
+        // The category's "Include general Google" toggle affects only
+        // broad searches; explicit websites always get a site: search.
+        for (const method of googleMethods) {
           tasks.push({
-            label: site.host + (method === "serpapi" ? " (SerpApi)" : ""),
-            interest, website: site.host,
-            siteMode: site.mode, method,
+            label: site.host + " · Google site" +
+              (method === "serpapi" ? " (SerpApi)" : ""),
+            interest, website: site.host, method, pass: "site-google",
             query: term + " site:" + site.host,
           });
         }
+        tasks.push({
+          label: site.host + " · Site images",
+          interest, website: site.host, method: "browser",
+          pass: "site-direct", query: term,
+        });
+        tasks.push({
+          label: site.host + " · Site search",
+          interest, website: site.host, method: "browser",
+          pass: "site-native", query: term,
+        });
       }
       if (prefs.providerEnabled) {
         if (interest.kind === "team") {
@@ -228,12 +241,12 @@ export default function SavedInterestGallery({
     if (tasks.length === 0) {
       setErrors(["Enable Google Images or website searches in Library → Categories."]); return;
     }
-    if (tasks.length > 24) {
-      setErrors(["This selection contains over 24 searches. Choose a specific interest first."]);
+    if (tasks.length > 48) {
+      setErrors(["This selection contains over 48 passes. Choose a specific interest first."]);
       return;
     }
     const paidRequests = tasks.filter((task) => task.method === "serpapi").length;
-    if (paidRequests > 5 || tasks.length > 10) {
+    if (paidRequests > 5 || tasks.length > 12) {
       setPendingSearch(tasks); return;
     }
     void runSearch(tasks);
@@ -282,30 +295,17 @@ export default function SavedInterestGallery({
           const start = all ? pref.dateFrom : from;
           const end = all ? pref.dateTo : to;
           const searchId = "g" + run + "-" + i + "-" + Date.now().toString(36);
-          // Some website profiles deliberately scan a direct page first.
-          // They fall back to the category-specific Google site: query if the
-          // site exposes no matching images or refuses the page scan.
-          if (task.website && task.siteMode === "browser") {
-            let direct: CatalogImage[] = [];
-            try {
-              const page = await scanInterestSearchPage(
-                browserLink(task.website), searchId + "-s", controller.signal,
-              );
-              direct = scannedImages(page, task.label, preferencesFor(task.interest).keyword, true);
-            } catch {
-              if (controller.signal.aborted) return;
-              // A site may block scanning. The Google site: fallback below
-              // is expected behavior and should not show a recovered error.
-            }
-            if (direct.length > 0) {
-              images = direct;
-            } else {
-              const page = await scanInterestSearchPage(
-                googleImageSearchUrl(task.query, window, start, end),
-                searchId + "-g", controller.signal,
-              );
-              images = scannedImages(page, task.label, task.query, false);
-            }
+          if (task.pass === "site-direct" || task.pass === "site-native") {
+            if (!task.website) throw new Error("No website configured for this scan.");
+            const page = await scanInterestSearchPage(
+              browserLink(task.website),
+              searchId,
+              controller.signal,
+              task.pass === "site-native" ? task.query : undefined,
+            );
+            images = scannedImages(
+              page, task.label, task.query, task.pass === "site-direct",
+            );
           } else {
             const page = await scanInterestSearchPage(
               googleImageSearchUrl(task.query, window, start, end),
@@ -403,12 +403,12 @@ export default function SavedInterestGallery({
               </>
             )}
           </div>
-          {activeSites.some((site) => site.mode === "browser") && (
+          {activeSites.length > 0 && (
             <div className="hwsi-browser-sources">
-              <strong>Direct page scanning (inside Gallery)</strong>
-              {activeSites.filter((site) => site.mode === "browser").map((site) =>
-                <span key={site.host}>{site.host} · Find Images, then site: fallback</span>
-              )}
+              <strong>Each website runs three passes</strong>
+              <span>Google site: images</span>
+              <span>Direct page images</span>
+              <span>Native keyword search (when supported)</span>
             </div>
           )}
         </div>
@@ -438,9 +438,9 @@ export default function SavedInterestGallery({
             <label>To<input type="date" value={to} disabled={busy}
               onChange={(event) => setTo(event.target.value)}/></label>
           </div>}
-          <p>The built-in WebView2 scanner works inside Gallery. It reads image
-            candidates from loaded search pages, not entire websites. Some sites
-            limit access. SerpApi is only used when selected.</p>
+          <p>Every saved website runs Google site search, direct page scanning,
+            and its own search interface when available. Results stay in Gallery.
+            SerpApi is used only for Google queries when selected.</p>
           <p>Google's date filter applies to indexed content, not necessarily when a photo was taken.</p>
           <button type="submit" disabled={busy || !loaded || scope.length === 0}>
             {busy ? "Searching…" : "Find wallpapers"}
@@ -471,7 +471,15 @@ export default function SavedInterestGallery({
           {shown.map(({ image, foundAt }) => <article key={urlIdentity(image)} className="hwsi-tile">
             <button type="button" onClick={() => setInspect(image)}
               aria-label={"Inspect " + image.title}>
-              <img src={image.previewUrl} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+              <img src={image.previewUrl} alt="" loading="lazy" referrerPolicy="no-referrer"
+                onError={(event) => {
+                  const img = event.currentTarget;
+                  if (image.originalUrl && img.src !== image.originalUrl) {
+                    img.src = image.originalUrl;
+                  } else {
+                    img.style.opacity = "0";
+                  }
+                }}/>
               <span>{image.width > 0 ? image.width + " × " + image.height : "Artwork"}</span>
             </button>
             <div><strong title={image.title}>{image.title}</strong><small>{foundAt} · {image.source}</small>
