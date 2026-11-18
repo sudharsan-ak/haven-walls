@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type SyntheticEvent } from "react";
 import {
   browseGoogleImages, browseTMDBBackdrops, browseWallpaperSource,
   type CatalogImage, type CatalogSourceId,
@@ -15,6 +15,10 @@ import {
   googleImageSearchUrl, readInterestSearchMode, saveInterestSearchMode,
   scanInterestSearchPage, type InterestSearchMode,
 } from "../lib/interestWebScan";
+import {
+  isWallpaperCandidate, previewSources,
+  type DiscoveryQualityFilter, type ObservedPreviewSize,
+} from "../lib/discoveryImageQuality";
 import "./SavedInterestGallery.css";
 
 interface Props {
@@ -92,6 +96,76 @@ function displayError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+interface DiscoveryCardProps {
+  image: CatalogImage;
+  foundAt: string;
+  onInspect: (image: CatalogImage) => void;
+  onUnavailable: (id: string) => void;
+  onPreviewLoaded: (id: string, dimensions: ObservedPreviewSize) => void;
+}
+
+/** A failed <img> must not leave an empty, clickable card in the grid.
+ * Try the original and a few linked alternates, then drop the dead result.
+ * Loaded thumbnail pixels are never advertised as the original resolution.
+ */
+function DiscoveryCard({
+  image, foundAt, onInspect, onUnavailable, onPreviewLoaded,
+}: DiscoveryCardProps) {
+  const sources = useMemo(() => previewSources(image), [image]);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const [observed, setObserved] = useState<ObservedPreviewSize | null>(null);
+
+  useEffect(() => {
+    setSourceIndex(0);
+    setObserved(null);
+  }, [image.id]);
+
+  function nextSource() {
+    if (sourceIndex + 1 < sources.length) {
+      setSourceIndex((index) => index + 1);
+      setObserved(null);
+    } else {
+      onUnavailable(image.id);
+    }
+  }
+
+  function loaded(event: SyntheticEvent<HTMLImageElement>) {
+    const width = event.currentTarget.naturalWidth;
+    const height = event.currentTarget.naturalHeight;
+    if (width < 72 || height < 72) {
+      nextSource();
+      return;
+    }
+    if (observed?.width === width && observed.height === height) return;
+    const dimensions = { width, height };
+    setObserved(dimensions);
+    onPreviewLoaded(image.id, dimensions);
+  }
+
+  const dimensionLabel = observed
+    ? "Preview " + observed.width + " × " + observed.height
+    : image.width > 0 && image.height > 0
+      ? "Reported " + image.width + " × " + image.height
+      : "Size unverified";
+
+  return (
+    <article className="hwsi-tile">
+      <button type="button" onClick={() => onInspect(image)}
+        aria-label={"Inspect " + image.title}>
+        <img src={sources[sourceIndex] ?? image.previewUrl} alt=""
+          loading="lazy" referrerPolicy="no-referrer"
+          onLoad={loaded} onError={nextSource}/>
+        <span>{dimensionLabel}</span>
+      </button>
+      <div>
+        <strong title={image.title}>{image.title}</strong>
+        <small>{foundAt} · {image.source}</small>
+        <button type="button" onClick={() => onInspect(image)}>Inspect image</button>
+      </div>
+    </article>
+  );
+}
+
 export default function SavedInterestGallery({
   source, interestSeedId, onSaveToLibrary, onManageCategories,
 }: Props) {
@@ -104,6 +178,10 @@ export default function SavedInterestGallery({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [results, setResults] = useState<Result[]>([]);
+  const [qualityFilter, setQualityFilter] = useState<DiscoveryQualityFilter>("wallpaper");
+  const [brokenPreviews, setBrokenPreviews] = useState<Set<string>>(() => new Set());
+  const [previewDimensions, setPreviewDimensions] =
+    useState<Record<string, ObservedPreviewSize>>({});
   const [sourceFilter, setSourceFilter] = useState("All sources");
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -165,6 +243,8 @@ export default function SavedInterestGallery({
     setPendingSearch(null);
     setBusy(false);
     setResults([]);
+    setBrokenPreviews(new Set());
+    setPreviewDimensions({});
     setErrors([]);
     setSearched(false);
     setSourceFilter("All sources");
@@ -261,6 +341,8 @@ export default function SavedInterestGallery({
     setBusy(true);
     setSearched(false);
     setResults([]);
+    setBrokenPreviews(new Set());
+    setPreviewDimensions({});
     setErrors([]);
     setSourceFilter("All sources");
     const found: Result[] = [];
@@ -338,9 +420,30 @@ export default function SavedInterestGallery({
     setSearched(true);
   }
 
-  const shown = sourceFilter === "All sources" ? results :
-    results.filter((item) => item.foundAt === sourceFilter);
-  const sourceLabels = [...new Set(results.map((item) => item.foundAt))];
+  const usableResults = results.filter(({ image }) => !brokenPreviews.has(image.id));
+  const qualityResults = qualityFilter === "all" ? usableResults :
+    usableResults.filter(({ image }) =>
+      isWallpaperCandidate(image, previewDimensions[image.id]));
+  const hiddenByQuality = usableResults.length - qualityResults.length;
+  const shown = sourceFilter === "All sources" ? qualityResults :
+    qualityResults.filter((item) => item.foundAt === sourceFilter);
+  const sourceLabels = [...new Set(qualityResults.map((item) => item.foundAt))];
+
+  function markBrokenPreview(id: string) {
+    setBrokenPreviews((before) => {
+      if (before.has(id)) return before;
+      const next = new Set(before);
+      next.add(id);
+      return next;
+    });
+  }
+  function trackPreview(id: string, size: ObservedPreviewSize) {
+    setPreviewDimensions((before) => {
+      const old = before[id];
+      if (old?.width === size.width && old.height === size.height) return before;
+      return { ...before, [id]: size };
+    });
+  }
   const activeSites = selected ? linkedWebsites(selected, interests) : [];
   const profilePrefs: InterestPreferences | null = selected ? preferencesFor(selected) : null;
   const visibleKinds: InterestKind[] = source === "sports"
@@ -454,11 +557,23 @@ export default function SavedInterestGallery({
 
       <div className="hwsi-results-heading">
         <div>
-          <h2>Discoveries <small>{results.length} images</small></h2>
-          <p>One grid for Google, provider, and website results. Duplicates are removed by image URL.</p>
+          <h2>Discoveries <small>{qualityResults.length} images</small></h2>
+          <p>Combined sources, URL deduplication, and preview checks. Original image size is verified when inspected.</p>
         </div>
         <button type="button" disabled={review.length === 0}
           onClick={() => setShowReview(true)}>Review selection · {review.length}</button>
+      </div>
+      <div className="hwsi-quality-controls" role="group"
+        aria-label="Filter discovered image quality">
+        <button type="button" className={qualityFilter === "wallpaper" ? "active" : ""}
+          aria-pressed={qualityFilter === "wallpaper"}
+          onClick={() => setQualityFilter("wallpaper")}>Wallpaper candidates</button>
+        <button type="button" className={qualityFilter === "all" ? "active" : ""}
+          aria-pressed={qualityFilter === "all"}
+          onClick={() => setQualityFilter("all")}>All images</button>
+        <small>{hiddenByQuality > 0 ? hiddenByQuality + " non-wallpaper images hidden · " : ""}
+          {brokenPreviews.size > 0 ? brokenPreviews.size + " broken previews removed · " : ""}
+          Only inspected originals have verified resolution</small>
       </div>
       {sourceLabels.length > 0 && <div className="hwsi-filters" role="group" aria-label="Filter results by source">
         {["All sources", ...sourceLabels].map((label) =>
@@ -468,30 +583,20 @@ export default function SavedInterestGallery({
       </div>}
       {shown.length > 0 ? (
         <div className="hwsi-grid">
-          {shown.map(({ image, foundAt }) => <article key={urlIdentity(image)} className="hwsi-tile">
-            <button type="button" onClick={() => setInspect(image)}
-              aria-label={"Inspect " + image.title}>
-              <img src={image.previewUrl} alt="" loading="lazy" referrerPolicy="no-referrer"
-                onError={(event) => {
-                  const img = event.currentTarget;
-                  if (image.originalUrl && img.src !== image.originalUrl) {
-                    img.src = image.originalUrl;
-                  } else {
-                    img.style.opacity = "0";
-                  }
-                }}/>
-              <span>{image.width > 0 ? image.width + " × " + image.height : "Artwork"}</span>
-            </button>
-            <div><strong title={image.title}>{image.title}</strong><small>{foundAt} · {image.source}</small>
-              <button type="button" onClick={() => setInspect(image)}>Inspect image</button></div>
-          </article>)}
+          {shown.map(({ image, foundAt }) => (
+            <DiscoveryCard key={image.id} image={image} foundAt={foundAt}
+              onInspect={setInspect} onUnavailable={markBrokenPreview}
+              onPreviewLoaded={trackPreview}/>
+          ))}
         </div>
       ) : (
         <div className="hwsi-empty">
           <strong>{busy ? "Collecting image results…" :
             searched ? "No suitable images found" : "Ready to discover"}</strong>
-          <p>{searched ? "Try a wider time range, a different keyword, or another saved source." :
-            "Choose an interest and click Find wallpapers to search its configured websites."}</p>
+          <p>{qualityFilter === "wallpaper" && usableResults.length > 0 && shown.length === 0
+            ? "Try All images to see small graphics and images with unverified source dimensions."
+            : searched ? "Try a wider time range, a different keyword, or another saved source."
+              : "Choose an interest and click Find wallpapers to search its configured websites."}</p>
         </div>
       )}
       <p className="hwsi-disclaimer">Search results are previews, not permission to reuse an image.
