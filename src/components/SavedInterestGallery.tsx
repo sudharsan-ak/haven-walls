@@ -7,7 +7,7 @@ import {
   loadPersonalizationWithMigration, linkedWebsites, preferencesFor,
   familyForKind, kindLabel, type InterestPreferences, type SearchWindow,
 } from "../lib/interestProfiles";
-import type { FollowedInterest } from "../lib/personalization";
+import type { FollowedInterest, InterestKind } from "../lib/personalization";
 import FullResolutionPreview from "./FullResolutionPreview";
 import ConfirmDialog from "./ConfirmDialog";
 import "./SavedInterestGallery.css";
@@ -243,6 +243,11 @@ export default function SavedInterestGallery({
   const sourceLabels = [...new Set(results.map((item) => item.foundAt))];
   const activeSites = selected ? linkedWebsites(selected, interests) : [];
   const profilePrefs: InterestPreferences | null = selected ? preferencesFor(selected) : null;
+  const visibleKinds: InterestKind[] = source === "sports"
+    ? ["league", "team", "player"]
+    : source === "tmdb"
+      ? ["tv", "movie"]
+      : ["league", "team", "player", "tv", "movie", "place"];
   const heading = source === "sports" ? "Sports Interests" :
     source === "tmdb" ? "TV & Movies" : "Discover";
 
@@ -270,9 +275,7 @@ export default function SavedInterestGallery({
               </option>}
               {scope.length === 0 && source !== "discover" &&
                 <option value="">No saved interests</option>}
-              {(source === "sports" ? ["league", "team", "player"] :
-                source === "tmdb" ? ["tv", "movie"] :
-                  ["league", "team", "player", "tv", "movie", "place"]).map((kind) => {
+              {visibleKinds.map((kind) => {
                 const group = scope.filter((item) => item.kind === kind);
                 return group.length > 0 ? <optgroup key={kind} label={kindLabel(kind) + "s"}>
                   {group.map((item) => <option key={item.id} value={item.id}>

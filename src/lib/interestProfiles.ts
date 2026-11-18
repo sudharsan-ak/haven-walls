@@ -184,11 +184,14 @@ export async function loadPersonalizationWithMigration() {
           typeof item.name !== "string" || typeof item.prompt !== "string" ||
           !item.name.trim() || item.name.length > 60 ||
           item.prompt.length < 2 || item.prompt.length > 160) continue;
+        // Copy validated primitive fields before the callback, so the
+        // string type stays narrowed across closure boundaries.
+        const categoryName = item.name;
         const providerId = "legacy-discover-" + item.id;
         if (snapshot.followedInterests.some((saved) =>
           saved.providerId === providerId ||
           (saved.kind === "place" &&
-            saved.title.toLowerCase() === item.name.toLowerCase())
+            saved.title.toLowerCase() === categoryName.toLowerCase())
         )) continue;
         await saveFollowedInterest({
           kind: "place", provider: "custom", providerId,
