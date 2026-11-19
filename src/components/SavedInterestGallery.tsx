@@ -20,6 +20,7 @@ import {
   type DiscoveryQualityFilter, type ObservedPreviewSize,
 } from "../lib/discoveryImageQuality";
 import "./SavedInterestGallery.css";
+import "./GalleryResultViewer.css";
 
 interface Props {
   source: CatalogSourceId;
@@ -605,6 +606,10 @@ export default function SavedInterestGallery({
 
       {inspect && <FullResolutionPreview image={inspect}
         onClose={() => setInspect(null)}
+        navigation={{
+          images: shown.map(({ image }) => image),
+          onSelect: setInspect,
+        }}
         onAddToLibrary={(image) => { queueImage(image); setInspect(null); }}/>}
       {showReview && (
         <div className="hwsi-review-backdrop" onMouseDown={(event) => {

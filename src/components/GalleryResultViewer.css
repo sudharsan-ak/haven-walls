@@ -1,0 +1,200 @@
+/* PR #10: Gallery results browser. Uses the same image-first layout,
+   filmstrip and arrow-navigation conventions as the existing Library viewer.
+   Scoped to discovery preview only; regular FullResolutionPreview is unchanged. */
+.online-gallery-viewer.online-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 395px);
+  grid-template-rows: minmax(0, 1fr);
+  width: min(1510px, calc(100vw - 44px));
+  height: min(900px, calc(100dvh - 44px));
+  max-height: calc(100dvh - 44px);
+  overflow: hidden;
+  border-radius: 18px;
+}
+.online-gallery-viewer .online-gallery-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 36%, #243f57, #0c1b2a 72%);
+  isolation: isolate;
+}
+.online-gallery-viewer .online-gallery-stage > .online-gallery-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+.online-gallery-viewer .online-gallery-stage.is-fill > .online-gallery-art {
+  object-fit: cover;
+}
+.online-gallery-viewer .online-gallery-stage > .online-hires-unavailable {
+  max-width: 430px;
+  color: #f0f7fd;
+  padding: 24px;
+}
+.online-gallery-display {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  right: 68px;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  background: #10283ecc;
+  border: 1px solid #c5dff52f;
+  border-radius: 9px;
+  backdrop-filter: blur(8px);
+}
+.online-gallery-display button {
+  border: 0;
+  background: transparent;
+  color: #c6d7e7;
+  font-size: 11px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.online-gallery-display button.active {
+  color: #14446b;
+  background: #eaf5ff;
+  font-weight: 750;
+}
+.online-gallery-viewer .online-gallery-stage > .online-close {
+  top: 18px;
+  right: 18px;
+  z-index: 4;
+}
+.online-gallery-arrow {
+  position: absolute;
+  z-index: 3;
+  top: 46%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 56px;
+  background: #0c2139bb;
+  color: white;
+  font-size: 32px;
+  line-height: 1;
+  border: 1px solid #c4d6e042;
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.online-gallery-arrow.prev { left: 17px; }
+.online-gallery-arrow.next { right: 17px; }
+.online-gallery-arrow:hover:not(:disabled) { background: #1673bbdd; }
+.online-gallery-arrow:disabled { opacity: .3; cursor: default; }
+.online-gallery-film {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 44px 22px 19px;
+  color: #fff;
+  background: linear-gradient(transparent, #081521ed 75%);
+}
+.online-gallery-film-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.online-gallery-film-heading strong {
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 750;
+}
+.online-gallery-film-heading span {
+  color: #a7c2d4;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.online-gallery-filmstrip {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  scrollbar-width: thin;
+}
+.online-gallery-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 86px;
+  width: 86px;
+  height: 57px;
+  padding: 0;
+  overflow: hidden;
+  color: #d9e6f1;
+  font-size: 10px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #284054;
+  opacity: .72;
+  cursor: pointer;
+}
+.online-gallery-viewer .online-gallery-thumb img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+}
+.online-gallery-thumb.active {
+  opacity: 1;
+  border-color: #51b7fc;
+}
+.online-gallery-thumb:hover { opacity: 1; }
+.online-gallery-thumb:focus-visible,
+.online-gallery-arrow:focus-visible,
+.online-gallery-display button:focus-visible {
+  outline: 2px solid #6fc7ff;
+  outline-offset: 2px;
+}
+.online-gallery-viewer .online-hires-footer {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 22px;
+}
+.online-gallery-viewer .online-hires-copy { flex: none; }
+.online-gallery-viewer .online-hires-actions {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 13px;
+  border-top: 1px solid #e6eff5;
+  background: #fff;
+}
+@media (max-width: 840px) {
+  .online-gallery-viewer.online-detail {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(260px, 1fr) minmax(160px, .7fr);
+    height: calc(100dvh - 32px);
+    max-height: calc(100dvh - 32px);
+    width: calc(100vw - 24px);
+  }
+  .online-gallery-viewer .online-gallery-film { padding: 38px 12px 10px; }
+  .online-gallery-arrow.prev { left: 7px; }
+  .online-gallery-arrow.next { right: 7px; }
+  .online-gallery-viewer .online-hires-footer { padding: 13px 16px; }
+}

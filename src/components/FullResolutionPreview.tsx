@@ -12,6 +12,10 @@ interface Props {
   onClose: () => void;
   onAddToLibrary?: (image: CatalogImage) => void;
   addLabel?: string;
+  navigation?: {
+    images: CatalogImage[];
+    onSelect: (image: CatalogImage) => void;
+  };
 }
 
 function isRemote(url: string): boolean {
@@ -23,7 +27,9 @@ function isRemote(url: string): boolean {
  * low-resolution search thumbnail. Actual pixels are read from the displayed
  * HTMLImageElement; we never claim provider metadata is a verified 4K image.
  */
-export default function FullResolutionPreview({ image, onClose, onAddToLibrary, addLabel = "Add to Library" }: Props) {
+export default function FullResolutionPreview({
+  image, onClose, onAddToLibrary, addLabel = "Add to Library", navigation,
+}: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedImage | null>(null);
   const [resolving, setResolving] = useState(true);
@@ -35,6 +41,29 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary, 
   const [checkingOriginal, setCheckingOriginal] = useState(false);
   const [sourceError, setSourceError] = useState("");
   const [copied, setCopied] = useState<"image" | "source" | null>(null);
+  const [viewerMode, setViewerMode] = useState<"fit" | "fill">("fit");
+  const filmstripRef = useRef<HTMLDivElement | null>(null);
+  const galleryResults = navigation?.images ?? [];
+  const currentIndex = navigation
+    ? galleryResults.findIndex((candidate) => candidate.id === image.id) : -1;
+  const canNavigate = currentIndex >= 0 && galleryResults.length > 1;
+
+  function navigate(step: number) {
+    if (!navigation || !canNavigate) return;
+    const nextIndex = (currentIndex + step + galleryResults.length) % galleryResults.length;
+    navigation.onSelect(galleryResults[nextIndex]);
+  }
+
+  useEffect(() => {
+    if (!navigation || currentIndex < 0) return;
+    filmstripRef.current?.querySelector<HTMLElement>(".online-gallery-thumb.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+  }, [image.id, currentIndex, Boolean(navigation)]);
+
+
+  useEffect(() => {
+    setCopied(null);
+  }, [image]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,11 +120,23 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary, 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (!navigation || !canNavigate ||
+          (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement &&
+          target.closest("input, textarea, select, [contenteditable='true']")) return;
+      event.preventDefault();
+      navigate(event.key === "ArrowLeft" ? -1 : 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, navigation, canNavigate, currentIndex, image.id]);
 
   function onLoaded(event: SyntheticEvent<HTMLImageElement>) {
     const element = event.currentTarget;
@@ -134,9 +175,11 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary, 
     <div className="online-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="online-detail" role="dialog" aria-modal="true"
-        aria-label={"Image preview: " + image.title}>
-        <div className="online-detail-image online-hires-preview">
+      <section className={"online-detail" + (navigation ? " online-gallery-viewer" : "")}
+        role="dialog" aria-modal="true" aria-label={"Image preview: " + image.title}>
+        <div className={"online-detail-image online-hires-preview" +
+          (navigation ? " online-gallery-stage" +
+            (viewerMode === "fill" ? " is-fill" : "") : "")}>
           {resolving ? (
             <div className="online-hires-unavailable" role="status">
               <strong>Finding the best available image</strong>
@@ -144,6 +187,7 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary, 
             </div>
           ) : !failed && src ? (
             <img
+              className={navigation ? "online-gallery-art" : undefined}
               src={src}
               alt={image.title}
               referrerPolicy="no-referrer"
@@ -155,6 +199,51 @@ export default function FullResolutionPreview({ image, onClose, onAddToLibrary, 
               <strong>Image could not be loaded</strong>
               <p>The source may block direct access. Try the source website or another image.</p>
             </div>
+          )}
+          {navigation && (
+            <>
+              <div className="online-gallery-display" role="group" aria-label="Image display mode">
+                <button type="button" className={viewerMode === "fit" ? "active" : ""}
+                  aria-pressed={viewerMode === "fit"}
+                  onClick={() => setViewerMode("fit")}>Fit</button>
+                <button type="button" className={viewerMode === "fill" ? "active" : ""}
+                  aria-pressed={viewerMode === "fill"}
+                  onClick={() => setViewerMode("fill")}>Fill</button>
+              </div>
+              <button type="button" className="online-gallery-arrow prev"
+                disabled={!canNavigate} onClick={() => navigate(-1)}
+                aria-label="Previous discovery result"
+                title="Previous image (←)">‹</button>
+              <button type="button" className="online-gallery-arrow next"
+                disabled={!canNavigate} onClick={() => navigate(1)}
+                aria-label="Next discovery result"
+                title="Next image (→)">›</button>
+              <div className="online-gallery-film">
+                <div className="online-gallery-film-heading">
+                  <strong title={image.title}>{image.title}</strong>
+                  <span>{currentIndex >= 0 ? currentIndex + 1 : "?"} / {galleryResults.length}</span>
+                </div>
+                <div className="online-gallery-filmstrip" ref={filmstripRef}
+                  aria-label="Browse the current Gallery results">
+                  {galleryResults.map((candidate) => (
+                    <button type="button" key={candidate.id}
+                      className={"online-gallery-thumb" +
+                        (candidate.id === image.id ? " active" : "")}
+                      aria-current={candidate.id === image.id ? "true" : undefined}
+                      aria-label={"View " + candidate.title}
+                      title={candidate.title} onClick={() => navigation.onSelect(candidate)}>
+                      <img src={candidate.previewUrl} alt="" loading="lazy"
+                        referrerPolicy="no-referrer"
+                        onError={(event) => {
+                          // Keep the thumbnail strip navigable when a host blocks image hotlinking.
+                          event.currentTarget.style.display = "none";
+                        }}/>
+                      <span>Image</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
           <button type="button" className="online-close" onClick={onClose}
             aria-label="Close image preview">×</button>
