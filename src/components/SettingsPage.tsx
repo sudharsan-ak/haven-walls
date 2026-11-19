@@ -30,6 +30,7 @@ interface SettingsPageProps {
   onTabChange: (tab: SettingsTab) => void;
   onBrowseWallpapers: () => void;
   onOpenLibrary: () => void;
+  onOpenCollections: () => void;
 }
 const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "wallpaper", label: "Wallpaper & Display" },
@@ -39,7 +40,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "storage", label: "Storage & Privacy" },
 ];
 export default function SettingsPage({
-  selectedTab, onTabChange, onBrowseWallpapers, onOpenLibrary,
+  selectedTab, onTabChange, onBrowseWallpapers, onOpenLibrary, onOpenCollections,
 }: SettingsPageProps) {
   const [snapshot, setSnapshot] = useState<ConfigurationSnapshot | null>(null);
   const [form, setForm] = useState<AppSettings | null>(null);
@@ -248,7 +249,8 @@ export default function SettingsPage({
       )}
       {selectedTab === "automation" && (
         <div id="hws-panel-automation" role="tabpanel" aria-labelledby="hws-tab-automation">
-          <AutomationSettings onBrowseWallpapers={onBrowseWallpapers} onOpenLibrary={onOpenLibrary} />
+          <AutomationSettings onBrowseWallpapers={onBrowseWallpapers}
+            onOpenLibrary={onOpenLibrary} onOpenCollections={onOpenCollections} />
         </div>
       )}
       {selectedTab === "library" && (

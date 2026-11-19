@@ -12,6 +12,8 @@ export interface RotationPreferences {
   pinned: boolean;
   intervalMinutes: number;
   favoritesOnly: boolean;
+  rotationScope: "all" | "collections";
+  collectionIds: string[];
   cooldownDays: number;
   scheduleMode: "interval" | "daily";
   dailyTime: string;

@@ -25,7 +25,7 @@ type LibraryTab = "wallpapers" | "categories" | "collections";
 
 interface Props {
   revision: number;
-  initialTab?: "wallpapers" | "categories";
+  initialTab?: "wallpapers" | "categories" | "collections";
   /** Optional Dashboard deep-link: open the selected wallpaper's details. */
   focusWallpaperId?: string | null;
   onFocusHandled?: () => void;

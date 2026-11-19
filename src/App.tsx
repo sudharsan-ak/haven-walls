@@ -46,7 +46,7 @@ export default function App() {
   const [page, setPage] = useState<"dashboard" | "gallery" | "browser" | "library" | "settings">("dashboard");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("automation");
   const [libraryFocusId, setLibraryFocusId] = useState<string | null>(null);
-  const [libraryEntryTab, setLibraryEntryTab] = useState<"wallpapers" | "categories">("wallpapers");
+  const [libraryEntryTab, setLibraryEntryTab] = useState<"wallpapers" | "categories" | "collections">("wallpapers");
   const [galleryInterestId, setGalleryInterestId] = useState<string | null>(null);
 
   function openAutomation() {
@@ -61,6 +61,11 @@ export default function App() {
   function manageCategories() {
     setLibraryFocusId(null);
     setLibraryEntryTab("categories");
+    setPage("library");
+  }
+  function manageCollections() {
+    setLibraryFocusId(null);
+    setLibraryEntryTab("collections");
     setPage("library");
   }
   function openInterestGallery(interest: FollowedInterest) {
@@ -162,7 +167,8 @@ export default function App() {
           {page === "browser" ? null : page === "settings" ? (
             <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab}
               onBrowseWallpapers={() => openGallery(gallerySource)}
-              onOpenLibrary={() => openLibrary()} />
+              onOpenLibrary={() => openLibrary()}
+              onOpenCollections={manageCollections} />
           ) : page === "library" ? (
             <LibraryPage revision={libraryRevision}
               initialTab={libraryEntryTab}

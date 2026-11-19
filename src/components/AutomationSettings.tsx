@@ -11,8 +11,11 @@ function date(unix: number | null): string {
 interface Props {
   onBrowseWallpapers: () => void;
   onOpenLibrary: () => void;
+  onOpenCollections: () => void;
 }
-export default function AutomationSettings({ onBrowseWallpapers, onOpenLibrary }: Props) {
+export default function AutomationSettings({
+  onBrowseWallpapers, onOpenLibrary, onOpenCollections,
+}: Props) {
   const [status, setStatus] = useState<RotationStatus | null>(null);
   useEffect(() => {
     let active = true;
@@ -45,12 +48,16 @@ export default function AutomationSettings({ onBrowseWallpapers, onOpenLibrary }
       {status && status.eligibleCount === 0 && (
         <div className="hwr-empty-pool" role="status">
           <div>
-            <strong>{status.preferences.favoritesOnly
-              ? "No favorite wallpapers ready to rotate"
-              : "Your rotation pool is empty"}</strong>
-            <p>{status.preferences.favoritesOnly
-              ? "Favorite a saved wallpaper in Library, or switch off Favorites only."
-              : "Save a wallpaper in Library or enable approved discovery to build an offline reserve."}</p>
+            <strong>{status.preferences.rotationScope === "collections"
+              ? "No wallpapers in the selected collections are ready to rotate"
+              : status.preferences.favoritesOnly
+                ? "No favorite wallpapers ready to rotate"
+                : "Your rotation pool is empty"}</strong>
+            <p>{status.preferences.rotationScope === "collections"
+              ? "Add eligible landscape wallpapers to your chosen collections or change the rotation selection. Haven Walls won't use unrelated reserve images."
+              : status.preferences.favoritesOnly
+                ? "Favorite a saved wallpaper in Library, or switch off Favorites only."
+                : "Save a wallpaper in Library or enable approved discovery to build an offline reserve."}</p>
           </div>
           <div className="hwr-empty-pool-actions">
             <button type="button" onClick={onOpenLibrary}>Open Library</button>
@@ -58,7 +65,7 @@ export default function AutomationSettings({ onBrowseWallpapers, onOpenLibrary }
           </div>
         </div>
       )}
-      <RotationPanel onStatusChange={setStatus} />
+      <RotationPanel onStatusChange={setStatus} onOpenCollections={onOpenCollections} />
       <BackgroundPanel />
       <p className="hws-settings-footnote">Library wallpapers are preferred. Only verified public-domain/CC0 images can enter the unattended reserve. Existing Windows wallpaper files and Library originals remain protected.</p>
     </div>
