@@ -472,6 +472,11 @@ fn create_snapshot_at(conn: &Connection, paths: &DataPaths,
             .map_err(|e| format!("Could not write backup manifest: {e}"))?;
         f.write_all(&data).map_err(|e| e.to_string())?;
         f.sync_all().map_err(|e| e.to_string())?;
+        // Windows does not allow renaming the staging directory while the
+        // manifest file still has an open write handle. sync_all() flushes
+        // bytes but does NOT close that handle; drop it before verification
+        // and promotion.
+        drop(f);
         let _verified = verify_archive(&staging)?;
         fs::rename(&staging, &final_path)
             .map_err(|e| format!("Could not finalize verified backup: {e}"))?;
