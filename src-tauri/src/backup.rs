@@ -474,7 +474,8 @@ fn perform(app: &AppHandle, automatic: bool) -> Result<BackupStatus, String> {
                     "INSERT INTO backup_history(name,path,created_unix,kind,bytes,file_count)
                      VALUES(?1,?2,?3,?4,?5,?6)",
                     params![record.name, record.path, record.created_unix, record.kind,
-                        record.bytes, record.file_count],
+                        i64::try_from(record.bytes).map_err(|_| "Backup size exceeds SQLite INTEGER range.")?,
+                        i64::try_from(record.file_count).map_err(|_| "Backup file count exceeds SQLite INTEGER range.")?],
                 ).map_err(|e| format!("Backup saved but history update failed: {e}"))?;
                 if automatic {
                     state.next_due_unix = Some(next_due(now(), &state.preferences));
@@ -574,7 +575,7 @@ fn native_folder_picker() -> Result<Option<String>, String> {
             FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
         };
         unsafe {
-            CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()
                 .map_err(|e| format!("Could not initialize folder picker: {e}"))?;
             let result = (|| {
                 let dialog: IFileOpenDialog =
@@ -592,7 +593,7 @@ fn native_folder_picker() -> Result<Option<String>, String> {
                 let path = item.GetDisplayName(SIGDN_FILESYSPATH)
                     .map_err(|e| e.to_string())?;
                 let value = path.to_string().map_err(|e| e.to_string());
-                CoTaskMemFree(path.0 as _);
+                CoTaskMemFree(Some(path.0.cast()));
                 value.map(Some)
             })();
             CoUninitialize();
