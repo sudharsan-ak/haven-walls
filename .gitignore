@@ -12,6 +12,9 @@ vite.config.d.ts
 #PLAN & docs
 PLAN
 
+#Backups
+Backups
+
 # Rust / Tauri build outputs
 src-tauri/target/
 src-tauri/gen/schemas/
