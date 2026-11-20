@@ -39,13 +39,16 @@ pub struct BackupPreferences {
     /// "full" or "settings"
     pub backup_type: String,
     pub retention: u32,
+    /// Number of pre-restore recovery snapshots to retain, independent of
+    /// scheduled/manual backup retention. Range 1..=10.
+    pub recovery_retention: u32,
 }
 impl Default for BackupPreferences {
     fn default() -> Self {
         Self {
             enabled: false, destination: String::new(), frequency: "daily".into(),
             time: "02:00".into(), weekday: 7, interval_minutes: 1440,
-            backup_type: "full".into(), retention: 3,
+            backup_type: "full".into(), retention: 3, recovery_retention: 3,
         }
     }
 }
@@ -66,6 +69,9 @@ impl BackupPreferences {
         }
         if !(1..=30).contains(&self.retention) {
             return Err("Keep between 1 and 30 successful backups.".into());
+        }
+        if !(1..=10).contains(&self.recovery_retention) {
+            return Err("Keep between 1 and 10 recovery snapshots.".into());
         }
         if self.backup_type != "full" && self.backup_type != "settings" {
             return Err("Choose Full Library or Settings only.".into());
@@ -108,6 +114,8 @@ pub struct BackupStatus {
     last_success_unix: Option<i64>,
     last_error: Option<String>,
     history: Vec<BackupRecord>,
+    recovery_folder: String,
+    recovery_count: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -339,12 +347,115 @@ fn list_history(conn: &Connection) -> Result<Vec<BackupRecord>, String> {
     }).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
-fn status(conn: &Connection) -> Result<BackupStatus, String> {
+/// The recovery folder always belongs to the active Haven Walls storage
+/// profile (AppData or portable). It is deliberately not the user's backup
+/// destination and it may contain current-Windows-account credentials.
+pub(crate) fn recovery_folder(paths: &DataPaths) -> PathBuf {
+    paths.root.join("recovery")
+}
+
+fn check_recovery_folder(paths: &DataPaths, create: bool)
+    -> Result<Option<PathBuf>, String> {
+    let folder = recovery_folder(paths);
+    if create {
+        fs::create_dir_all(&folder)
+            .map_err(|e| format!("Cannot create recovery snapshot folder: {e}"))?;
+    } else if !folder.exists() {
+        return Ok(None);
+    }
+    let metadata = fs::symlink_metadata(&folder)
+        .map_err(|e| format!("Cannot inspect recovery snapshot folder: {e}"))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("The recovery snapshot location is not a regular folder.".into());
+    }
+    Ok(Some(folder))
+}
+
+/// Only recognize Haven Walls' own nanosecond-stamped *full* snapshot folders.
+/// A sibling, symlink, staging folder or a malformed manifest is never pruned.
+fn recovery_candidates(paths: &DataPaths) -> Result<Vec<(String, PathBuf)>, String> {
+    let Some(folder) = check_recovery_folder(paths, false)? else {
+        return Ok(Vec::new());
+    };
+    let mut candidates = Vec::new();
+    for item in fs::read_dir(&folder)
+        .map_err(|e| format!("Cannot inspect recovery snapshots: {e}"))? {
+        let item = item.map_err(|e| e.to_string())?;
+        let name = item.file_name().to_string_lossy().to_string();
+        let Some(stamp) = name.strip_prefix(PREFIX)
+            .and_then(|v| v.strip_suffix("-full.hwbackup")) else { continue; };
+        if stamp.len() != 20 || !stamp.bytes().all(|b| b.is_ascii_digit()) { continue; }
+        let metadata = fs::symlink_metadata(item.path()).map_err(|e| e.to_string())?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() { continue; }
+        let Ok(content) = fs::read(item.path().join("manifest.json")) else { continue; };
+        let Ok(manifest) = serde_json::from_slice::<Manifest>(&content) else { continue; };
+        if manifest.format_version != FORMAT || manifest.app != "haven-walls" ||
+            manifest.kind != "full" { continue; }
+        candidates.push((name, item.path()));
+    }
+    candidates.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+    Ok(candidates)
+}
+
+/// Prune only after a successful verified restore, or when the user explicitly
+/// saves a smaller retention count. Keep the just-created recovery snapshot
+/// even if system clock changes make its folder name sort out of order.
+/// Never delete a snapshot whose manifest/checksums fail verification.
+pub(crate) fn prune_recovery_snapshots(paths: &DataPaths, keep: u32,
+                                     protected: Option<&Path>) -> Result<usize, String> {
+    if !(1..=10).contains(&keep) {
+        return Err("Keep between 1 and 10 recovery snapshots.".into());
+    }
+    let entries = recovery_candidates(paths)?;
+    if entries.is_empty() { return Ok(0); }
+
+    // A verified snapshot must be available before anything is discarded.
+    // Damaged snapshots are left untouched for possible manual inspection.
+    let mut verified = Vec::new();
+    for (_, path) in entries {
+        if verify_archive(&path).is_ok() {
+            verified.push(path);
+        }
+    }
+    let protected = match protected {
+        Some(path) => {
+            if !verified.iter().any(|candidate| candidate == path) {
+                return Err("New recovery snapshot could not be verified; no older snapshots were deleted.".into());
+            }
+            Some(path)
+        }
+        None => None,
+    };
+    if verified.is_empty() { return Ok(0); }
+    // Reserve one of the N slots for the newly-created snapshot even if
+    // its timestamp sorts behind others after a system clock adjustment.
+    let mut retained = usize::from(protected.is_some());
+    let mut removed = 0usize;
+    for path in verified {
+        if protected == Some(path.as_path()) { continue; }
+        if retained < keep as usize {
+            retained += 1;
+            continue;
+        }
+        fs::remove_dir_all(&path)
+            .map_err(|e| format!("Could not remove old recovery snapshot: {e}"))?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+pub(crate) fn recovery_retention(conn: &Connection) -> Result<u32, String> {
+    Ok(load(conn)?.preferences.recovery_retention)
+}
+
+fn status(conn: &Connection, paths: &DataPaths) -> Result<BackupStatus, String> {
     let data = load(conn)?;
     Ok(BackupStatus {
         preferences: data.preferences, next_due_unix: data.next_due_unix,
         last_success_unix: data.last_success_unix, last_error: data.last_error,
         history: list_history(conn)?,
+        recovery_folder: recovery_folder(paths).display().to_string(),
+        recovery_count: recovery_candidates(paths)?.len(),
     })
 }
 fn with_db<T>(app: &AppHandle,
@@ -399,9 +510,8 @@ fn create_snapshot(conn: &Connection, paths: &DataPaths,
 /// This is intentionally not available as a user-supplied backup destination.
 pub(crate) fn create_recovery_snapshot(conn: &Connection,
                                       paths: &DataPaths) -> Result<std::path::PathBuf, String> {
-    let recovery = paths.root.join("recovery");
-    fs::create_dir_all(&recovery)
-        .map_err(|e| format!("Cannot create pre-restore recovery folder: {e}"))?;
+    let recovery = check_recovery_folder(paths, true)?
+        .ok_or_else(|| "Recovery folder is unavailable.".to_string())?;
     let prefs = BackupPreferences {
         backup_type: "full".into(),
         destination: recovery.display().to_string(),
@@ -496,7 +606,7 @@ fn perform(app: &AppHandle, automatic: bool) -> Result<BackupStatus, String> {
         if automatic {
             if !state.preferences.enabled ||
                state.next_due_unix.map(|due| due > now()).unwrap_or(true) {
-                return status(conn);
+                return status(conn, paths);
             }
         }
         let result = create_snapshot(conn, paths, &state.preferences);
@@ -529,7 +639,7 @@ fn perform(app: &AppHandle, automatic: bool) -> Result<BackupStatus, String> {
                         save(conn, &state)?;
                     }
                 }
-                status(conn)
+                status(conn, paths)
             }
             Err(problem) => {
                 state.last_error = Some(problem.clone());
@@ -545,7 +655,7 @@ fn perform(app: &AppHandle, automatic: bool) -> Result<BackupStatus, String> {
 
 #[tauri::command]
 pub fn get_backup_status(app: AppHandle) -> Result<BackupStatus, String> {
-    with_db(&app, |conn, _| status(conn))
+    with_db(&app, |conn, paths| status(conn, paths))
 }
 #[tauri::command]
 pub fn save_backup_preferences(app: AppHandle,
@@ -556,11 +666,15 @@ pub fn save_backup_preferences(app: AppHandle,
     with_db(&app, |conn, paths| {
         // Users must be able to disable scheduling even when a previously
         // selected USB or network drive is currently disconnected.
-        if preferences.enabled {
-            verify_destination(&preferences.destination, paths)?;
-        }
         let mut state = load(conn)?;
         let previous = state.preferences.clone();
+        // Do not block recovery-retention updates when an already-selected
+        // backup drive is temporarily disconnected. Validate an enabled
+        // destination when first enabled or when the folder changes.
+        if preferences.enabled && (!previous.enabled ||
+            previous.destination != preferences.destination) {
+            verify_destination(&preferences.destination, paths)?;
+        }
         if !preferences.enabled {
             state.next_due_unix = None;
         } else if !previous.enabled || previous.frequency != preferences.frequency ||
@@ -573,13 +687,45 @@ pub fn save_backup_preferences(app: AppHandle,
         state.preferences = preferences;
         state.last_error = None;
         save(conn, &state)?;
-        status(conn)
+        if previous.recovery_retention != state.preferences.recovery_retention {
+            // Apply the new limit to old snapshots immediately. A cleanup
+            // problem must not misreport the already-saved preference as lost.
+            if let Err(warning) = prune_recovery_snapshots(
+                paths, state.preferences.recovery_retention, None,
+            ) {
+                state.last_error = Some(format!("Recovery snapshot cleanup: {warning}"));
+                save(conn, &state)?;
+            }
+        }
+        status(conn, paths)
     })
 }
 #[tauri::command]
 pub async fn backup_now(app: AppHandle) -> Result<BackupStatus, String> {
     tauri::async_runtime::spawn_blocking(move || perform(&app, false))
         .await.map_err(|_| "Backup worker was interrupted.".to_string())?
+}
+
+/// Open this app profile's recovery folder in File Explorer. The path is
+/// derived from DataPaths, not provided by the frontend.
+#[tauri::command]
+pub fn open_recovery_folder(app: AppHandle) -> Result<(), String> {
+    let paths = local_storage::current_paths(&app)?;
+    let folder = check_recovery_folder(&paths, true)?
+        .ok_or_else(|| "Recovery folder is unavailable.".to_string())?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(&folder)
+            .spawn()
+            .map_err(|e| format!("Could not open recovery folder in File Explorer: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = folder;
+        Err("Opening the recovery folder is supported in the Windows app.".into())
+    }
 }
 
 /// The folder picker uses a dedicated STA thread so it remains usable even
@@ -671,6 +817,64 @@ mod tests {
         p.retention = 31;
         assert!(p.validate().is_err());
     }
+    #[test]
+    fn recovery_retention_default_and_legacy_profiles() {
+        let legacy: BackupPreferences = serde_json::from_str(
+            r#"{"enabled":false,"retention":2}"#,
+        ).unwrap();
+        assert_eq!(legacy.recovery_retention, 3);
+        assert!(legacy.validate().is_ok());
+        let mut settings = legacy.clone();
+        for valid in [1, 3, 10] {
+            settings.recovery_retention = valid;
+            assert!(settings.validate().is_ok());
+        }
+        for invalid in [0, 11, 100] {
+            settings.recovery_retention = invalid;
+            assert!(settings.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn recovery_cleanup_only_removes_verified_old_snapshots() {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "haven-recovery-retention-{}-{nonce}", std::process::id()
+        ));
+        let paths = DataPaths { root, mode: local_storage::StorageMode::AppData };
+        local_storage::prepare_folders(&paths).unwrap();
+        let conn = app_settings::open_database(&paths).unwrap();
+        let first = create_recovery_snapshot(&conn, &paths).unwrap();
+        let second = create_recovery_snapshot(&conn, &paths).unwrap();
+        let third = create_recovery_snapshot(&conn, &paths).unwrap();
+        assert_eq!(recovery_candidates(&paths).unwrap().len(), 3);
+        let removed = prune_recovery_snapshots(&paths, 2, Some(&third)).unwrap();
+        assert_eq!(removed, 1);
+        assert!(!first.exists());
+        assert!(second.exists());
+        assert!(third.exists());
+        // A later retention change takes effect without another restore.
+        assert_eq!(prune_recovery_snapshots(&paths, 1, None).unwrap(), 1);
+        assert!(!second.exists());
+        assert!(third.exists());
+
+        // A damaged snapshot must never be silently deleted by retention.
+        let fourth = create_recovery_snapshot(&conn, &paths).unwrap();
+        std::fs::write(fourth.join("manifest.json"), b"corrupted").unwrap();
+        let fifth = create_recovery_snapshot(&conn, &paths).unwrap();
+        assert_eq!(prune_recovery_snapshots(&paths, 1, Some(&fifth)).unwrap(), 1);
+        assert!(!third.exists());
+        assert!(fourth.exists());
+        assert!(fifth.exists());
+
+        // The protected snapshot must be verifiable before pruning anything.
+        assert!(prune_recovery_snapshots(&paths, 1, Some(&fourth)).is_err());
+        assert!(fifth.exists());
+        drop(conn);
+        fs::remove_dir_all(&paths.root).unwrap();
+    }
+
     #[test]
     fn intervals_and_fixed_schedules_are_future_dated() {
         let baseline = now();

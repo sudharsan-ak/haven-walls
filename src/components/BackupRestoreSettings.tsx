@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  backupNow, chooseBackupFolder, getBackupStatus, saveBackupPreferences,
+  backupNow, chooseBackupFolder, getBackupStatus, openRecoveryFolder, saveBackupPreferences,
   type BackupPreferences, type BackupStatus,
 } from "../lib/backup";
 import { formattedBytes } from "../lib/configuration";
@@ -24,7 +24,7 @@ export default function BackupRestoreSettings() {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [draft, setDraft] = useState<BackupPreferences | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"save" | "backup" | "browse" | null>(null);
+  const [busy, setBusy] = useState<"save" | "backup" | "browse" | "open" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const editedRef = useRef(false);
@@ -80,6 +80,17 @@ export default function BackupRestoreSettings() {
     } catch (problem) {
       setError(describeError(problem));
     } finally { setBusy(null); }
+  }
+  async function openRecovery() {
+    if (busy) return;
+    setBusy("open"); setError("");
+    try {
+      await openRecoveryFolder();
+    } catch (problem) {
+      setError(describeError(problem));
+    } finally {
+      setBusy(null);
+    }
   }
   async function runBackup() {
     if (busy || !status || changed) return;
@@ -236,7 +247,7 @@ export default function BackupRestoreSettings() {
           Copying and checking your backup. Wallpaper and settings operations may
           briefly pause until the snapshot finishes.</p>}
         {status.lastError && <p className="hwb-warning" role="status">
-          Last backup warning: {status.lastError}</p>}
+          Last backup or recovery warning: {status.lastError}</p>}
         <h3>Recent successful backups</h3>
         {status.history.length === 0 ? (
           <p className="hwb-muted">No backups created yet.</p>
@@ -261,6 +272,51 @@ export default function BackupRestoreSettings() {
           temporary caches, browser profiles and Windows-bound API credentials are excluded.</p>
       </section>
       <BackupRestorePanel history={status.history} />
+      <section className="hwb-panel hwb-recovery-panel" aria-labelledby="hwb-recovery-title">
+        <div className="hwb-heading">
+          <div>
+            <h2 id="hwb-recovery-title">Recovery snapshots</h2>
+            <p>Haven Walls saves a safety copy before each Merge or Replace.
+              These are separate from your scheduled backups.</p>
+          </div>
+          <span className="hwb-recovery-count">
+            {status.recoveryCount} snapshot{status.recoveryCount === 1 ? "" : "s"} stored
+          </span>
+        </div>
+        <div className="hwb-recovery-location">
+          <div className="hwb-recovery-path" >
+            <span className="hwb-recovery-label">Recovery folder on this PC</span>
+            <code title={status.recoveryFolder}>{status.recoveryFolder}</code>
+          </div>
+          <button type="button" className="hwb-secondary"
+            disabled={busy !== null} onClick={() => void openRecovery()}>
+            Open in File Explorer
+          </button>
+        </div>
+        <div className="hwb-recovery-controls">
+          <div className="hwb-field">
+            <label htmlFor="hwb-recovery-retention">Keep latest recovery snapshots</label>
+            <select id="hwb-recovery-retention" value={draft.recoveryRetention}
+              disabled={busy !== null}
+              onChange={(event) => edit("recoveryRetention", Number(event.target.value))}>
+              {Array.from({ length: 10 }, (_, index) => index + 1).map((count) => (
+                <option key={count} value={count}>{count}</option>
+              ))}
+            </select>
+          </div>
+          <p className="hwb-muted">Default: 3. When saved or after a successful restore,
+            Haven Walls removes older verified recovery snapshots beyond this limit.
+            A failed restore never triggers cleanup.</p>
+          <button type="button" className="hwb-primary"
+            disabled={busy !== null || !changed || (draft.enabled && !hasDestination)}
+            onClick={() => void save()}>
+            {busy === "save" ? "Saving…" : "Save backup settings"}
+          </button>
+        </div>
+        <p className="hwb-muted">Recovery snapshots may contain local API credentials.
+          They stay inside your Haven Walls application data and are not
+          included in automatic backup retention.</p>
+      </section>
       {error && <p className="hwb-error" role="alert">{error}</p>}
       {notice && <p className="hwb-success" role="status">{notice}</p>}
     </div>

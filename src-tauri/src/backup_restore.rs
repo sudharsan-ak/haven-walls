@@ -484,17 +484,31 @@ fn restore_locked(conn: &Connection, paths: &DataPaths, folder: &Path,
         return Err(format!("{problem} A pre-restore recovery copy is stored at {}.",
             recovery.display()));
     }
+    // Restore has successfully committed. Only now enforce recovery
+    // retention. A cleanup warning must not turn a successful restore into
+    // an error or delete the new snapshot that protects this operation.
+    let cleanup_warning = backup::recovery_retention(conn)
+        .and_then(|keep| backup::prune_recovery_snapshots(
+            paths, keep, Some(&recovery),
+        ).map(|_| ()))
+        .err();
+    let mut notice = if mode == "merge" {
+        "Merge complete. Existing favorites, app settings, rotation schedule, pause/pin state and bookmarks were preserved. Reopen Haven Walls to refresh newly imported Library items.".to_owned()
+    } else {
+        "Replace complete. Quit and reopen Haven Walls to refresh every view. Automatic wallpaper rotation is paused until you resume it.".to_owned()
+    };
+    if let Some(warning) = cleanup_warning {
+        notice.push_str(&format!(
+            " The restore succeeded, but older recovery snapshots could not be cleaned up: {warning}"
+        ));
+    }
     Ok(RestoreResult {
         mode: mode.into(), kind: manifest.kind.clone(),
         restored_images: if manifest.kind == "full" {
             manifest.files.iter().filter(|f| f.path.starts_with("library/")).count()
         } else { 0 },
         recovery_path: recovery.display().to_string(),
-        notice: if mode == "merge" {
-            "Merge complete. Existing favorites, app settings, rotation schedule, pause/pin state and bookmarks were preserved. Reopen Haven Walls to refresh newly imported Library items.".into()
-        } else {
-            "Replace complete. Quit and reopen Haven Walls to refresh every view. Automatic wallpaper rotation is paused until you resume it.".into()
-        },
+        notice,
     })
 }
 fn now_nanos() -> u128 {

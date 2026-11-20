@@ -152,6 +152,7 @@ pub fn run() {
             backup::save_backup_preferences,
             backup::backup_now,
             backup::choose_backup_folder,
+            backup::open_recovery_folder,
             backup_restore::preview_backup_restore,
             backup_restore::restore_backup,
             wallpaper_library::import_wallpaper_data,

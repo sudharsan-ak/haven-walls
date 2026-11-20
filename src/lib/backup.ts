@@ -15,6 +15,7 @@ export interface BackupPreferences {
   intervalMinutes: number;
   backupType: BackupKind;
   retention: number;
+  recoveryRetention: number;
 }
 export interface BackupRecord {
   name: string;
@@ -30,6 +31,8 @@ export interface BackupStatus {
   lastSuccessUnix: number | null;
   lastError: string | null;
   history: BackupRecord[];
+  recoveryFolder: string;
+  recoveryCount: number;
 }
 function desktop() {
   if (!isTauri()) throw new Error("Backups require Haven Walls for Windows.");
@@ -49,6 +52,10 @@ export async function backupNow(): Promise<BackupStatus> {
 export async function chooseBackupFolder(): Promise<string | null> {
   desktop();
   return invoke<string | null>("choose_backup_folder");
+}
+export async function openRecoveryFolder(): Promise<void> {
+  desktop();
+  return invoke<void>("open_recovery_folder");
 }
 
 /** A preview is deliberately read-only. It verifies hashes and the source DB. */
