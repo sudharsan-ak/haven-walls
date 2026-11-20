@@ -7,11 +7,13 @@ use std::{
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use chrono::{Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveTime, TimeZone, Weekday};
+use chrono::{Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveTime, TimeZone};
+#[cfg(test)]
+use chrono::Weekday;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 use crate::{app_settings, local_storage::{self, DataPaths, StorageLock}};
 
 const FORMAT: u32 = 1;
@@ -321,10 +323,20 @@ fn list_history(conn: &Connection) -> Result<Vec<BackupRecord>, String> {
         "SELECT name, path, created_unix, kind, bytes, file_count
          FROM backup_history ORDER BY created_unix DESC, id DESC LIMIT 20"
     ).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |r| Ok(BackupRecord {
-        name: r.get(0)?, path: r.get(1)?, created_unix: r.get(2)?,
-        kind: r.get(3)?, bytes: r.get(4)?, file_count: r.get(5)?,
-    })).map_err(|e| e.to_string())?;
+    // SQLite INTEGER values are signed i64. rusqlite cannot deserialize
+    // straight into u64 or usize, so check the range before converting.
+    let rows = stmt.query_map([], |r| {
+        let bytes: i64 = r.get(4)?;
+        let file_count: i64 = r.get(5)?;
+        Ok(BackupRecord {
+            name: r.get(0)?, path: r.get(1)?, created_unix: r.get(2)?,
+            kind: r.get(3)?,
+            bytes: u64::try_from(bytes)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(4, bytes))?,
+            file_count: usize::try_from(file_count)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(5, file_count))?,
+        })
+    }).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 fn status(conn: &Connection) -> Result<BackupStatus, String> {
@@ -722,6 +734,28 @@ mod tests {
         assert!(verify_archive(Path::new(&record.path)).is_ok());
         drop(conn);
         fs::remove_dir_all(sandbox).unwrap();
+    }
+
+    #[test]
+    fn backup_history_reads_signed_sqlite_integers_as_safe_unsigned_counts() {
+        let conn = Connection::open_in_memory().unwrap();
+        load(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO backup_history(name,path,created_unix,kind,bytes,file_count)
+             VALUES('test','C:/test.hwbackup',12345,'full',4096,3)",
+            [],
+        ).unwrap();
+        let history = list_history(&conn).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].bytes, 4096_u64);
+        assert_eq!(history[0].file_count, 3_usize);
+
+        // Reject malformed negative database values instead of wrapping them.
+        conn.execute(
+            "UPDATE backup_history SET bytes=-1 WHERE name='test'",
+            [],
+        ).unwrap();
+        assert!(list_history(&conn).is_err());
     }
 
     #[test]
