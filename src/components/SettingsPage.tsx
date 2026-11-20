@@ -9,6 +9,7 @@ import "./SettingsPage.css";
 import ConfirmDialog from "./ConfirmDialog";
 import ApiCredentialsSettings from "./ApiCredentialsSettings";
 import AutomationSettings from "./AutomationSettings";
+import BackupRestoreSettings from "./BackupRestoreSettings";
 
 const WALLPAPER_FITS: { value: WallpaperFit; label: string }[] = [
   { value: "smartFit", label: "Smart Fit (recommended)" },
@@ -24,7 +25,7 @@ function statusMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export type SettingsTab = "wallpaper" | "automation" | "library" | "sources" | "storage";
+export type SettingsTab = "wallpaper" | "automation" | "library" | "sources" | "storage" | "backup";
 interface SettingsPageProps {
   selectedTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
@@ -38,6 +39,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "library", label: "Library & Quality" },
   { key: "sources", label: "Sources" },
   { key: "storage", label: "Storage & Privacy" },
+  { key: "backup", label: "Backup & Restore" },
 ];
 export default function SettingsPage({
   selectedTab, onTabChange, onBrowseWallpapers, onOpenLibrary, onOpenCollections,
@@ -426,7 +428,12 @@ export default function SettingsPage({
 
         </div>
       )}
-      {(selectedTab !== "automation" || changed) && (
+      {selectedTab === "backup" && (
+        <div id="hws-panel-backup" role="tabpanel" aria-labelledby="hws-tab-backup">
+          <BackupRestoreSettings />
+        </div>
+      )}
+      {(selectedTab !== "automation" && selectedTab !== "backup" || changed) && (
         <>
       <div className="hws-settings-actions">
         <div className="hws-settings-status" aria-live="polite">
