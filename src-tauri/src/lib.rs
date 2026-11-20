@@ -8,6 +8,7 @@ mod windows_wallpaper;
 mod rotation;
 mod rotation_discovery;
 mod backup;
+mod backup_restore;
 mod desktop_background;
 #[cfg(windows)]
 mod desktop_single_instance;
@@ -151,6 +152,8 @@ pub fn run() {
             backup::save_backup_preferences,
             backup::backup_now,
             backup::choose_backup_folder,
+            backup_restore::preview_backup_restore,
+            backup_restore::restore_backup,
             wallpaper_library::import_wallpaper_data,
             wallpaper_library::import_wallpaper_url,
             wallpaper_library::best_source::import_best_wallpaper_urls,

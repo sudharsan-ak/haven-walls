@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invalidateDashboardWallpaperCache } from "./lib/dashboardPreviewCache";
 import { type CatalogSourceId } from "./lib/native";
 import WindowChrome from "./components/WindowChrome";
 import SidebarIcon from "./components/SidebarIcon";
-import OnlineGallery from "./components/OnlineGallery";
-import BrowserPage from "./components/BrowserPage";
-import SettingsPage, { type SettingsTab } from "./components/SettingsPage";
-import LibraryPage from "./components/LibraryPage";
-import DashboardPage from "./components/DashboardPage";
+import type { SettingsTab } from "./components/SettingsPage";
+// Load each workspace only when needed. The Browser remains mounted between
+// tabs once loaded, retaining the existing background session behavior.
+const OnlineGallery = lazy(() => import("./components/OnlineGallery"));
+const BrowserPage = lazy(() => import("./components/BrowserPage"));
+const SettingsPage = lazy(() => import("./components/SettingsPage"));
+const LibraryPage = lazy(() => import("./components/LibraryPage"));
+const DashboardPage = lazy(() => import("./components/DashboardPage"));
 import LibraryImportDialog from "./components/LibraryImportDialog";
 import type { ImportItemResult } from "./components/LibraryImportDialog";
 import ApplyWallpaperDialog from "./components/ApplyWallpaperDialog";
@@ -160,10 +163,13 @@ export default function App() {
         </aside>
 
         <main className={"content" + (page === "browser" ? " content-browser" : "")}>
-          <BrowserPage active={page === "browser"}
-            blockingDialogOpen={importRequest !== null || applyCandidate !== null}
-            onSaveToLibrary={beginBrowserImport}
-            importCompletion={browserImportCompletion} />
+          <Suspense fallback={null}>
+            <BrowserPage active={page === "browser"}
+              blockingDialogOpen={importRequest !== null || applyCandidate !== null}
+              onSaveToLibrary={beginBrowserImport}
+              importCompletion={browserImportCompletion} />
+          </Suspense>
+          <Suspense fallback={<p role="status" className="page-loading">Loading workspace…</p>}>
           {page === "browser" ? null : page === "settings" ? (
             <SettingsPage selectedTab={settingsTab} onTabChange={setSettingsTab}
               onBrowseWallpapers={() => openGallery(gallerySource)}
@@ -202,6 +208,7 @@ export default function App() {
             onDiscoverByCategory={() => openGallery("discover")}
           />
           )}
+          </Suspense>
         </main>
       </div>
       {importRequest && (

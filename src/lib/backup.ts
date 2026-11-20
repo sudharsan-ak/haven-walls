@@ -50,3 +50,37 @@ export async function chooseBackupFolder(): Promise<string | null> {
   desktop();
   return invoke<string | null>("choose_backup_folder");
 }
+
+/** A preview is deliberately read-only. It verifies hashes and the source DB. */
+export interface RestorePreview {
+  backupPath: string;
+  manifestHash: string;
+  createdUnix: number;
+  kind: BackupKind;
+  bytes: number;
+  imageCount: number;
+  categoryCount: number;
+  collectionCount: number;
+  interestCount: number;
+  warning: string;
+}
+export type RestoreMode = "merge" | "replace";
+export interface RestoreResult {
+  mode: RestoreMode;
+  kind: BackupKind;
+  restoredImages: number;
+  recoveryPath: string;
+  notice: string;
+}
+export async function previewBackupRestore(path: string): Promise<RestorePreview> {
+  desktop();
+  return invoke<RestorePreview>("preview_backup_restore", { path });
+}
+export async function restoreBackup(
+  preview: RestorePreview, mode: RestoreMode,
+): Promise<RestoreResult> {
+  desktop();
+  return invoke<RestoreResult>("restore_backup", {
+    path: preview.backupPath, manifestHash: preview.manifestHash, mode,
+  });
+}

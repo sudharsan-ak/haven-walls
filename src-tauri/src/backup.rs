@@ -92,12 +92,12 @@ struct Stored {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupRecord {
-    name: String,
-    path: String,
-    created_unix: i64,
-    kind: String,
-    bytes: u64,
-    file_count: usize,
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) created_unix: i64,
+    pub(crate) kind: String,
+    pub(crate) bytes: u64,
+    pub(crate) file_count: usize,
 }
 
 #[derive(Serialize)]
@@ -112,19 +112,19 @@ pub struct BackupStatus {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Manifest {
-    format_version: u32,
-    app: String,
-    created_unix: i64,
-    kind: String,
-    files: Vec<ManifestFile>,
+pub(crate) struct Manifest {
+    pub(crate) format_version: u32,
+    pub(crate) app: String,
+    pub(crate) created_unix: i64,
+    pub(crate) kind: String,
+    pub(crate) files: Vec<ManifestFile>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ManifestFile {
-    path: String,
-    bytes: u64,
-    sha256: String,
+pub(crate) struct ManifestFile {
+    pub(crate) path: String,
+    pub(crate) bytes: u64,
+    pub(crate) sha256: String,
 }
 
 fn now() -> i64 {
@@ -274,7 +274,7 @@ fn record_file(staging: &Path, relative: &str, src: &Path,
     Ok(())
 }
 
-fn verify_archive(dir: &Path) -> Result<BackupRecord, String> {
+pub(crate) fn verify_archive(dir: &Path) -> Result<BackupRecord, String> {
     let manifest_path = dir.join("manifest.json");
     owned_file(&manifest_path)?;
     let manifest: Manifest = serde_json::from_slice(&fs::read(&manifest_path)
@@ -391,6 +391,31 @@ fn create_snapshot(conn: &Connection, paths: &DataPaths,
                    prefs: &BackupPreferences) -> Result<BackupRecord, String> {
     prefs.validate()?;
     let destination = verify_destination(&prefs.destination, paths)?;
+    create_snapshot_at(conn, paths, prefs, &destination, false)
+}
+
+/// Internal recovery snapshots are stored under the local app-owned root so
+/// they are never pruned by the user's ordinary backup retention schedule.
+/// This is intentionally not available as a user-supplied backup destination.
+pub(crate) fn create_recovery_snapshot(conn: &Connection,
+                                      paths: &DataPaths) -> Result<std::path::PathBuf, String> {
+    let recovery = paths.root.join("recovery");
+    fs::create_dir_all(&recovery)
+        .map_err(|e| format!("Cannot create pre-restore recovery folder: {e}"))?;
+    let prefs = BackupPreferences {
+        backup_type: "full".into(),
+        destination: recovery.display().to_string(),
+        ..BackupPreferences::default()
+    };
+    // Recovery stays within the existing Windows profile and must preserve
+    // live Windows-bound credential ciphertext for a complete rollback.
+    let record = create_snapshot_at(conn, paths, &prefs, &recovery, true)?;
+    Ok(PathBuf::from(record.path))
+}
+
+fn create_snapshot_at(conn: &Connection, paths: &DataPaths,
+                      prefs: &BackupPreferences,
+                      destination: &Path, preserve_credentials: bool) -> Result<BackupRecord, String> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?.as_nanos();
     let name = format!("{PREFIX}{stamp:020}-{}{SUFFIX}", prefs.backup_type);
@@ -408,12 +433,14 @@ fn create_snapshot(conn: &Connection, paths: &DataPaths,
         // Credential ciphertext is Windows-user-bound and must NOT be shipped
         // in either backup type. Clear it in the COPY, never the live DB.
         let snapshot = Connection::open(&db_path).map_err(|e| e.to_string())?;
-        snapshot.execute("DELETE FROM api_credentials", [])
-            .map_err(|e| format!("Could not remove API keys from backup: {e}"))?;
-        // A DELETE alone can leave ciphertext in SQLite free pages.
-        // Rewrite the sanitized COPY to discard those pages too.
-        snapshot.execute_batch("VACUUM;")
-            .map_err(|e| format!("Could not sanitize backup database: {e}"))?;
+        if !preserve_credentials {
+            snapshot.execute("DELETE FROM api_credentials", [])
+                .map_err(|e| format!("Could not remove API keys from backup: {e}"))?;
+            // A DELETE alone can leave ciphertext in SQLite free pages.
+            // Rewrite the sanitized COPY to discard those pages too.
+            snapshot.execute_batch("VACUUM;")
+                .map_err(|e| format!("Could not sanitize backup database: {e}"))?;
+        }
         drop(snapshot);
         let mut files = Vec::new();
         let (db_bytes, db_sha) = digest(&db_path)?;

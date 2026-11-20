@@ -50,8 +50,6 @@ struct ApprovedImage {
     page_url: String,
     title: String,
     license: String,
-    width: u32,
-    height: u32,
 }
 
 fn field<'a>(item: &'a Value, key: &str) -> &'a str {
@@ -117,7 +115,7 @@ fn parse_commons(data: &Value, min_width: u32, min_height: u32) -> Vec<ApprovedI
         if title.trim().is_empty() { continue; }
         result.push(ApprovedImage {
             url: parsed.to_string(), page_url: source.to_string(), title,
-            license, width: width as u32, height: height as u32,
+            license,
         });
     }
     result

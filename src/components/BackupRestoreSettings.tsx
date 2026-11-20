@@ -4,6 +4,7 @@ import {
   type BackupPreferences, type BackupStatus,
 } from "../lib/backup";
 import { formattedBytes } from "../lib/configuration";
+import BackupRestorePanel from "./BackupRestorePanel";
 import BackupTimeSelector from "./BackupTimeSelector";
 import "./BackupRestoreSettings.css";
 
@@ -259,18 +260,7 @@ export default function BackupRestoreSettings() {
           Full backups contain the SQLite database and managed Library originals;
           temporary caches, browser profiles and Windows-bound API credentials are excluded.</p>
       </section>
-      <section className="hwb-panel" aria-labelledby="hwb-restore-title">
-        <div className="hwb-heading">
-          <div>
-            <h2 id="hwb-restore-title">Restore from a backup</h2>
-            <p>Backup inspection, preview, Merge and Replace will be added in
-              PR #11 Commit 2, after backup creation is tested.</p>
-          </div>
-          <button type="button" className="hwb-secondary" disabled>Restore…</button>
-        </div>
-        <p className="hwb-muted">No restore operations are enabled in this commit.
-          Keep your generated backup folders safe for the next step.</p>
-      </section>
+      <BackupRestorePanel history={status.history} />
       {error && <p className="hwb-error" role="alert">{error}</p>}
       {notice && <p className="hwb-success" role="status">{notice}</p>}
     </div>
