@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getPersonalization, type NamedGroup } from "../lib/personalization";
 import type { WallpaperApplyResult } from "../lib/windowsWallpaper";
 import {
   getRotationStatus, rotateNextWallpaper, saveRotationPreferences,
@@ -33,8 +34,9 @@ function localDate(unix: number | null): string {
 interface Props {
   onApplied?: (result: WallpaperApplyResult) => void;
   onStatusChange?: (status: RotationStatus) => void;
+  onOpenCollections?: () => void;
 }
-export default function RotationPanel({ onApplied, onStatusChange }: Props) {
+export default function RotationPanel({ onApplied, onStatusChange, onOpenCollections }: Props) {
   const [status, setStatus] = useState<RotationStatus | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -43,6 +45,14 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
   const [customDays, setCustomDays] = useState("30");
   const [dailyDraft, setDailyDraft] = useState("09:00");
   const [topicsOpen, setTopicsOpen] = useState(false);
+  const [collections, setCollections] = useState<NamedGroup[]>([]);
+  const [collectionCounts, setCollectionCounts] = useState<Record<string, number>>({});
+  const [collectionsLoading, setCollectionsLoading] = useState(true);
+  const [collectionsError, setCollectionsError] = useState("");
+  const [scopeDraft, setScopeDraft] = useState<RotationPreferences["rotationScope"]>("all");
+  const [collectionIdsDraft, setCollectionIdsDraft] = useState<string[]>([]);
+  const [selectionOpen, setSelectionOpen] = useState(false);
+  const editingScope = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -52,6 +62,10 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
         setCustomMinutes(String(value.preferences.intervalMinutes));
         setCustomDays(String(value.preferences.cooldownDays));
         setDailyDraft(value.preferences.dailyTime);
+        if (!editingScope.current) {
+          setScopeDraft(value.preferences.rotationScope);
+          setCollectionIdsDraft(value.preferences.collectionIds);
+        }
       }
     }).catch((reason: unknown) => {
       if (live) setError(errorMessage(reason));
@@ -66,8 +80,27 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
     return () => { live = false; window.clearInterval(timer); };
   }, [busy]);
 
-  async function savePatch(patch: Partial<RotationPreferences>) {
-    if (!status || busy) return;
+  useEffect(() => {
+    let live = true;
+    void getPersonalization().then((snapshot) => {
+      if (!live) return;
+      setCollections(snapshot.collections);
+      const counts: Record<string, number> = {};
+      for (const link of snapshot.wallpaperCollections) {
+        counts[link.groupId] = (counts[link.groupId] ?? 0) + 1;
+      }
+      setCollectionCounts(counts);
+      setCollectionsError("");
+    }).catch((reason: unknown) => {
+      if (live) setCollectionsError(errorMessage(reason));
+    }).finally(() => {
+      if (live) setCollectionsLoading(false);
+    });
+    return () => { live = false; };
+  }, []);
+
+  async function savePatch(patch: Partial<RotationPreferences>): Promise<boolean> {
+    if (!status || busy) return false;
     setBusy(true);
     setError("");
     setNotice("");
@@ -79,12 +112,24 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
       setCustomDays(String(updated.preferences.cooldownDays));
       setDailyDraft(updated.preferences.dailyTime);
       setNotice("Rotation preferences saved.");
+      return true;
     } catch (reason) {
       setError(errorMessage(reason));
+      return false;
     } finally {
       setBusy(false);
     }
   }
+
+  async function applyCollectionSelection() {
+    if (busy || collectionsLoading || collectionsError ||
+        (scopeDraft === "collections" && collectionIdsDraft.length === 0)) return;
+    const saved = await savePatch({
+      rotationScope: scopeDraft, collectionIds: collectionIdsDraft,
+    });
+    if (saved) editingScope.current = false;
+  }
+
   async function next() {
     if (busy) return;
     setBusy(true);
@@ -105,6 +150,12 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
   }
 
   const prefs = status?.preferences;
+  const selectionChanged = Boolean(prefs &&
+    (scopeDraft !== prefs.rotationScope ||
+      JSON.stringify([...collectionIdsDraft].sort()) !==
+      JSON.stringify([...prefs.collectionIds].sort())));
+  const missingCollections = collectionIdsDraft.filter(
+    (id) => !collections.some((group) => group.id === id));
   const selectedTopics = prefs?.discoveryTopics ?? [];
   const allTopicsSelected = selectedTopics.length === DISCOVERY_TOPICS.length;
   const lastDiscoveryLabel = status?.lastDiscoveryOutcome === "saved"
@@ -213,6 +264,95 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
               Favorites only
             </label>
           </div>
+          <section className="hwr-collection-scope" aria-label="Rotation collection selection">
+            <div className="hwr-collection-heading">
+              <div>
+                <strong>Rotate wallpapers from</strong>
+                <p>Use your entire Library or only the saved wallpapers in selected collections.
+                  Collection rotation never substitutes unrelated offline reserve images.</p>
+              </div>
+              <span>{status.eligibleCount} eligible</span>
+            </div>
+            <div className="hwr-scope-radios" role="radiogroup" aria-label="Wallpaper rotation pool">
+              <label>
+                <input type="radio" name="hwr-scope" value="all" checked={scopeDraft === "all"}
+                  disabled={busy || collectionsLoading}
+                  onChange={() => { editingScope.current = true; setScopeDraft("all"); }}/>
+                Entire Library
+              </label>
+              <label>
+                <input type="radio" name="hwr-scope" value="collections"
+                  checked={scopeDraft === "collections"}
+                  disabled={busy || collectionsLoading || Boolean(collectionsError)}
+                  onChange={() => {
+                    editingScope.current = true;
+                    setScopeDraft("collections");
+                    setSelectionOpen(true);
+                  }}/>
+                Selected collections
+              </label>
+            </div>
+            {scopeDraft === "collections" && (
+              <div className="hwr-collection-picker">
+                <button type="button" className="hwr-collection-trigger"
+                  aria-expanded={selectionOpen} aria-controls="hwr-collection-options"
+                  disabled={busy || collectionsLoading}
+                  onClick={() => setSelectionOpen((open) => !open)}>
+                  {collectionIdsDraft.length} collection{collectionIdsDraft.length === 1 ? "" : "s"} selected
+                  <span aria-hidden="true">{selectionOpen ? "▴" : "▾"}</span>
+                </button>
+                {selectionOpen && (
+                  <div id="hwr-collection-options" className="hwr-collection-options"
+                    role="group" aria-label="Choose saved wallpaper collections">
+                    {collections.length === 0 && !collectionsLoading && (
+                      <p>No collections yet. Create one under Library → Collections, then add saved wallpapers.</p>
+                    )}
+                    {collections.map((group) => (
+                      <label key={group.id} className="hwr-collection-option">
+                        <input type="checkbox" disabled={busy}
+                          checked={collectionIdsDraft.includes(group.id)}
+                          onChange={(event) => {
+                            editingScope.current = true;
+                            const checked = event.target.checked;
+                            setCollectionIdsDraft((before) => checked
+                              ? [...before, group.id]
+                              : before.filter((id) => id !== group.id));
+                          }}/>
+                        <span>{group.name}</span>
+                        <small>{collectionCounts[group.id] ?? 0} saved</small>
+                      </label>
+                    ))}
+                    {missingCollections.length > 0 && (
+                      <div className="hwr-collection-missing" role="status">
+                        {missingCollections.length} previously selected collection(s) no longer exist.
+                        <button type="button" disabled={busy}
+                          onClick={() => {
+                            editingScope.current = true;
+                            setCollectionIdsDraft((before) =>
+                              before.filter((id) => !missingCollections.includes(id)));
+                          }}>Remove missing</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {collectionsError && <p className="hwr-error" role="alert">
+              Could not read saved collections: {collectionsError}</p>}
+            {scopeDraft === "collections" && collectionIdsDraft.length === 0 && (
+              <p className="hwr-note">Choose at least one collection to enable this mode.</p>
+            )}
+            <div className="hwr-scope-actions">
+              {onOpenCollections && <button type="button" onClick={onOpenCollections}
+                className="hwr-secondary">Manage collections in Library</button>}
+              <button type="button" className="hwr-primary"
+                disabled={busy || collectionsLoading || Boolean(collectionsError) ||
+                  !selectionChanged || (scopeDraft === "collections" && collectionIdsDraft.length === 0)}
+                onClick={() => void applyCollectionSelection()}>
+                {busy ? "Saving…" : "Apply rotation selection"}
+              </button>
+            </div>
+          </section>
           <div className="hwr-actions">
             <button type="button" disabled={busy} className={prefs.enabled ? "hwr-secondary" : "hwr-primary"}
               onClick={() => void savePatch({ enabled: !prefs.enabled })}>
@@ -228,7 +368,8 @@ export default function RotationPanel({ onApplied, onStatusChange }: Props) {
             </button>
             <button type="button" disabled={busy || prefs.pinned ||
                 (status.eligibleCount === 0 &&
-                  (!prefs.enabled || !prefs.discoveryEnabled || prefs.favoritesOnly))}
+                  (prefs.rotationScope === "collections" ||
+                    !prefs.enabled || !prefs.discoveryEnabled || prefs.favoritesOnly))}
               className="hwr-primary"
               onClick={() => void next()}>
               {busy ? "Working…" : "Next wallpaper"}

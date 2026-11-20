@@ -14,23 +14,30 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import ApplyWallpaperDialog from "./ApplyWallpaperDialog";
 import ConfirmDialog from "./ConfirmDialog";
+import LibraryOrganization, { WallpaperOrganizationEditor } from "./LibraryOrganization";
+import InterestCategories from "./InterestCategories";
+import { type FollowedInterest, type PersonalizationSnapshot } from "../lib/personalization";
+import { loadPersonalizationWithMigration } from "../lib/interestProfiles";
 import "./LibraryPage.css";
 
 type Filter = "all" | "favorites" | "4k" | "portrait";
+type LibraryTab = "wallpapers" | "categories" | "collections";
 
 interface Props {
   revision: number;
+  initialTab?: "wallpapers" | "categories" | "collections";
   /** Optional Dashboard deep-link: open the selected wallpaper's details. */
   focusWallpaperId?: string | null;
   onFocusHandled?: () => void;
   onDiscover: () => void;
+  onDiscoverInterest: (interest: FollowedInterest) => void;
   onReverseSearch: (image: LibraryWallpaper) => void;
   onSaveToLibrary: (images: CatalogImage[]) => void;
 }
 
 export default function LibraryPage({
-  revision, focusWallpaperId, onFocusHandled,
-  onDiscover, onReverseSearch, onSaveToLibrary,
+  revision, initialTab = "wallpapers", focusWallpaperId, onFocusHandled,
+  onDiscover, onDiscoverInterest, onReverseSearch, onSaveToLibrary,
 }: Props) {
   const [items, setItems] = useState<LibraryWallpaper[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +50,15 @@ export default function LibraryPage({
   const [openCardMenu, setOpenCardMenu] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [activeTab, setActiveTab] = useState<LibraryTab>(initialTab);
   const [selected, setSelected] = useState<LibraryWallpaper | null>(null);
+  const [editingOrganization, setEditingOrganization] = useState<LibraryWallpaper | null>(null);
+  const [organization, setOrganization] = useState<PersonalizationSnapshot | null>(null);
+  const [organizationError, setOrganizationError] = useState("");
+  const [organizationLoading, setOrganizationLoading] = useState(true);
+  const [organizationRevision, setOrganizationRevision] = useState(0);
+  const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [applyItem, setApplyItem] = useState<LibraryWallpaper | null>(null);
   const [activity, setActivity] = useState<WallpaperActivity | null>(null);
   const [activityError, setActivityError] = useState("");
@@ -81,6 +96,21 @@ export default function LibraryPage({
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
   }, []);
+
+  // Group membership belongs to SQLite, not the Gallery's discovery-topic profiles.
+  useEffect(() => {
+    let active = true;
+    setOrganizationLoading(true);
+    void loadPersonalizationWithMigration().then((data) => {
+      if (!active) return;
+      setOrganization(data);
+      setOrganizationError("");
+    }).catch((problem: unknown) => {
+      if (!active) return;
+      setOrganizationError(problem instanceof Error ? problem.message : String(problem));
+    }).finally(() => { if (active) setOrganizationLoading(false); });
+    return () => { active = false; };
+  }, [revision, organizationRevision]);
 
   function importLocalFiles(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.currentTarget.files || []).slice(0, 30);
@@ -229,8 +259,14 @@ export default function LibraryPage({
     if (filter === "favorites" && !item.favorite) return false;
     if (filter === "4k" && qualityTier(item.width, item.height) !== "4K+") return false;
     if (filter === "portrait" && !(item.height > item.width)) return false;
+    if (collectionFilter && !organization?.wallpaperCollections.some(
+      (entry) => entry.wallpaperId === item.id && entry.groupId === collectionFilter
+    )) return false;
+    if (categoryFilter && !organization?.wallpaperCategories.some(
+      (entry) => entry.wallpaperId === item.id && entry.groupId === categoryFilter
+    )) return false;
     return true;
-  }), [items, filter, search]);
+  }), [items, filter, search, collectionFilter, categoryFilter, organization]);
 
   // Filmstrip shows every item in the current filter, scrolling when the
   // collection outgrows the stage. The selected image is kept in view.
@@ -305,6 +341,7 @@ export default function LibraryPage({
       setOpenedOriginal("");
       setNotice("Removed wallpaper from the managed Library.");
       setPendingRemoval(null);
+      setOrganizationRevision((value) => value + 1);
     } catch (problem) {
       const message = problem instanceof Error ? problem.message : String(problem);
       setError(message);
@@ -421,6 +458,27 @@ export default function LibraryPage({
     }
   }
 
+  function showCollection(id: string | null) {
+    setCollectionFilter(id);
+    setCategoryFilter(null);
+    setFilter("all");
+    setSearch("");
+    setActiveTab("wallpapers");
+  }
+
+  function showCategory(id: string | null) {
+    setCategoryFilter(id);
+    setCollectionFilter(null);
+    setFilter("all");
+    setSearch("");
+    setActiveTab("wallpapers");
+  }
+
+  const activeGroup = collectionFilter
+    ? organization?.collections.find((group) => group.id === collectionFilter)
+    : categoryFilter
+      ? organization?.categories.find((group) => group.id === categoryFilter)
+      : null;
   const totalBytes = items.reduce((sum, image) => sum + image.bytes, 0);
   return (
     <section className="hwl-page">
@@ -430,6 +488,25 @@ export default function LibraryPage({
         Your saved wallpapers stay available without an internet connection.
         These are managed copies, separate from source originals and temporary discovery cache.
       </p>
+      <nav className="hwl-library-tabs" role="tablist" aria-label="Library sections">
+        <button type="button" id="hwl-tab-wallpapers" role="tab"
+          aria-selected={activeTab === "wallpapers"}
+          aria-controls="hwl-panel-wallpapers"
+          className={activeTab === "wallpapers" ? "selected" : ""}
+          onClick={() => setActiveTab("wallpapers")}>Wallpapers</button>
+        <button type="button" id="hwl-tab-categories" role="tab"
+          aria-selected={activeTab === "categories"}
+          aria-controls="hwl-panel-categories"
+          className={activeTab === "categories" ? "selected" : ""}
+          onClick={() => setActiveTab("categories")}>Categories</button>
+        <button type="button" id="hwl-tab-collections" role="tab"
+          aria-selected={activeTab === "collections"}
+          aria-controls="hwl-panel-collections"
+          className={activeTab === "collections" ? "selected" : ""}
+          onClick={() => setActiveTab("collections")}>Collections</button>
+      </nav>
+      <div id="hwl-panel-wallpapers" role="tabpanel"
+        aria-labelledby="hwl-tab-wallpapers" hidden={activeTab !== "wallpapers"}>
       <div className="hwl-summary">
         <div><span>Saved wallpapers</span><strong>{items.length}</strong></div>
         <div><span>Favorites</span><strong>{items.filter((item) => item.favorite).length}</strong></div>
@@ -459,6 +536,17 @@ export default function LibraryPage({
           </div>
         </section>
       )}
+      {(collectionFilter || categoryFilter) && (
+        <div className="hwl-active-group" role="status">
+          <span>Showing {collectionFilter ? "collection" : "category"}:
+            <strong>{activeGroup?.name ?? "Selected group"}</strong>
+          </span>
+          <button type="button" onClick={() => {
+            setCollectionFilter(null);
+            setCategoryFilter(null);
+          }}>Show all wallpapers</button>
+        </div>
+      )}
       <div className="hwl-controls">
         <input type="search" value={search}
           placeholder="Search title, provider, or photographer…"
@@ -484,14 +572,19 @@ export default function LibraryPage({
       {!loading && !error && visible.length === 0 && (
         <div className="hwl-empty">
           <span className="hwl-empty-symbol" aria-hidden="true">{items.length ? "⌕" : "▧"}</span>
-          <strong>{items.length ? "Nothing matches your search" : "Start your wallpaper collection"}</strong>
+          <strong>{items.length
+            ? collectionFilter || categoryFilter ? "No wallpapers in this group" : "Nothing matches your search"
+            : "Start your wallpaper collection"}</strong>
           <p>{items.length
-            ? "Clear your search and filters to see the wallpapers you've saved."
+            ? collectionFilter || categoryFilter
+              ? "Use Organize on a saved wallpaper to add it to this collection or category."
+              : "Clear your search and filters to see the wallpapers you've saved."
             : "Discover wallpapers in Gallery or import photos already saved on your computer."}</p>
           <div className="hwl-empty-actions">
             {items.length ? (
               <button type="button" className="hwl-primary" onClick={() => {
                 setSearch(""); setFilter("all");
+                setCollectionFilter(null); setCategoryFilter(null);
               }}>Clear filters</button>
             ) : (
               <>
@@ -552,6 +645,11 @@ export default function LibraryPage({
                         id={"hwl-menu-" + item.id} aria-label={"Actions for " + item.title}>
                         <button type="button" role="menuitem"
                           onClick={() => void open(item)}>Inspect details</button>
+                        <button type="button" role="menuitem" disabled={!organization}
+                          onClick={() => {
+                            setOpenCardMenu(null);
+                            setEditingOrganization(item);
+                          }}>Add to collections</button>
                         <button type="button" role="menuitem"
                           disabled={!canVerifyRemoval || assignedIds.has(item.id) || Boolean(busyId)}
                           title={assignedIds.has(item.id)
@@ -580,6 +678,25 @@ export default function LibraryPage({
       {activityError && <p className="hwl-error" role="alert">
         Windows wallpaper history is unavailable: {activityError}
       </p>}
+      </div>
+      <div id="hwl-panel-categories" role="tabpanel"
+        aria-labelledby="hwl-tab-categories" hidden={activeTab !== "categories"}>
+        <InterestCategories
+          snapshot={organization} loading={organizationLoading} error={organizationError}
+          onChanged={() => setOrganizationRevision((value) => value + 1)}
+          onPreview={onDiscoverInterest}
+        />
+      </div>
+      <div id="hwl-panel-collections" role="tabpanel"
+        aria-labelledby="hwl-tab-collections" hidden={activeTab !== "collections"}>
+        <LibraryOrganization
+          snapshot={organization} wallpapers={items}
+          loading={organizationLoading} error={organizationError}
+          selectedCollectionId={collectionFilter} selectedCategoryId={categoryFilter}
+          onSelectCollection={showCollection} onSelectCategory={showCategory}
+          onChanged={() => setOrganizationRevision((value) => value + 1)}
+        />
+      </div>
 
       {selected && (
         <div className="hwl-overlay" onMouseDown={(event) => {
@@ -748,6 +865,11 @@ export default function LibraryPage({
                   onClick={() => void toggleFavorite(selected)}>
                   {selected.favorite ? "♥" : "♡"}
                 </button>
+                <button type="button" className="hwl-organize-action"
+                  disabled={Boolean(busyId) || !organization}
+                  onClick={() => setEditingOrganization(selected)}>
+                  Collections
+                </button>
                 <button type="button" className="hwl-secondary hwl-danger"
                   disabled={Boolean(busyId) || !canVerifyRemoval || assignedIds.has(selected.id)}
                   title={assignedIds.has(selected.id)
@@ -766,6 +888,16 @@ export default function LibraryPage({
             </div>
           </section>
         </div>
+      )}
+      {editingOrganization && organization && (
+        <WallpaperOrganizationEditor key={editingOrganization.id}
+          image={editingOrganization} snapshot={organization}
+          onClose={() => setEditingOrganization(null)}
+          onSaved={() => {
+            setEditingOrganization(null);
+            setOrganizationRevision((value) => value + 1);
+            setNotice("Wallpaper collections saved.");
+          }} />
       )}
       {applyItem && (
         <ApplyWallpaperDialog image={applyItem}

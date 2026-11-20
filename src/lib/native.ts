@@ -86,11 +86,17 @@ export async function browseCategoryImages(
 /** Google Images search. Rust decrypts the saved SerpApi key for this request.
  * Keys are never returned to the frontend and never stored in source files.
  */
+export interface GoogleImageTimeFilter {
+  timeRange?: "any" | "day" | "week" | "month" | "year" | "custom";
+  dateFrom?: string;
+  dateTo?: string;
+}
 export async function browseGoogleImages(
   query: string,
   minWidth: number,
   minHeight: number,
   page = 1,
+  timeFilter: GoogleImageTimeFilter = {},
 ): Promise<CatalogResponse> {
   if (!isTauri()) {
     throw new Error("Google Images browsing requires the Haven Walls Windows application.");
@@ -100,6 +106,7 @@ export async function browseGoogleImages(
     minWidth,
     minHeight,
     page,
+    ...timeFilter,
   });
 }
 

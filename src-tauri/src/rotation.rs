@@ -6,7 +6,7 @@ use crate::{
     windows_wallpaper::{self, ApplyResult},
     rotation_discovery,
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, params_from_iter, types::Value, Connection};
 use chrono::{Days, Duration as ChronoDuration, Local, LocalResult, NaiveTime, TimeZone};
 #[cfg(test)]
 use chrono::Timelike;
@@ -31,6 +31,10 @@ pub struct RotationPreferences {
     pub pinned: bool,
     pub interval_minutes: u32,
     pub favorites_only: bool,
+    /// "all" rotates Library + offline reserve; "collections" restricts to
+    /// managed Library files in the selected collections (no reserve fallback).
+    pub rotation_scope: String,
+    pub collection_ids: Vec<String>,
     pub cooldown_days: u32,
     pub schedule_mode: String,
     pub daily_time: String,
@@ -49,6 +53,8 @@ impl Default for RotationPreferences {
             pinned: false,
             interval_minutes: 1440,
             favorites_only: false,
+            rotation_scope: "all".into(),
+            collection_ids: Vec::new(),
             cooldown_days: 30,
             schedule_mode: "interval".into(),
             daily_time: "09:00".into(),
@@ -61,6 +67,17 @@ impl Default for RotationPreferences {
 }
 impl RotationPreferences {
     fn validate(&self) -> Result<(), String> {
+        if self.rotation_scope != "all" && self.rotation_scope != "collections" {
+            return Err("Choose Entire Library or Selected collections for rotation.".into());
+        }
+        if self.collection_ids.len() > 100 ||
+            self.collection_ids.iter().any(|id| id.is_empty() || id.len() > 128) ||
+            self.collection_ids.iter().collect::<HashSet<_>>().len() != self.collection_ids.len() {
+            return Err("Rotation collections contain an invalid or duplicate ID.".into());
+        }
+        if self.rotation_scope == "collections" && self.collection_ids.is_empty() {
+            return Err("Select at least one collection before enabling collection rotation.".into());
+        }
         if !(15..=10080).contains(&self.interval_minutes) {
             return Err("Rotation interval must be between 15 minutes and 7 days.".into());
         }
@@ -285,25 +302,71 @@ fn choose_next(candidates: &[Candidate], current: &HashSet<String>,
     ).or_else(|| available.first()).map(|image| image.id.clone())
 }
 
-fn candidates(conn: &Connection, paths: &DataPaths,
-              favorites_only: bool) -> Result<Vec<Candidate>, String> {
-    let settings = app_settings::read_settings(conn)?;
-    let (min_long, min_short) = match settings.minimum_resolution.as_str() {
-        "1440p" => (2560, 1440),
-        "4K" => (3840, 2160),
-        _ => (1920, 1080),
-    };
-    let mut stmt = conn.prepare(
+/// Check selected IDs when saving. Deleting a collection later does not
+/// silently switch the saved preference to "all"; the rotation pool becomes
+/// empty until the user explicitly adjusts their collection selection.
+fn validate_selected_collections(
+    conn: &Connection, preferences: &RotationPreferences,
+) -> Result<(), String> {
+    if preferences.rotation_scope != "collections" { return Ok(()); }
+    for id in &preferences.collection_ids {
+        let exists: i64 = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM collections WHERE id=?1)",
+            [id], |row| row.get(0),
+        ).map_err(|e| format!("Could not check selected collection: {e}"))?;
+        if exists == 0 {
+            return Err("A selected collection was deleted. Reopen rotation settings and update your selection.".into());
+        }
+    }
+    Ok(())
+}
+
+/// Dynamic placeholders are generated locally, never interpolated from names.
+/// EXISTS avoids duplicate candidates for a photo in several collections.
+/// The filter runs BEFORE the LIMIT, so old saved images are not excluded.
+fn rotation_candidate_sql(preferences: &RotationPreferences) -> String {
+    let scope = if preferences.rotation_scope == "collections" {
+        let placeholders: Vec<String> = (2..2 + preferences.collection_ids.len())
+            .map(|number| format!("?{number}")).collect();
+        format!(
+            "AND EXISTS (SELECT 1 FROM wallpaper_collections wc
+             WHERE wc.wallpaper_id=w.id AND wc.collection_id IN ({}))",
+            placeholders.join(","),
+        )
+    } else { String::new() };
+    format!(
         "SELECT w.id, w.width, w.height, f.relative_path,
                 COALESCE(CAST(strftime('%s', MAX(e.event_time)) AS INTEGER), 0)
          FROM wallpapers w
          JOIN wallpaper_files f ON f.wallpaper_id=w.id AND f.storage_class='managed'
          LEFT JOIN wallpaper_events e ON e.wallpaper_id=w.id AND e.action='apply'
          WHERE (?1=0 OR w.favorite=1)
+         {scope}
          GROUP BY w.id, w.width, w.height, f.relative_path
          ORDER BY w.created_at DESC, w.id ASC LIMIT 500"
-    ).map_err(|e| format!("Could not inspect Library rotation candidates: {e}"))?;
-    let rows = stmt.query_map(params![favorites_only], |row| {
+    )
+}
+
+fn includes_reserve(preferences: &RotationPreferences) -> bool {
+    preferences.rotation_scope == "all" && !preferences.favorites_only
+}
+
+fn candidates(conn: &Connection, paths: &DataPaths,
+              preferences: &RotationPreferences) -> Result<Vec<Candidate>, String> {
+    let settings = app_settings::read_settings(conn)?;
+    let (min_long, min_short) = match settings.minimum_resolution.as_str() {
+        "1440p" => (2560, 1440),
+        "4K" => (3840, 2160),
+        _ => (1920, 1080),
+    };
+    let sql = rotation_candidate_sql(preferences);
+    let mut stmt = conn.prepare(&sql)
+        .map_err(|e| format!("Could not inspect Library rotation candidates: {e}"))?;
+    let mut bindings = vec![Value::Integer(if preferences.favorites_only { 1 } else { 0 })];
+    if preferences.rotation_scope == "collections" {
+        bindings.extend(preferences.collection_ids.iter().cloned().map(Value::Text));
+    }
+    let rows = stmt.query_map(params_from_iter(bindings.iter()), |row| {
         Ok((
             row.get::<_, String>(0)?, row.get::<_, u32>(1)?,
             row.get::<_, u32>(2)?, row.get::<_, String>(3)?,
@@ -314,8 +377,7 @@ fn candidates(conn: &Connection, paths: &DataPaths,
     for row in rows {
         let (id, width, height, filename, last_used_unix) =
             row.map_err(|e| format!("Could not inspect Library image: {e}"))?;
-        // Automatic selection must not bypass the saved quality threshold.
-        // Only landscape Library originals are eligible for this first version.
+        // Preserve existing quality and on-disk file checks in every mode.
         if width < height || width < min_long || height < min_short { continue; }
         if !["jpg", "png", "webp"].iter().any(|ext|
             filename == format!("{id}.{ext}")) { continue; }
@@ -395,9 +457,9 @@ fn with_storage<T>(app: &AppHandle,
 pub fn get_rotation_status(app: AppHandle) -> Result<RotationStatus, String> {
     with_storage(&app, |conn, paths| {
         let stored = load(conn)?;
-        let library = candidates(conn, paths, stored.preferences.favorites_only)?.len();
+        let library = candidates(conn, paths, &stored.preferences)?.len();
         let reserve = reserve_candidates(conn, paths)?.len();
-        let eligible = library + if stored.preferences.favorites_only { 0 } else { reserve };
+        let eligible = library + if includes_reserve(&stored.preferences) { reserve } else { 0 };
         Ok(RotationStatus::from_store(stored, eligible, reserve))
     })
 }
@@ -411,6 +473,7 @@ pub fn save_rotation_preferences(
     let _gate = gate.0.lock().map_err(|_| "Rotation is busy".to_string())?;
     with_storage(&app, |conn, paths| {
         let mut state = load(conn)?;
+        validate_selected_collections(conn, &preferences)?;
         let before = state.preferences.clone();
         let now = now_unix();
         if !preferences.enabled {
@@ -441,9 +504,9 @@ pub fn save_rotation_preferences(
         state.preferences = preferences;
         if before != state.preferences { state.last_error = None; }
         save(conn, &state)?;
-        let library = candidates(conn, paths, state.preferences.favorites_only)?.len();
+        let library = candidates(conn, paths, &state.preferences)?.len();
         let reserve = reserve_candidates(conn, paths)?.len();
-        let eligible = library + if state.preferences.favorites_only { 0 } else { reserve };
+        let eligible = library + if includes_reserve(&state.preferences) { reserve } else { 0 };
         Ok(RotationStatus::from_store(state, eligible, reserve))
     })
 }
@@ -553,15 +616,18 @@ fn select_candidate(app: &AppHandle, now: i64, force: bool)
             return Ok(None);
         }
         let current = active_ids(conn)?;
-        let library = candidates(conn, paths, state.preferences.favorites_only)?;
+        let library = candidates(conn, paths, &state.preferences)?;
         if let Some(id) = choose_next(&library, &current, now, state.preferences.cooldown_days) {
             return Ok(Some(id));
         }
-        if !state.preferences.favorites_only {
+        if includes_reserve(&state.preferences) {
             let reserve = reserve_candidates(conn, paths)?;
             if let Some(id) = choose_next(&reserve, &current, now, state.preferences.cooldown_days) {
                 return Ok(Some(id));
             }
+        }
+        if state.preferences.rotation_scope == "collections" {
+            return Err("No other eligible wallpaper in the selected collections. Add saved landscape wallpapers to those collections or change the rotation selection.".into());
         }
         Err("No other eligible wallpaper. Add a landscape image to Library or enable automatic discovery to replenish your offline reserve.".into())
     })
@@ -613,8 +679,15 @@ fn rotate_sync(app: &AppHandle, force: bool) -> Result<Option<ApplyResult>, Stri
     // Next with an empty pool can try discovery immediately instead of
     // asking the user to wait for the next scheduled source refresh.
     if force && choice.is_err() {
-        let _ = maybe_replenish(app, now);
-        choice = select_candidate(app, now, force);
+        // Do not launch unrelated reserve discovery when the user's pool
+        // is restricted to selected collections.
+        let may_use_reserve = with_storage(app, |conn, _| {
+            Ok(includes_reserve(&load(conn)?.preferences))
+        }).unwrap_or(false);
+        if may_use_reserve {
+            let _ = maybe_replenish(app, now);
+            choice = select_candidate(app, now, force);
+        }
     }
     let selected = match choice {
         Ok(Some(id)) => id,
@@ -682,6 +755,111 @@ mod tests {
     fn image(id: &str, used: i64) -> Candidate {
         Candidate { id: id.into(), last_used_unix: used }
     }
+    fn collection_fixture() -> (Connection, DataPaths) {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap().as_nanos();
+        let root = std::env::temp_dir().join(
+            format!("haven-walls-collection-rotation-{}-{nonce}", std::process::id())
+        );
+        let paths = DataPaths { root, mode: local_storage::StorageMode::AppData };
+        std::fs::create_dir_all(paths.library()).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             CREATE TABLE app_settings(id INTEGER PRIMARY KEY, json TEXT NOT NULL);
+             CREATE TABLE wallpapers(
+                id TEXT PRIMARY KEY, width INTEGER, height INTEGER,
+                favorite INTEGER, created_at TEXT
+             );
+             CREATE TABLE wallpaper_files(
+                wallpaper_id TEXT, relative_path TEXT, storage_class TEXT
+             );
+             CREATE TABLE wallpaper_events(
+                wallpaper_id TEXT, action TEXT, event_time TEXT
+             );
+             CREATE TABLE collections(id TEXT PRIMARY KEY, name TEXT);
+             CREATE TABLE wallpaper_collections(
+                wallpaper_id TEXT REFERENCES wallpapers(id),
+                collection_id TEXT REFERENCES collections(id) ON DELETE CASCADE,
+                PRIMARY KEY(wallpaper_id, collection_id)
+             );
+             INSERT INTO collections(id,name) VALUES
+                ('warriors','Warriors'), ('nature','Nature');
+             INSERT INTO wallpapers(id,width,height,favorite,created_at) VALUES
+                ('a',2560,1440,1,'2026-11-19'),
+                ('b',2560,1440,0,'2026-11-18'),
+                ('c',600,400,1,'2026-11-17');
+             INSERT INTO wallpaper_files(wallpaper_id,relative_path,storage_class) VALUES
+                ('a','a.jpg','managed'), ('b','b.jpg','managed'),
+                ('c','c.jpg','managed');
+             INSERT INTO wallpaper_collections(wallpaper_id,collection_id) VALUES
+                ('a','warriors'),('a','nature'),('b','warriors'),('c','nature');"
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO app_settings(id,json) VALUES(1,?1)",
+            params![serde_json::to_string(&app_settings::AppSettings::default()).unwrap()]
+        ).unwrap();
+        for id in ["a", "b", "c"] {
+            std::fs::write(paths.library().join(format!("{id}.jpg")), b"test-file").unwrap();
+        }
+        (conn, paths)
+    }
+
+    #[test]
+    fn collection_rotation_filters_before_limit_and_deduplicates_memberships() {
+        let (conn, paths) = collection_fixture();
+        let mut prefs = RotationPreferences::default();
+        assert_eq!(candidates(&conn, &paths, &prefs).unwrap().len(), 2);
+        assert!(includes_reserve(&prefs));
+        prefs.rotation_scope = "collections".into();
+        prefs.collection_ids = vec!["warriors".into(), "nature".into()];
+        assert!(prefs.validate().is_ok());
+        validate_selected_collections(&conn, &prefs).unwrap();
+        let selected = candidates(&conn, &paths, &prefs).unwrap();
+        assert_eq!(selected.len(), 2); // 'a' belongs to both groups, not twice
+        assert_eq!(selected.iter().filter(|image| image.id == "a").count(), 1);
+        assert!(!includes_reserve(&prefs));
+        prefs.collection_ids = vec!["nature".into()];
+        let selected = candidates(&conn, &paths, &prefs).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, "a"); // excludes low-resolution c
+        prefs.favorites_only = true;
+        prefs.collection_ids = vec!["warriors".into()];
+        let selected = candidates(&conn, &paths, &prefs).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, "a");
+        prefs.favorites_only = false;
+        prefs.collection_ids = vec!["missing".into()];
+        assert!(validate_selected_collections(&conn, &prefs).is_err());
+        assert!(candidates(&conn, &paths, &prefs).unwrap().is_empty());
+        // A deleted collection cannot silently switch to another pool.
+        conn.execute("DELETE FROM collections WHERE id='nature'", []).unwrap();
+        prefs.collection_ids = vec!["nature".into()];
+        assert!(validate_selected_collections(&conn, &prefs).is_err());
+        assert!(candidates(&conn, &paths, &prefs).unwrap().is_empty());
+        std::fs::remove_dir_all(&paths.root).unwrap();
+    }
+
+    #[test]
+    fn collection_rotation_defaults_and_validation_are_backwards_compatible() {
+        let old: RotationPreferences = serde_json::from_str(
+            r#"{"enabled":true,"favoritesOnly":true,"intervalMinutes":60}"#
+        ).unwrap();
+        assert_eq!(old.rotation_scope, "all");
+        assert!(old.collection_ids.is_empty());
+        assert!(old.validate().is_ok());
+        let mut prefs = old.clone();
+        prefs.rotation_scope = "collections".into();
+        assert!(prefs.validate().is_err()); // no groups selected
+        prefs.collection_ids = vec!["a".into(), "a".into()];
+        assert!(prefs.validate().is_err()); // duplicate IDs
+        prefs.collection_ids = vec!["warriors".into(), "nature".into()];
+        assert!(prefs.validate().is_ok());
+        let serialized = serde_json::to_string(&prefs).unwrap();
+        let decoded: RotationPreferences = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(decoded, prefs);
+    }
+
     #[test]
     fn default_is_opt_in_and_daily() {
         let defaults = RotationPreferences::default();

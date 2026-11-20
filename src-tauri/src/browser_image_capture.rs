@@ -348,7 +348,7 @@ pub const SCAN_RESULTS_EVENT: &str = "haven-browser-scan-results";
 pub const SCAN_ERROR_EVENT: &str = "haven-browser-scan-error";
 
 // Even an untrusted remote page's DOM output is validated again in Rust.
-fn parse_scan(raw: &str, tab_id: String) -> Result<PageScanResponse, String> {
+pub(crate) fn parse_scan(raw: &str, tab_id: String) -> Result<PageScanResponse, String> {
     if raw.len() > 512 * 1024 {
         return Err("This page returned too many image URLs to scan safely.".into());
     }
