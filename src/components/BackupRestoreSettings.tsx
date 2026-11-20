@@ -4,6 +4,7 @@ import {
   type BackupPreferences, type BackupStatus,
 } from "../lib/backup";
 import { formattedBytes } from "../lib/configuration";
+import BackupTimeSelector from "./BackupTimeSelector";
 import "./BackupRestoreSettings.css";
 
 const DAYS = [
@@ -160,10 +161,9 @@ export default function BackupRestoreSettings() {
           )}
           {draft.frequency !== "interval" ? (
             <div className="hwb-field">
-              <label htmlFor="hwb-time">Time (Windows local)</label>
-              <input id="hwb-time" type="time" value={draft.time}
-                disabled={busy !== null}
-                onChange={(event) => edit("time", event.target.value)} />
+              <span className="hwb-field-label">Time (Windows local)</span>
+              <BackupTimeSelector value={draft.time} disabled={busy !== null}
+                onChange={(value) => edit("time", value)} />
             </div>
           ) : (
             <div className="hwb-field">

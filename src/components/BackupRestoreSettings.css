@@ -43,3 +43,51 @@
 .hwb-page input:focus-visible,.hwb-page button:focus-visible,.hwb-page select:focus-visible{outline:2px solid #1883cc;outline-offset:2px}
 @media(max-width:900px){.hwb-panel{padding:17px}.hwb-field-grid{grid-template-columns:1fr}.hwb-stats{grid-template-columns:1fr 1fr}}
 @media(max-width:650px){.hwb-heading{flex-wrap:wrap}.hwb-folder-row{flex-wrap:wrap}.hwb-folder-row input{flex-basis:100%}.hwb-stats{grid-template-columns:1fr}.hwb-record{align-items:start;flex-direction:column}.hwb-record>div:last-child{align-items:flex-start;text-align:left}}
+
+/* Compact 12-hour selector: no WebView2 time-spinner overlay. */
+.hwb-field-label{font-size:11px;font-weight:750;color:#4d6c85}
+.hwb-time-selector{
+  display:inline-flex;align-items:center;gap:11px;align-self:flex-start;
+  min-height:41px;padding:4px 5px 4px 7px;
+  border:1px solid #cedfe9;border-radius:9px;
+  background:#fbfdff;color:#294763;
+}
+.hwb-time-clock{display:flex;align-items:center;gap:2px}
+.hwb-field .hwb-time-selector .hwb-time-unit{
+  width:67px;max-width:none;min-height:31px;
+  padding:5px 6px;border:0;border-radius:6px;
+  background:transparent;color:#284c69;
+  font-size:13px;font-weight:750;font-variant-numeric:tabular-nums;
+  text-align:center;cursor:pointer;
+}
+.hwb-field .hwb-time-selector .hwb-time-unit:hover:not(:disabled){
+  background:#eaf4fc;
+}
+.hwb-time-colon{font-size:14px;font-weight:800;color:#81a1b8}
+.hwb-time-period{
+  display:inline-flex;gap:2px;padding:3px;
+  background:#edf3f8;border-radius:7px;
+}
+.hwb-time-period button{
+  border:0;border-radius:5px;min-width:41px;
+  padding:6px 8px;background:transparent;
+  color:#738ea2;font-size:11px;font-weight:800;
+  cursor:pointer;
+}
+.hwb-time-period button.is-selected{
+  color:#126ca9;background:white;
+  box-shadow:0 1px 4px #164c711c;
+}
+.hwb-time-period button:hover:not(:disabled):not(.is-selected){
+  color:#285c7f;background:#e2edf5;
+}
+.hwb-time-selector select:disabled,.hwb-time-period button:disabled{
+  opacity:.45;cursor:default;
+}
+.hwb-time-selector:focus-within{
+  border-color:#419bd0;box-shadow:0 0 0 2px #1977ae1c;
+}
+.hwb-time-selector .hwb-time-unit:focus-visible,
+.hwb-time-selector button:focus-visible{
+  outline:2px solid #1883cc;outline-offset:1px;
+}
