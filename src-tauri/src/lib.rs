@@ -7,6 +7,8 @@ mod wallpaper_library;
 mod windows_wallpaper;
 mod rotation;
 mod rotation_discovery;
+mod backup;
+mod backup_restore;
 mod desktop_background;
 #[cfg(windows)]
 mod desktop_single_instance;
@@ -89,6 +91,7 @@ pub fn run() {
             .build())
         .manage(local_storage::StorageLock::default())
         .manage(rotation::RotationGate::default())
+        .manage(backup::BackupGate::default())
         .manage(wallpaper_library::best_source::InspectionCache::default())
         .manage(google_browser::PendingLensUpload::default())
         .setup(|app| {
@@ -97,6 +100,7 @@ pub fn run() {
             #[cfg(windows)]
             desktop_single_instance::watch_activation(app.handle().clone());
             rotation::start(app.handle().clone());
+            backup::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -144,6 +148,13 @@ pub fn run() {
             configuration::save_configuration,
             configuration::change_storage_mode,
             configuration::clear_temporary_cache,
+            backup::get_backup_status,
+            backup::save_backup_preferences,
+            backup::backup_now,
+            backup::choose_backup_folder,
+            backup::open_recovery_folder,
+            backup_restore::preview_backup_restore,
+            backup_restore::restore_backup,
             wallpaper_library::import_wallpaper_data,
             wallpaper_library::import_wallpaper_url,
             wallpaper_library::best_source::import_best_wallpaper_urls,
