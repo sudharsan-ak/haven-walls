@@ -121,9 +121,9 @@ fn verified(folder: &Path) -> Result<(Manifest, RestorePreview), String> {
         collection_count: table_count(&source, "collections")?,
         interest_count: table_count(&source, "followed_interests")?,
         warning: if manifest.kind == "settings" {
-            "Settings-only backups do not contain image files. Your current Library images will be kept. Collection and category definitions will be added without removing existing Library associations.".into()
+            "Settings-only backups do not contain image files. Merge preserves your current app, rotation and background settings while adding missing organization data. Replace restores backed-up settings without removing existing Library images.".into()
         } else {
-            "Merge keeps existing saved wallpapers; Replace updates managed Library records to match this backup. Your active Windows wallpaper, offline reserve, browser profile, and current API credentials stay untouched. A local recovery snapshot is created first.".into()
+            "Merge adds missing saved Library data and interests, keeping existing favorite choices and app, rotation and background settings unchanged. Replace restores saved settings and managed Library records. Your active Windows wallpaper, offline reserve and current API credentials stay untouched. A recovery snapshot is created first.".into()
         },
     };
     Ok((manifest, preview))
@@ -309,17 +309,9 @@ fn import_sql(conn: &Connection, mode: &str, kind: &str, prefix: &str)
                WHERE f.wallpaper_id=w.id AND f.storage_class='managed'
              );"
         ).map_err(error)?;
-        if mode == "merge" {
-            conn.execute_batch(
-                "UPDATE wallpapers SET favorite=1
-                 WHERE favorite=0 AND EXISTS(
-                    SELECT 1 FROM restore_source.wallpapers w
-                    JOIN restore_source.wallpaper_files f
-                      ON f.wallpaper_id=w.id AND f.storage_class='managed'
-                    WHERE w.id=wallpapers.id AND w.favorite=1
-                 );"
-            ).map_err(error)?;
-        }
+        // INSERT OR IGNORE above preserves local favorites on existing
+        // wallpapers. Merge adds new favorites from the backup only for
+        // wallpapers that were not already in the Library.
         conn.execute(
             "INSERT OR IGNORE INTO wallpaper_files
                (id,wallpaper_id,relative_path,storage_class,bytes,checksum_sha256)
@@ -370,71 +362,74 @@ fn import_sql(conn: &Connection, mode: &str, kind: &str, prefix: &str)
         ).map_err(error)?;
     }
     conn.execute_batch("DROP TABLE restore_collection_map;").map_err(error)?;
-    // Restore settings, not Windows-bound API keys, system boot startup or
-    // the user's CURRENT backup destination and scheduler state.
-    conn.execute_batch(
-        "UPDATE app_settings SET json=(SELECT json FROM restore_source.app_settings WHERE id=1)
-          WHERE id=1;
-         CREATE TABLE IF NOT EXISTS rotation_settings
-           (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
-         CREATE TABLE IF NOT EXISTS background_preferences
-           (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);"
-    ).map_err(error)?;
-    if attached_table_exists(conn, "background_preferences")? {
+    if mode == "replace" {
+        // Only Replace loads backed-up preferences/bookmarks. Merge is additive:
+        // it never changes app settings, rotation timing/pause/pin state, background
+        // preferences, or the user's current bookmarks. Even restoring the exact
+        // backup just created must not reset the current rotation scheduler.
+        // API credentials, backup destination and Windows startup remain local.
         conn.execute_batch(
-            "INSERT OR IGNORE INTO background_preferences(id,json)
-               SELECT id,json FROM restore_source.background_preferences;
-             UPDATE background_preferences SET json=(
-               SELECT json FROM restore_source.background_preferences WHERE id=1)
-             WHERE EXISTS(SELECT 1 FROM restore_source.background_preferences WHERE id=1);"
+            "UPDATE app_settings SET json=(SELECT json FROM restore_source.app_settings WHERE id=1)
+              WHERE id=1;
+             CREATE TABLE IF NOT EXISTS rotation_settings
+               (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS background_preferences
+               (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);"
         ).map_err(error)?;
-    }
-    let json: Option<String> = if attached_table_exists(conn, "rotation_settings")? {
-        conn.query_row("SELECT json FROM restore_source.rotation_settings WHERE id=1",
-            [], |r| r.get(0)).optional().map_err(error)?
-    } else { None };
-    if let Some(json) = json {
-        let mut saved: serde_json::Value = serde_json::from_str(&json)
-            .map_err(|e| format!("Invalid rotation settings in backup: {e}"))?;
-        saved["nextDueUnix"] = serde_json::Value::Null;
-        saved["nextDiscoveryUnix"] = serde_json::Value::Null;
-        saved["lastWallpaperId"] = serde_json::Value::Null;
-        saved["lastError"] = serde_json::Value::Null;
-        saved["preferences"]["paused"] = serde_json::Value::Bool(true);
-        // Source collection IDs may map to the existing collection with the
-        // same name under a different ID. Resolve by name.
-        if saved.pointer("/preferences/rotationScope").and_then(|v| v.as_str()) == Some("collections") {
-            if let Some(ids) = saved.pointer_mut("/preferences/collectionIds").and_then(|v| v.as_array_mut()) {
-                for id in ids.iter_mut() {
-                    if let Some(source_id) = id.as_str() {
-                        let mapped: Option<String> = conn.query_row(
-                            "SELECT m.id FROM main.collections m
-                             JOIN restore_source.collections s
-                             ON m.name=s.name COLLATE NOCASE
-                             WHERE s.id=?1 LIMIT 1",
-                            [source_id], |r| r.get(0),
-                        ).optional().map_err(error)?;
-                        if let Some(mapped) = mapped { *id = serde_json::Value::String(mapped); }
+        if attached_table_exists(conn, "background_preferences")? {
+            conn.execute_batch(
+                "INSERT OR IGNORE INTO background_preferences(id,json)
+                   SELECT id,json FROM restore_source.background_preferences;
+                 UPDATE background_preferences SET json=(
+                   SELECT json FROM restore_source.background_preferences WHERE id=1)
+                 WHERE EXISTS(SELECT 1 FROM restore_source.background_preferences WHERE id=1);"
+            ).map_err(error)?;
+        }
+        let json: Option<String> = if attached_table_exists(conn, "rotation_settings")? {
+            conn.query_row("SELECT json FROM restore_source.rotation_settings WHERE id=1",
+                [], |r| r.get(0)).optional().map_err(error)?
+        } else { None };
+        if let Some(json) = json {
+            let mut saved: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| format!("Invalid rotation settings in backup: {e}"))?;
+            saved["nextDueUnix"] = serde_json::Value::Null;
+            saved["nextDiscoveryUnix"] = serde_json::Value::Null;
+            saved["lastWallpaperId"] = serde_json::Value::Null;
+            saved["lastError"] = serde_json::Value::Null;
+            saved["preferences"]["paused"] = serde_json::Value::Bool(true);
+            // Source collection IDs may map to the existing collection with the
+            // same name under a different ID. Resolve by name.
+            if saved.pointer("/preferences/rotationScope").and_then(|v| v.as_str()) == Some("collections") {
+                if let Some(ids) = saved.pointer_mut("/preferences/collectionIds").and_then(|v| v.as_array_mut()) {
+                    for id in ids.iter_mut() {
+                        if let Some(source_id) = id.as_str() {
+                            let mapped: Option<String> = conn.query_row(
+                                "SELECT m.id FROM main.collections m
+                                 JOIN restore_source.collections s
+                                 ON m.name=s.name COLLATE NOCASE
+                                 WHERE s.id=?1 LIMIT 1",
+                                [source_id], |r| r.get(0),
+                            ).optional().map_err(error)?;
+                            if let Some(mapped) = mapped { *id = serde_json::Value::String(mapped); }
+                        }
                     }
                 }
             }
+            let encoded = serde_json::to_string(&saved).map_err(|e| e.to_string())?;
+            conn.execute(
+                "INSERT INTO rotation_settings(id,json) VALUES(1,?1)
+                 ON CONFLICT(id) DO UPDATE SET json=excluded.json",
+                [encoded],
+            ).map_err(error)?;
         }
-        let encoded = serde_json::to_string(&saved).map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT INTO rotation_settings(id,json) VALUES(1,?1)
-             ON CONFLICT(id) DO UPDATE SET json=excluded.json",
-            [encoded],
-        ).map_err(error)?;
-    }
-    if attached_table_exists(conn, "browser_bookmarks")? {
-        if mode == "replace" {
+        if attached_table_exists(conn, "browser_bookmarks")? {
             conn.execute_batch("DELETE FROM browser_bookmarks;").map_err(error)?;
+            conn.execute_batch(
+                "INSERT OR IGNORE INTO browser_bookmarks(url,title,folder,created_at)
+                 SELECT url,title,folder,created_at
+                 FROM restore_source.browser_bookmarks;"
+            ).map_err(error)?;
         }
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO browser_bookmarks(url,title,folder,created_at)
-             SELECT url,title,folder,created_at
-             FROM restore_source.browser_bookmarks;"
-        ).map_err(error)?;
     }
     app_settings::read_settings(conn)?;
     if conn.prepare("PRAGMA main.foreign_key_check").map_err(error)?
@@ -495,7 +490,11 @@ fn restore_locked(conn: &Connection, paths: &DataPaths, folder: &Path,
             manifest.files.iter().filter(|f| f.path.starts_with("library/")).count()
         } else { 0 },
         recovery_path: recovery.display().to_string(),
-        notice: "Restore completed. Quit and reopen Haven Walls to refresh every view. Automatic wallpaper rotation is paused until you resume it.".into(),
+        notice: if mode == "merge" {
+            "Merge complete. Existing favorites, app settings, rotation schedule, pause/pin state and bookmarks were preserved. Reopen Haven Walls to refresh newly imported Library items.".into()
+        } else {
+            "Replace complete. Quit and reopen Haven Walls to refresh every view. Automatic wallpaper rotation is paused until you resume it.".into()
+        },
     })
 }
 fn now_nanos() -> u128 {
@@ -657,6 +656,145 @@ mod tests {
             [], |r| r.get::<_, i64>(0)).unwrap(), 2);
         drop(target);
         drop(original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merging_an_unchanged_full_backup_is_idempotent() {
+        let root = tmp("same-backup");
+        let paths = storage(&root.join("data"));
+        let conn = app_settings::open_database(&paths).unwrap();
+        conn.execute_batch(
+            "INSERT INTO collections(id,name) VALUES('group','Favorites Collection');
+             INSERT INTO categories(id,name) VALUES('category','Nature');
+             INSERT INTO wallpapers(id,title,source,width,height,favorite)
+                 VALUES('existing','Already here','Local',2560,1440,1);
+             INSERT INTO wallpaper_files
+                 (id,wallpaper_id,relative_path,storage_class,bytes,checksum_sha256)
+                 VALUES('existing-file','existing','existing.jpg','managed',5,'test');
+             INSERT INTO wallpaper_collections(wallpaper_id,collection_id)
+                 VALUES('existing','group');
+             INSERT INTO wallpaper_categories(wallpaper_id,category_id)
+                 VALUES('existing','category');
+             CREATE TABLE rotation_settings(id INTEGER PRIMARY KEY, json TEXT NOT NULL);
+             INSERT INTO rotation_settings(id,json)
+                 VALUES(1,'{\"preferences\":{\"enabled\":true,\"paused\":false,\"pinned\":true},\"nextDueUnix\":12345}');
+             CREATE TABLE background_preferences(id INTEGER PRIMARY KEY, json TEXT NOT NULL);
+             INSERT INTO background_preferences(id,json)
+                 VALUES(1,'{\"closeToTray\":true}');
+             INSERT INTO browser_bookmarks(url,title,folder)
+                 VALUES('https://example.com','Existing bookmark','Favorites');"
+        ).unwrap();
+        fs::write(paths.library().join("existing.jpg"), b"image").unwrap();
+        let saved_app: String = conn.query_row(
+            "SELECT json FROM app_settings WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        let saved_rotation: String = conn.query_row(
+            "SELECT json FROM rotation_settings WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        let saved_background: String = conn.query_row(
+            "SELECT json FROM background_preferences WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        let folder = backup::create_recovery_snapshot(&conn, &paths).unwrap();
+        let (manifest, _) = verified(&folder).unwrap();
+
+        // Re-import the very same full backup twice: both runs must preserve
+        // current preferences and not duplicate any Library records.
+        for _ in 0..2 {
+            let result = restore_locked(&conn, &paths, &folder, &manifest, "merge").unwrap();
+            assert!(result.notice.contains("preserved"));
+            let app: String = conn.query_row(
+                "SELECT json FROM app_settings WHERE id=1", [], |r| r.get(0)
+            ).unwrap();
+            let rotation: String = conn.query_row(
+                "SELECT json FROM rotation_settings WHERE id=1", [], |r| r.get(0)
+            ).unwrap();
+            let background: String = conn.query_row(
+                "SELECT json FROM background_preferences WHERE id=1", [], |r| r.get(0)
+            ).unwrap();
+            assert_eq!(app, saved_app);
+            assert_eq!(rotation, saved_rotation);
+            assert_eq!(background, saved_background);
+            for table in ["wallpapers", "wallpaper_files", "wallpaper_collections",
+                          "wallpaper_categories", "collections", "categories",
+                          "browser_bookmarks"] {
+                let amount: i64 = conn.query_row(
+                    &format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0),
+                ).unwrap();
+                assert_eq!(amount, 1, "Merge duplicated records in {table}");
+            }
+            let favorite: i64 = conn.query_row(
+                "SELECT favorite FROM wallpapers WHERE id='existing'",
+                [], |r| r.get(0),
+            ).unwrap();
+            assert_eq!(favorite, 1);
+            assert_eq!(fs::read(paths.library().join("existing.jpg")).unwrap(), b"image");
+        }
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merging_older_backup_does_not_reset_newer_settings_or_favorite_choices() {
+        let root = tmp("newer-preferences");
+        let paths = storage(&root.join("data"));
+        let conn = app_settings::open_database(&paths).unwrap();
+        conn.execute_batch(
+            "INSERT INTO wallpapers(id,title,source,width,height,favorite)
+                 VALUES('photo','Photo','Local',2560,1440,1);
+             INSERT INTO wallpaper_files
+                 (id,wallpaper_id,relative_path,storage_class,bytes,checksum_sha256)
+                 VALUES('file','photo','photo.jpg','managed',5,'test');
+             CREATE TABLE rotation_settings(id INTEGER PRIMARY KEY, json TEXT NOT NULL);
+             INSERT INTO rotation_settings(id,json)
+                 VALUES(1,'{\"preferences\":{\"paused\":false},\"nextDueUnix\":2222}');
+             CREATE TABLE background_preferences(id INTEGER PRIMARY KEY, json TEXT NOT NULL);
+             INSERT INTO background_preferences(id,json)
+                 VALUES(1,'{\"closeToTray\":false}');
+             INSERT INTO browser_bookmarks(url,title,folder)
+                 VALUES('https://example.com/old','Old bookmark','Favorites');"
+        ).unwrap();
+        fs::write(paths.library().join("photo.jpg"), b"image").unwrap();
+        let folder = backup::create_recovery_snapshot(&conn, &paths).unwrap();
+        let (manifest, _) = verified(&folder).unwrap();
+
+        // User changes the app after taking the backup. Merge must not revert
+        // these changes or resurrect removed browser bookmarks.
+        let old_app: String = conn.query_row(
+            "SELECT json FROM app_settings WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        let mut new_app: serde_json::Value = serde_json::from_str(&old_app).unwrap();
+        new_app["minimumResolution"] = serde_json::Value::String("4K".into());
+        let new_app = serde_json::to_string(&new_app).unwrap();
+        conn.execute("UPDATE app_settings SET json=?1 WHERE id=1", [&new_app]).unwrap();
+        conn.execute_batch(
+            "UPDATE wallpapers SET favorite=0 WHERE id='photo';
+             UPDATE rotation_settings SET json='{\"preferences\":{\"paused\":true},\"nextDueUnix\":9999}' WHERE id=1;
+             UPDATE background_preferences SET json='{\"closeToTray\":true}' WHERE id=1;
+             DELETE FROM browser_bookmarks;"
+        ).unwrap();
+        restore_locked(&conn, &paths, &folder, &manifest, "merge").unwrap();
+        let after_app: String = conn.query_row(
+            "SELECT json FROM app_settings WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(after_app, new_app);
+        let after_rotation: String = conn.query_row(
+            "SELECT json FROM rotation_settings WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        assert!(after_rotation.contains("9999"));
+        let after_background: String = conn.query_row(
+            "SELECT json FROM background_preferences WHERE id=1", [], |r| r.get(0)
+        ).unwrap();
+        assert!(after_background.contains("true"));
+        assert_eq!(conn.query_row(
+            "SELECT favorite FROM wallpapers WHERE id='photo'",
+            [], |r| r.get::<_, i64>(0),
+        ).unwrap(), 0);
+        assert_eq!(conn.query_row(
+            "SELECT COUNT(*) FROM browser_bookmarks",
+            [], |r| r.get::<_, i64>(0),
+        ).unwrap(), 0);
+        drop(conn);
         fs::remove_dir_all(root).unwrap();
     }
 

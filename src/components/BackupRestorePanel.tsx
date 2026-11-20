@@ -125,8 +125,9 @@ export default function BackupRestorePanel({ history }: Props) {
                 disabled={busy !== null} onChange={() => {
                   setMode("merge"); setConfirmation("");
                 }}/>
-              <span><strong>Merge</strong><small>Keep current wallpapers and add any saved items from this backup.
-                Existing entries and names are kept when they match.</small></span>
+              <span><strong>Merge</strong><small>Add missing saved wallpapers, collections, categories and interests.
+                Keep your current settings, rotation schedule, pause/pin state, bookmarks and existing favorite choices.
+                Restoring an unchanged backup will not alter them.</small></span>
             </label>
             <label>
               <input type="radio" name="hwb-restore-mode" checked={mode === "replace"}

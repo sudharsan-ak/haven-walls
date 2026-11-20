@@ -8,12 +8,12 @@
 - The recovery copy preserves local Windows-bound API credential ciphertext for recovery. Portable exported backups still sanitize API credentials.
 - Stage new managed Library image files first. Reject an existing filename whose bytes differ, never overwrite or delete existing originals, and roll back SQLite and remove newly placed files on a failed restore.
 - Current active desktop wallpaper, offline reserve, external originals, API keys, backup destination, backup schedule and Windows login-startup registration are retained.
-- Restore pauses the automatic wallpaper rotation; quit and relaunch Haven Walls to refresh every view.
+- Merge leaves the existing automatic wallpaper rotation running at its existing schedule and preserves pause/pin state. Replace pauses rotation; quit and relaunch Haven Walls to refresh every view.
 
 ## Merge
-- Keep existing Library images, memberships and names.
-- Add missing backed-up images, categories, collections, saved interests.
-- Union favorites on already-saved images.
+- Keep existing Library images, memberships, names, existing favorite choices, application settings, rotation schedule/pause/pin state, background settings and browser bookmarks.
+- Add missing backed-up images, categories, collections, memberships and saved interests. New images retain their backed-up favorite flag.
+- Repeatedly merging the same unchanged backup is idempotent for saved Library data and user preferences. A new pre-restore recovery snapshot is still created for safety.
 - Resolve same-name collections to current collection IDs; reject ambiguous name/ID collisions.
 
 ## Replace
@@ -36,7 +36,9 @@
 2. Build and test: npm run build; cargo test --manifest-path src-tauri/Cargo.toml; npm run tauri build.
 3. Create two saved wallpapers plus a collection/favorite. Create a Full backup. Add a third wallpaper after creating the backup.
 4. Inspect that backup using the Restore browser and confirm its date, image count, collections, interests and type.
-5. Merge that backup and confirm all existing data remains, favorites/assignments work and duplicates are avoided.
+5. Merge that backup and confirm all existing data remains, favorite choices/assignments work and duplicates are avoided. Merge it a second time and verify no duplicate rows.
+5a. Take a fresh Full backup, change nothing, Merge it. Verify wallpapers, collections, favorites, backup schedule, rotation pause/pin, app/background preferences and bookmarks are unchanged.
+5b. Change wallpaper favorite state and rotation schedule after creating a backup, then Merge that older backup. Verify newer local choices remain.
 6. Replace from the backup with typed confirmation, check original older file remains on disk, all backed-up records are present, and a recovery folder exists.
 7. Check existing API credentials, active Windows wallpaper, offline reserve and backup scheduler/destination are preserved.
 8. Create a Settings only backup and Replace: current Library files and their assignments must remain intact.
@@ -46,4 +48,4 @@
 12. Restart Haven Walls after successful restore to reload persisted preferences and collections.
 
 ## Validation
-The Rust unit tests cover a full Merge and Replace, sanitized exports versus local credential-preserving recovery, settings-only restoration and backup tampering. The Windows build and on-device restore tests must still be executed. PR #11 must stay draft until confirmed.
+The Rust unit tests cover a full Merge and Replace, unchanged-backup Merge idempotence, preservation of newer favorite/settings/rotation/background/bookmark choices, sanitized exports versus local credential-preserving recovery, settings-only restoration and backup tampering. The Windows build and on-device restore tests must still be executed. PR #11 must stay draft until confirmed.
